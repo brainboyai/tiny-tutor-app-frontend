@@ -11,12 +11,13 @@
           base: './',
           build: {
             // Default output directory is 'dist'.
-            // When Render's Publish Directory is 'dist', it expects the built files here.
+            // When Render/Netlify's Publish Directory is 'dist', it expects the built files here.
             outDir: 'dist',
             rollupOptions: {
-              // Now, the main HTML file is correctly located in the 'public' folder.
+              // Point to index.html inside the 'public' folder.
+              // __dirname is the current directory (tiny-tutor-frontend-local).
               input: {
-                main: path.resolve(__dirname, 'public/index.html')
+                main: path.resolve(__dirname, 'public/index.html') // <--- Corrected path for public/index.html
               }
             }
           }

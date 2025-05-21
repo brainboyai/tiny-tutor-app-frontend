@@ -4,8 +4,11 @@
             "tsBuildInfoFile": "./node_modules/.vite/tsconfig.node.tsbuildinfo",
             "module": "ESNext",
             "moduleResolution": "bundler",
-            "types": ["node"]
+            "types": [
+              "node"
+            ]
           },
-          "include": ["vite.config.ts"]
+          "include": [
+            "vite.config.ts"
+          ]
         }
-        

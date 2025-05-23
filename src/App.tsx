@@ -432,13 +432,14 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             return;
         }
         console.log('User logged in. Generating explanation for:', inputQuestion);
-        setGeneratedContents(prev => ({ // Clear all content except for image placeholder on new question
+        // Corrected: Remove 'prev =>' as we're not using previous state to compute new state
+        setGeneratedContents({
             explain: '',
             image: 'Image generation feature coming soon! You can imagine an image of...',
             fact: '',
             quiz: '',
             deep: '',
-        }));
+        });
         setActiveMode('explain'); // Ensure 'explain' tab is active on initial generate
         generateExplanation(inputQuestion, 'explain'); // Explicitly generate 'explain' content
     };
@@ -494,7 +495,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                                 quiz: '',
                                 deep: '',
                             }));
-                            setExplanation(''); // This is actually removed, handled by generatedContents now
+                            // Corrected: Removed `setExplanation('')` as it's no longer a direct state
                             setActiveMode('explain'); // Reset to explain tab on input change
                         }}
                         disabled={isLoadingExplanation}
@@ -628,7 +629,7 @@ const App: React.FC = () => {
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
-    const questionBeforeModalRef = useRef('');
+    const questionBeforeModalRef = useRef(''); // Used to store question when modal pops up
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
@@ -661,9 +662,9 @@ const App: React.FC = () => {
                 const data = await response.json();
                 const newContent = data.explanation;
 
-                // Update the specific content in the generatedContents object
-                setGeneratedContents(prev => ({
-                    ...prev,
+                // Corrected: Changed 'prev' to '_prev' to silence 'unused' warning
+                setGeneratedContents(_prev => ({
+                    ..._prev,
                     [mode]: newContent,
                 }));
                 console.log(`'${mode}' content generated.`);
@@ -672,8 +673,8 @@ const App: React.FC = () => {
                 setAiError(errorData.error || `Failed to generate ${mode} content. Please try again.`);
                 console.error(`AI Generation Error for ${mode}:`, errorData);
                 // Also clear content for the errored mode
-                setGeneratedContents(prev => ({
-                    ...prev,
+                setGeneratedContents(_prev => ({
+                    ..._prev,
                     [mode]: '',
                 }));
             }
@@ -681,8 +682,8 @@ const App: React.FC = () => {
             setAiError(`Network error or unexpected response for ${mode}.`);
             console.error(`Error fetching AI explanation for ${mode}:`, error);
             // Also clear content for the errored mode
-            setGeneratedContents(prev => ({
-                ...prev,
+            setGeneratedContents(_prev => ({
+                ..._prev,
                 [mode]: '',
             }));
         } finally {
@@ -733,16 +734,17 @@ const App: React.FC = () => {
                     onClose={() => {
                         setShowAuthModal(false);
                     }}
-                    onLoginSuccess={async (question) => {
+                    // Corrected: Use the 'questionToGenerateAfterLogin' parameter directly
+                    onLoginSuccess={async (questionToGenerateAfterLogin) => {
                         setShowAuthModal(false);
-                        if (questionBeforeModalRef.current.trim() !== '') {
-                            setInputQuestion(questionBeforeModalRef.current);
+                        if (questionToGenerateAfterLogin.trim() !== '') {
+                            setInputQuestion(questionToGenerateAfterLogin);
                             // After login, automatically generate the initial 'explain' content
-                            await generateExplanation(questionBeforeModalRef.current, 'explain');
-                            questionBeforeModalRef.current = '';
+                            await generateExplanation(questionToGenerateAfterLogin, 'explain');
+                            questionBeforeModalRef.current = ''; // Clear ref after use
                         }
                     }}
-                    initialQuestion={questionBeforeModalRef.current}
+                    initialQuestion={questionBeforeModalRef.current} // Pass the question from the ref
                     initialMode={authModalMode}
                 />
             )}

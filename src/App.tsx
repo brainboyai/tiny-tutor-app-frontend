@@ -461,7 +461,7 @@ interface TinyTutorAppContentProps {
     // NEW: Separate handlers for showing login/signup modals
     setShowLoginModal: (question: string) => void;
     setShowSignupModal: (question: string) => void;
-    questionBeforeModalRef: React.MutableRefObject<string>;
+    // REMOVED: questionBeforeModalRef: React.MutableRefObject<string>;
     generateExplanation: (question: string) => Promise<void>;
     isLoadingExplanation: boolean; // Added back as prop for spinner
     aiError: string; // Added back as prop for error display
@@ -475,7 +475,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     // NEW: Destructure new props
     setShowLoginModal,
     setShowSignupModal,
-    questionBeforeModalRef,
+    // REMOVED: questionBeforeModalRef,
     generateExplanation,
     isLoadingExplanation, // Destructure from props
     aiError, // Destructure from props
@@ -609,7 +609,7 @@ const App: React.FC = () => {
     const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
     // Use a ref to store the question when the modal is opened
-    const questionBeforeModalRef = useRef('');
+    const questionBeforeModalRef = useRef(''); // Still needed here in App for storing question before modal
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
@@ -658,13 +658,13 @@ const App: React.FC = () => {
 
     // NEW: Handlers to open the modal with specific modes
     const handleShowLoginModal = (question: string) => {
-        questionBeforeModalRef.current = question;
+        questionBeforeModalRef.current = question; // Keep this line as the ref is used in App's onLoginSuccess
         setAuthModalMode('login');
         setShowAuthModal(true);
     };
 
     const handleShowSignupModal = (question: string) => {
-        questionBeforeModalRef.current = question;
+        questionBeforeModalRef.current = question; // Keep this line as the ref is used in App's onLoginSuccess
         setAuthModalMode('signup');
         setShowAuthModal(true);
     };
@@ -693,7 +693,7 @@ const App: React.FC = () => {
                     // NEW: Pass new handlers to TinyTutorAppContent
                     setShowLoginModal={handleShowLoginModal}
                     setShowSignupModal={handleShowSignupModal}
-                    questionBeforeModalRef={questionBeforeModalRef}
+                    // REMOVED: questionBeforeModalRef={questionBeforeModalRef} // REMOVED THIS LINE
                     generateExplanation={generateExplanation}
                     isLoadingExplanation={isLoadingExplanation} // Pass the state value as prop
                     aiError={aiError} // Pass the state value as prop
@@ -711,12 +711,15 @@ const App: React.FC = () => {
                         // Immediately close the modal as soon as login is successful
                         setShowAuthModal(false);
 
-                        if (question.trim() !== '') {
-                            setInputQuestion(question);
-                            await generateExplanation(question);
+                        // Use questionBeforeModalRef.current here, not the 'question' parameter from onLoginSuccess
+                        // The 'question' parameter was a placeholder to signal the ref should be used
+                        if (questionBeforeModalRef.current.trim() !== '') {
+                            setInputQuestion(questionBeforeModalRef.current);
+                            await generateExplanation(questionBeforeModalRef.current);
+                            questionBeforeModalRef.current = ''; // Clear the ref after use
                         }
                     }}
-                    initialQuestion={inputQuestion}
+                    initialQuestion={questionBeforeModalRef.current} // Pass the ref's current value
                     // NEW: Pass the determined mode to AuthModal
                     initialMode={authModalMode}
                 />

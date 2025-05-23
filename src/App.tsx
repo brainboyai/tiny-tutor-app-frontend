@@ -177,17 +177,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 // --- AuthModal Component ---
 interface AuthModalProps {
     onClose: () => void;
-    onLoginSuccess: (question: string) => Promise<void>; // Make this async
+    onLoginSuccess: (question: string) => Promise<void>;
     initialQuestion: string;
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion }) => {
     const [showLogin, setShowLogin] = useState(true);
 
-    const handleLoginSuccess = async () => { // Make this handler async
+    const handleLoginSuccess = async () => {
         console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
         await onLoginSuccess(initialQuestion); // AWAIT the parent's async callback
-        // onClose() is now called by the parent AFTER onLoginSuccess completes
+        onClose(); // Close modal after the parent's async callback completes
     };
 
     return (
@@ -416,7 +416,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
                 {!inModal && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Already have an account?{' '}
-                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-green-600 hover:underline font-semibold">
+                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-blue-600 hover:underline font-semibold">
                             Login.
                         </a>
                     </p>
@@ -449,7 +449,7 @@ const TinyTutorAppContent: React.FC = () => {
         console.log('generateExplanation called with:', questionToGenerate); // Debugging log
 
         try {
-            const response = await fetch(`${API_BASE_BASE_URL}/generate_explanation`, { // Corrected API_BASE_BASE_URL to API_BASE_URL
+            const response = await fetch(`${API_BASE_URL}/generate_explanation`, { // CORRECTED: API_BASE_URL
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

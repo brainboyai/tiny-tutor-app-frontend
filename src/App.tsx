@@ -185,8 +185,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     const [showLogin, setShowLogin] = useState(true);
 
     const handleLoginSuccess = () => {
-        onLoginSuccess(initialQuestion); // Pass the question back
-        onClose(); // Close modal on successful login
+        console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion); // Debugging log
+        onLoginSuccess(initialQuestion); // Pass the question back to parent
+        onClose(); // Close modal
     };
 
     return (
@@ -230,7 +231,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, 
         setIsSubmitting(true);
         const success = await login(username, password);
         if (success) {
-            onLoginSuccess?.();
+            onLoginSuccess?.(); // Call success callback if provided
         } else {
             setError('Invalid username or password. Please try again.');
         }

@@ -200,10 +200,13 @@ interface AuthModalProps {
     onClose: () => void;
     onLoginSuccess: (question: string) => Promise<void>;
     initialQuestion: string;
+    // NEW: Prop to control which form is initially shown
+    initialMode: 'login' | 'signup';
 }
 
-const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion }) => {
-    const [showLogin, setShowLogin] = useState(true);
+const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion, initialMode }) => {
+    // NEW: Initialize showLogin based on initialMode prop
+    const [showLogin, setShowLogin] = useState(initialMode === 'login');
 
     const handleLoginSuccess = async () => {
         console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
@@ -455,7 +458,9 @@ interface TinyTutorAppContentProps {
     setInputQuestion: React.Dispatch<React.SetStateAction<string>>;
     explanation: string;
     setExplanation: React.Dispatch<React.SetStateAction<string>>;
-    setShowAuthModal: React.Dispatch<React.SetStateAction<boolean>>;
+    // NEW: Separate handlers for showing login/signup modals
+    setShowLoginModal: (question: string) => void;
+    setShowSignupModal: (question: string) => void;
     questionBeforeModalRef: React.MutableRefObject<string>;
     generateExplanation: (question: string) => Promise<void>;
     isLoadingExplanation: boolean; // Added back as prop for spinner
@@ -467,7 +472,9 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     setInputQuestion,
     explanation,
     setExplanation,
-    setShowAuthModal,
+    // NEW: Destructure new props
+    setShowLoginModal,
+    setShowSignupModal,
     questionBeforeModalRef,
     generateExplanation,
     isLoadingExplanation, // Destructure from props
@@ -478,9 +485,8 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     const handleGenerateExplanationClick = () => {
         console.log('Generate Explanation button clicked. Current user:', user);
         if (!user) {
-            questionBeforeModalRef.current = inputQuestion;
-            console.log('User not logged in. Storing question:', inputQuestion, 'and showing modal.');
-            setShowAuthModal(true);
+            // If user is not logged in, default to showing login modal
+            setShowLoginModal(inputQuestion);
             return;
         }
         console.log('User logged in. Generating explanation for:', inputQuestion);
@@ -538,7 +544,28 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     )}
                     {!user && ( // Use user from useAuth()
                         <p className="text-gray-600 text-center text-sm mt-4">
-                            <span className="font-semibold text-blue-600">Sign up or Login</span> to generate explanations.
+                            <a
+                                href="#"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    setShowSignupModal(inputQuestion);
+                                }}
+                                className="font-semibold text-blue-600 hover:underline"
+                            >
+                                Sign up
+                            </a>{' '}
+                            or{' '}
+                            <a
+                                href="#"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    setShowLoginModal(inputQuestion);
+                                }}
+                                className="font-semibold text-blue-600 hover:underline"
+                            >
+                                Login
+                            </a>{' '}
+                            to generate explanations.
                         </p>
                     )}
                 </div>
@@ -578,6 +605,8 @@ const App: React.FC = () => {
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false); // State for AI generation loading
     const [aiError, setAiError] = useState(''); // State for AI explanation errors
     const [showAuthModal, setShowAuthModal] = useState(false); // State for showing auth modal
+    // NEW: State to control which form is shown in the modal
+    const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
     // Use a ref to store the question when the modal is opened
     const questionBeforeModalRef = useRef('');
@@ -627,6 +656,19 @@ const App: React.FC = () => {
         }
     };
 
+    // NEW: Handlers to open the modal with specific modes
+    const handleShowLoginModal = (question: string) => {
+        questionBeforeModalRef.current = question;
+        setAuthModalMode('login');
+        setShowAuthModal(true);
+    };
+
+    const handleShowSignupModal = (question: string) => {
+        questionBeforeModalRef.current = question;
+        setAuthModalMode('signup');
+        setShowAuthModal(true);
+    };
+
 
     console.log('App: Rendering. Loading:', loading);
 
@@ -648,7 +690,9 @@ const App: React.FC = () => {
                     setInputQuestion={setInputQuestion}
                     explanation={explanation}
                     setExplanation={setExplanation}
-                    setShowAuthModal={setShowAuthModal}
+                    // NEW: Pass new handlers to TinyTutorAppContent
+                    setShowLoginModal={handleShowLoginModal}
+                    setShowSignupModal={handleShowSignupModal}
                     questionBeforeModalRef={questionBeforeModalRef}
                     generateExplanation={generateExplanation}
                     isLoadingExplanation={isLoadingExplanation} // Pass the state value as prop
@@ -673,6 +717,8 @@ const App: React.FC = () => {
                         }
                     }}
                     initialQuestion={inputQuestion}
+                    // NEW: Pass the determined mode to AuthModal
+                    initialMode={authModalMode}
                 />
             )}
         </div>

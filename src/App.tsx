@@ -271,8 +271,7 @@ interface TinyTutorAppContentProps {
     isLoadingExplanation: boolean;
     aiError: string | null;
     loggedIn: boolean;
-    currentUser: User | null; // This prop is correctly passed and used
-    // New props for handling modal mode from inside TinyTutorAppContent
+    currentUser: User | null;
     setShowLoginModal: (question: string) => void;
     setShowSignupModal: (question: string) => void;
 }
@@ -290,17 +289,14 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     isLoadingExplanation,
     aiError,
     loggedIn,
-    currentUser, // Destructure currentUser
-    setShowLoginModal, // Destructure new prop
-    setShowSignupModal, // Destructure new prop
+    currentUser,
+    setShowLoginModal,
+    setShowSignupModal,
 }) => {
-    // logout is now handled in App.tsx directly for the top-right button
-    // const { logout } = useAuth(); // Removed, no longer needed here
-
     const handleGenerateExplanationClick = () => {
         if (!loggedIn) {
-            questionBeforeModalRef.current = inputQuestion; // Store question before showing modal
-            setShowAuthModal(true); // Open modal (defaulting to login via App.tsx)
+            questionBeforeModalRef.current = inputQuestion;
+            setShowLoginModal(inputQuestion); // Call the specific login modal handler
             return;
         }
 
@@ -322,13 +318,14 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     };
 
     const currentExplanationContent = generatedContents[activeMode];
-    const showExplanationContent = currentExplanationContent || isLoadingExplanation || aiError;
-
+    // MODIFIED: Only show explanation box if logged in AND (content exists OR loading OR error)
+    // OR if not logged in but there's an AI error from a failed attempt.
+    const showExplanationContent = loggedIn
+        ? (currentExplanationContent || isLoadingExplanation || aiError)
+        : (aiError || (inputQuestion.trim() !== '' && currentExplanationContent)); // Show if not logged in, but there's an AI error or content (e.g., placeholder)
 
     return (
         <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl relative">
-            {/* Logout button is now in App.tsx, so removed from here */}
-
             <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                 Welcome to Tiny Tutor! {loggedIn && currentUser?.username && `(${currentUser.username})`}
             </h2>
@@ -371,7 +368,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
+                                </svg>
                             Generating...
                         </>
                     ) : (
@@ -381,13 +378,13 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 {aiError && !loggedIn && (
                     <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
                 )}
-                {!loggedIn && ( // Only show signup/login links if not logged in
+                {!loggedIn && (
                     <p className="text-gray-600 text-center text-sm mt-4">
                         <a
                             href="#"
                             onClick={(e) => {
                                 e.preventDefault();
-                                setShowSignupModal(inputQuestion); // Call prop to open signup modal
+                                setShowSignupModal(inputQuestion);
                             }}
                             className="font-semibold text-blue-600 hover:underline"
                         >
@@ -398,7 +395,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             href="#"
                             onClick={(e) => {
                                 e.preventDefault();
-                                setShowLoginModal(inputQuestion); // Call prop to open login modal
+                                setShowLoginModal(inputQuestion);
                             }}
                             className="font-semibold text-blue-600 hover:underline"
                         >
@@ -433,8 +430,8 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 </div>
             )}
 
-            {/* Explanation/Content Display Area - only show if there's content, loading, or an error */}
-            {(showExplanationContent || (inputQuestion.trim() === '' && !loggedIn)) && ( // Show if content/loading/error OR if not logged in and no input
+            {/* Explanation/Content Display Area - MODIFIED CONDITIONAL RENDERING */}
+            {showExplanationContent && (
                 <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner max-w-2xl mx-auto">
                     <h3 className="text-2xl font-bold text-blue-800 mb-4">
                         {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}:
@@ -569,14 +566,14 @@ const App: React.FC = () => {
                         onClick={() => {
                             logout();
                             setInputQuestion('');
-                            setGeneratedContents({ // Clear all content on logout
+                            setGeneratedContents({
                                 explain: '',
                                 image: 'Image generation feature coming soon! You can imagine an image of...',
                                 fact: '',
                                 quiz: '',
                                 deep: '',
                             });
-                            setActiveMode('explain'); // Reset active mode on logout
+                            setActiveMode('explain');
                         }}
                         className="p-2 bg-red-100 text-red-600 rounded-full text-sm font-semibold hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-300 transition duration-300"
                     >
@@ -584,7 +581,7 @@ const App: React.FC = () => {
                     </button>
                 ) : (
                     <button
-                        onClick={() => handleShowLoginModal(inputQuestion)} // Default to login when clicking this button
+                        onClick={() => handleShowLoginModal(inputQuestion)}
                         className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors duration-200"
                     >
                         Login / Signup
@@ -592,7 +589,7 @@ const App: React.FC = () => {
                 )}
             </div>
 
-            <div className="w-full max-w-3xl mx-auto my-8"> {/* This div now acts as the main content wrapper */}
+            <div className="w-full max-w-3xl mx-auto my-8">
                 <TinyTutorAppContent
                     inputQuestion={inputQuestion}
                     setInputQuestion={setInputQuestion}
@@ -606,9 +603,9 @@ const App: React.FC = () => {
                     isLoadingExplanation={isLoadingExplanation}
                     aiError={aiError}
                     loggedIn={user !== null}
-                    currentUser={user} // Pass the user object as currentUser
-                    setShowLoginModal={handleShowLoginModal} // Pass this handler
-                    setShowSignupModal={handleShowSignupModal} // Pass this handler
+                    currentUser={user}
+                    setShowLoginModal={handleShowLoginModal}
+                    setShowSignupModal={handleShowSignupModal}
                 />
             </div>
 

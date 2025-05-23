@@ -37,22 +37,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    const getAuthHeaders = () => {
-        const token = localStorage.getItem('access_token');
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        return headers;
-    };
-
     const login = async (username: string, password: string): Promise<boolean> => {
         try {
             const response = await fetch(`${API_BASE_URL}/login`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify({ username, password }),
             });
 
@@ -78,7 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const response = await fetch(`${API_BASE_URL}/signup`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify({ username, email, password }),
             });
 
@@ -144,12 +137,12 @@ interface AuthModalProps {
     onClose: () => void;
     onLoginSuccess: (question: string) => Promise<void>;
     initialQuestion: string;
-    initialMode: 'login' | 'signup'; // Added initialMode prop
+    initialMode: 'login' | 'signup';
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion, initialMode }) => {
     const { login, signup, loading: authLoading } = useAuth();
-    const [isLoginMode, setIsLoginMode] = useState(initialMode === 'login'); // Use initialMode
+    const [isLoginMode, setIsLoginMode] = useState(initialMode === 'login');
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -256,9 +249,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
                         </button>
                     </div>
                 </form>
-                <div className="text-center mt-4">
-                    {/* Removed explicit close button, using X icon */}
-                </div>
             </div>
         </div>
     );
@@ -275,13 +265,13 @@ interface TinyTutorAppContentProps {
     setGeneratedContents: React.Dispatch<React.SetStateAction<Record<ContentMode, string>>>;
     activeMode: ContentMode;
     setActiveMode: React.Dispatch<React.SetStateAction<ContentMode>>;
-    setShowAuthModal: React.Dispatch<React.SetStateAction<boolean>>; // Corrected type
+    setShowAuthModal: React.Dispatch<React.SetStateAction<boolean>>;
     questionBeforeModalRef: React.MutableRefObject<string>;
     generateExplanation: (question: string, mode: ContentMode) => Promise<void>;
     isLoadingExplanation: boolean;
     aiError: string | null;
     loggedIn: boolean;
-    // Removed explanation and setExplanation as they are now managed by generatedContents
+    currentUser: User | null; // Added currentUser prop
 }
 
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
@@ -297,24 +287,23 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     isLoadingExplanation,
     aiError,
     loggedIn,
+    currentUser, // Destructure currentUser
 }) => {
-    const { logout } = useAuth(); // Only logout needed here
+    const { logout } = useAuth();
 
     const handleGenerateExplanationClick = () => {
         if (!loggedIn) {
-            questionBeforeModalRef.current = inputQuestion; // Store question before showing modal
+            questionBeforeModalRef.current = inputQuestion;
             setShowAuthModal(true);
             return;
         }
 
         if (inputQuestion.trim() === '') {
-            // Set an error or message if input is empty
             setGeneratedContents(prev => ({ ...prev, explain: 'Please enter a concept to generate an explanation.' }));
-            setActiveMode('explain'); // Ensure 'explain' tab is active for the message
+            setActiveMode('explain');
             return;
         }
 
-        // Clear all generated content and set active mode to 'explain' for new generation
         setGeneratedContents({
             explain: '',
             image: 'Image generation feature coming soon! You can imagine an image of...',
@@ -326,39 +315,19 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
         generateExplanation(inputQuestion, 'explain');
     };
 
-    // Conditional rendering for explanation box content
     const currentExplanationContent = generatedContents[activeMode];
     const showExplanationContent = currentExplanationContent || isLoadingExplanation || aiError;
 
-
     return (
-        <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl relative"> {/* Main content card */}
-            {loggedIn && (
-                <button
-                    onClick={() => {
-                        logout();
-                        setInputQuestion('');
-                        setGeneratedContents({ // Clear all content on logout
-                            explain: '',
-                            image: 'Image generation feature coming soon! You can imagine an image of...',
-                            fact: '',
-                            quiz: '',
-                            deep: '',
-                        });
-                        setActiveMode('explain'); // Reset active mode on logout
-                    }}
-                    className="absolute top-4 right-4 p-2 bg-red-100 text-red-600 rounded-full text-sm font-semibold hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-300 transition duration-300"
-                >
-                    Logout
-                </button>
-            )}
+        <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl relative">
+            {/* Logout button is now in App.tsx, so removed from here */}
 
             <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
-                Welcome to Tiny Tutor! {loggedIn && user?.username && `(${user.username})`}
+                Welcome to Tiny Tutor! {loggedIn && currentUser?.username && `(${currentUser.username})`}
             </h2>
-            {loggedIn && user && (
+            {loggedIn && currentUser && (
                 <p className="text-center text-gray-600 text-lg mb-8">
-                    Your tier: <span className="font-semibold text-blue-600">{user.tier}</span>
+                    Your tier: <span className="font-semibold text-blue-600">{currentUser.tier}</span>
                 </p>
             )}
 
@@ -374,14 +343,14 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     value={inputQuestion}
                     onChange={(e) => {
                         setInputQuestion(e.target.value);
-                        setGeneratedContents((_prev) => ({ // Clear all content on input change
+                        setGeneratedContents((_prev) => ({
                             explain: '',
                             image: 'Image generation feature coming soon! You can imagine an image of...',
                             fact: '',
                             quiz: '',
                             deep: '',
                         }));
-                        setActiveMode('explain'); // Reset to explain tab on input change
+                        setActiveMode('explain');
                     }}
                     disabled={isLoadingExplanation}
                 />
@@ -402,17 +371,19 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         'Generate Explanation'
                     )}
                 </button>
-                {aiError && !loggedIn && ( // Show AI error only if not logged in and it's an AI error
+                {aiError && !loggedIn && (
                     <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
                 )}
-                {!loggedIn && ( // Only show signup/login links if not logged in
+                {!loggedIn && (
                     <p className="text-gray-600 text-center text-sm mt-4">
                         <a
                             href="#"
                             onClick={(e) => {
                                 e.preventDefault();
-                                questionBeforeModalRef.current = inputQuestion; // Store question
-                                setShowAuthModal(true); // Open modal for signup
+                                questionBeforeModalRef.current = inputQuestion;
+                                setShowAuthModal(true);
+                                // Set initial mode for AuthModal to signup
+                                // This requires passing setAuthModalMode down or handling it in App
                             }}
                             className="font-semibold text-blue-600 hover:underline"
                         >
@@ -423,8 +394,9 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             href="#"
                             onClick={(e) => {
                                 e.preventDefault();
-                                questionBeforeModalRef.current = inputQuestion; // Store question
-                                setShowAuthModal(true); // Open modal for login
+                                questionBeforeModalRef.current = inputQuestion;
+                                setShowAuthModal(true);
+                                // Set initial mode for AuthModal to login
                             }}
                             className="font-semibold text-blue-600 hover:underline"
                         >
@@ -435,7 +407,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 )}
             </div>
 
-            {/* NEW: Toggle Buttons - only show if logged in AND a question has been entered */}
+            {/* Toggle Buttons - only show if logged in AND a question has been entered */}
             {loggedIn && inputQuestion.trim() !== '' && (
                 <div className="flex justify-center space-x-2 mt-6 mb-4">
                     {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
@@ -443,8 +415,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             key={mode}
                             onClick={async () => {
                                 setActiveMode(mode);
-                                // If content for this mode isn't already generated AND it's not the image placeholder,
-                                // AND there's a question, trigger generation.
                                 if (inputQuestion.trim() !== '' && !generatedContents[mode] && mode !== 'image') {
                                     await generateExplanation(inputQuestion, mode);
                                 }
@@ -468,7 +438,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}:
                     </h3>
                     <div className="prose prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
-                        {isLoadingExplanation && !currentExplanationContent ? ( // Only show spinner if actively loading AND no content yet
+                        {isLoadingExplanation && !currentExplanationContent ? (
                              <div className="flex items-center justify-center">
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -495,7 +465,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 const App: React.FC = () => {
     const { user, loading: authLoading, logout } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
-    // Removed explanation and setExplanation as they are now managed by generatedContents
     const [generatedContents, setGeneratedContents] = useState<Record<ContentMode, string>>({
         explain: '',
         image: 'Image generation feature coming soon! You can imagine an image of...',
@@ -514,6 +483,7 @@ const App: React.FC = () => {
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
+    // Moved getAuthHeaders here as it's used by generateExplanation
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
         const headers: Record<string, string> = {
@@ -575,7 +545,7 @@ const App: React.FC = () => {
         setShowAuthModal(true);
     };
 
-    const handleShowSignupModal = (question: string) => {
+    const handleShowSignupModal = (question: string) => { // This function is now used
         questionBeforeModalRef.current = question;
         setAuthModalMode('signup');
         setShowAuthModal(true);
@@ -635,6 +605,7 @@ const App: React.FC = () => {
                     isLoadingExplanation={isLoadingExplanation}
                     aiError={aiError}
                     loggedIn={user !== null}
+                    currentUser={user} // Pass the user object as currentUser
                 />
             </div>
 
@@ -643,7 +614,7 @@ const App: React.FC = () => {
                     onClose={() => {
                         setShowAuthModal(false);
                     }}
-                    onLoginSuccess={async (questionAfterLogin) => {
+                    onLoginSuccess={async (questionAfterLogin: string) => { // Explicitly type questionAfterLogin
                         setShowAuthModal(false);
                         if (questionAfterLogin.trim() !== '') {
                             setInputQuestion(questionAfterLogin);
@@ -652,7 +623,7 @@ const App: React.FC = () => {
                         }
                     }}
                     initialQuestion={questionBeforeModalRef.current}
-                    initialMode={authModalMode}
+                    initialMode={authModalMode} // Pass initialMode to AuthModal
                 />
             )}
         </div>

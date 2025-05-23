@@ -186,7 +186,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
 
     const handleLoginSuccess = async () => {
         console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
-        await onLoginSuccess(initialQuestion); // AWAIT the parent's async callback
+        // AWAIT the parent's async callback to ensure explanation is generated
+        await onLoginSuccess(initialQuestion);
         onClose(); // Close modal after the parent's async callback completes
     };
 
@@ -439,7 +440,7 @@ const TinyTutorAppContent: React.FC = () => {
     // Use a ref to store the question when the modal is opened
     const questionBeforeModalRef = useRef('');
 
-    const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; // Declared here
+    const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
     const generateExplanation = async (questionToGenerate: string) => {
         setAiError('');
@@ -449,7 +450,7 @@ const TinyTutorAppContent: React.FC = () => {
         console.log('generateExplanation called with:', questionToGenerate); // Debugging log
 
         try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, { // CORRECTED: Used API_BASE_URL
+            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -576,11 +577,12 @@ const TinyTutorAppContent: React.FC = () => {
                         console.log('AuthModal: onClose called.');
                         setShowAuthModal(false);
                     }}
-                    onLoginSuccess={async (question) => {
+                    onLoginSuccess={async (question) => { // This is the callback from AuthModal
                         console.log('TinyTutorAppContent: onLoginSuccess handler called with question:', question);
                         // Explicitly set input and generate after successful login from modal
                         if (question.trim() !== '') {
-                            setInputQuestion(question);
+                            setInputQuestion(question); // Update the input field
+                            // Removed the setTimeout here, as it was not the root cause and we need more direct control
                             await generateExplanation(question); // AWAIT the explanation generation
                         }
                         // Now that explanation is generated, the modal will be closed by AuthModal's handleLoginSuccess

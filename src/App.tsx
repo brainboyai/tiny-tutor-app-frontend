@@ -458,13 +458,11 @@ interface TinyTutorAppContentProps {
     setInputQuestion: React.Dispatch<React.SetStateAction<string>>;
     explanation: string;
     setExplanation: React.Dispatch<React.SetStateAction<string>>;
-    // NEW: Separate handlers for showing login/signup modals
     setShowLoginModal: (question: string) => void;
     setShowSignupModal: (question: string) => void;
-    // REMOVED: questionBeforeModalRef: React.MutableRefObject<string>;
     generateExplanation: (question: string) => Promise<void>;
-    isLoadingExplanation: boolean; // Added back as prop for spinner
-    aiError: string; // Added back as prop for error display
+    isLoadingExplanation: boolean;
+    aiError: string;
 }
 
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
@@ -472,20 +470,17 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     setInputQuestion,
     explanation,
     setExplanation,
-    // NEW: Destructure new props
     setShowLoginModal,
     setShowSignupModal,
-    // REMOVED: questionBeforeModalRef,
     generateExplanation,
-    isLoadingExplanation, // Destructure from props
-    aiError, // Destructure from props
+    isLoadingExplanation,
+    aiError,
 }) => {
-    const { user, logout } = useAuth(); // Fetch user and logout directly here
+    const { user, logout } = useAuth();
 
     const handleGenerateExplanationClick = () => {
         console.log('Generate Explanation button clicked. Current user:', user);
         if (!user) {
-            // If user is not logged in, default to showing login modal
             setShowLoginModal(inputQuestion);
             return;
         }
@@ -494,9 +489,8 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     };
 
     return (
-        // Removed p-4 from here, it will be handled by the main App container
-        <div className="flex flex-col items-center w-full"> {/* Changed to w-full */}
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl"> {/* Removed mx-auto my-8 as it's for App */}
+        <div className="flex flex-col items-center w-full">
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl">
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -518,16 +512,16 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         value={inputQuestion}
                         onChange={(e) => {
                             setInputQuestion(e.target.value);
-                            setExplanation(''); // Clear explanation on new input
+                            setExplanation('');
                         }}
-                        disabled={isLoadingExplanation} // Use isLoadingExplanation from props
+                        disabled={isLoadingExplanation}
                     />
                     <button
                         onClick={handleGenerateExplanationClick}
                         className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
-                        disabled={isLoadingExplanation || inputQuestion.trim() === ''} // Use isLoadingExplanation from props
+                        disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                     >
-                        {isLoadingExplanation ? ( // Use isLoadingExplanation from props
+                        {isLoadingExplanation ? (
                             <>
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -539,10 +533,10 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             'Generate Explanation'
                         )}
                     </button>
-                    {aiError && ( // Use aiError from props
+                    {aiError && (
                         <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
                     )}
-                    {!user && ( // Use user from useAuth()
+                    {!user && (
                         <p className="text-gray-600 text-center text-sm mt-4">
                             <a
                                 href="#"
@@ -571,7 +565,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 </div>
 
                 {explanation && (
-                    <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner">
+                    <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner max-w-2xl mx-auto">
                         <h3 className="text-2xl font-bold text-blue-800 mb-4">Explanation:</h3>
                         <div className="prose prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
                             {explanation}
@@ -579,10 +573,10 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     </div>
                 )}
 
-                {user && ( // Use user from useAuth()
+                {user && (
                     <button
                         onClick={() => {
-                            logout(); // Use logout from useAuth()
+                            logout();
                             setInputQuestion('');
                             setExplanation('');
                         }}
@@ -690,10 +684,8 @@ const App: React.FC = () => {
                     setInputQuestion={setInputQuestion}
                     explanation={explanation}
                     setExplanation={setExplanation}
-                    // NEW: Pass new handlers to TinyTutorAppContent
                     setShowLoginModal={handleShowLoginModal}
                     setShowSignupModal={handleShowSignupModal}
-                    // REMOVED: questionBeforeModalRef={questionBeforeModalRef} // REMOVED THIS LINE
                     generateExplanation={generateExplanation}
                     isLoadingExplanation={isLoadingExplanation} // Pass the state value as prop
                     aiError={aiError} // Pass the state value as prop
@@ -720,7 +712,6 @@ const App: React.FC = () => {
                         }
                     }}
                     initialQuestion={questionBeforeModalRef.current} // Pass the ref's current value
-                    // NEW: Pass the determined mode to AuthModal
                     initialMode={authModalMode}
                 />
             )}

@@ -265,7 +265,7 @@ interface TinyTutorAppContentProps {
     setGeneratedContents: React.Dispatch<React.SetStateAction<Record<ContentMode, string>>>;
     activeMode: ContentMode;
     setActiveMode: React.Dispatch<React.SetStateAction<ContentMode>>;
-    setShowAuthModal: React.Dispatch<React.SetStateAction<boolean>>;
+    // Removed setShowAuthModal from props as it's not directly used here
     questionBeforeModalRef: React.MutableRefObject<string>;
     generateExplanation: (question: string, mode: ContentMode) => Promise<void>;
     isLoadingExplanation: boolean;
@@ -283,7 +283,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     setGeneratedContents,
     activeMode,
     setActiveMode,
-    setShowAuthModal,
+    // Removed setShowAuthModal from destructuring
     questionBeforeModalRef,
     generateExplanation,
     isLoadingExplanation,

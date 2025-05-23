@@ -1,8 +1,15 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
+import { jwtDecode } from 'jwt-decode'; // Import jwt-decode library
 
 // --- AuthContext Definition ---
+interface User {
+    username: string;
+    tier: string;
+    exp?: number; // Expiration timestamp from JWT
+}
+
 interface AuthContextType {
-    user: { username: string; tier: string } | null;
+    user: User | null;
     loading: boolean;
     login: (username: string, password: string) => Promise<boolean>;
     signup: (username: string, email: string, password: string) => Promise<boolean>;
@@ -22,53 +29,68 @@ export const useAuth = () => {
 
 // AuthProvider component: Handles login, signup, logout, and checks auth status on load.
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<{ username: string; tier: string } | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true); // Initial loading state for auth check
 
     // Base URL for your backend API
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    // Function to check login status from the backend
-    useEffect(() => {
-        console.log('AuthContext: useEffect triggered to check login status.');
-        const checkLoginStatus = async () => {
-            try {
-                setLoading(true);
-                console.log('AuthContext: Fetching status from backend...');
-                const response = await fetch(`${API_BASE_URL}/status`, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    // Crucial for session cookies to be sent and received
-                    credentials: 'include',
-                });
+    // Helper to get authorization headers with JWT
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+        }
+        return {
+            'Content-Type': 'application/json',
+        };
+    };
 
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('AuthContext: Status response data:', data);
-                    if (data.logged_in) {
-                        setUser({ username: data.username, tier: data.tier });
-                        console.log('AuthContext: User state changed to:', { username: data.username, tier: data.tier });
-                    } else {
+    // Function to check login status from the backend (now uses JWT)
+    useEffect(() => {
+        console.log('AuthContext: useEffect triggered to check login status (JWT).');
+        const checkLoginStatus = async () => {
+            setLoading(true);
+            const token = localStorage.getItem('access_token');
+
+            if (token) {
+                try {
+                    const decoded: User = jwtDecode(token);
+                    // Check if token is expired
+                    if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+                        console.log('AuthContext: JWT expired, clearing token.');
+                        localStorage.removeItem('access_token');
                         setUser(null);
-                        console.log('AuthContext: User is NOT logged in.');
+                    } else {
+                        setUser(decoded);
+                        console.log('AuthContext: User restored from JWT:', decoded.username);
+                        // Optionally, hit /status to ensure backend also recognizes the token
+                        // This is good practice, but for JWTs, the token itself is often enough.
+                        // const response = await fetch(`${API_BASE_URL}/status`, { headers: getAuthHeaders() });
+                        // if (!response.ok) {
+                        //     localStorage.removeItem('access_token');
+                        //     setUser(null);
+                        //     console.log('AuthContext: Backend status check failed, token likely invalid.');
+                        // }
                     }
-                } else {
-                    console.error('AuthContext: Failed to check login status:', response.status);
+                } catch (error) {
+                    console.error('AuthContext: Error decoding JWT:', error);
+                    localStorage.removeItem('access_token');
                     setUser(null);
                 }
-            } catch (error) {
-                console.error('AuthContext: Error checking login status:', error);
+            } else {
+                console.log('AuthContext: No JWT found in localStorage.');
                 setUser(null);
-            } finally {
-                setLoading(false);
-                console.log('AuthContext: Loading status check complete. setLoading(false).');
             }
+            setLoading(false);
+            console.log('AuthContext: Loading status check complete. setLoading(false).');
         };
 
         checkLoginStatus();
-    }, []);
+    }, []); // Run only once on mount
 
     // Function to handle user login
     const login = async (username: string, password: string) => {
@@ -81,15 +103,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, password }),
-                credentials: 'include',
             });
 
             if (response.ok) {
                 const data = await response.json();
                 console.log('AuthContext: Login response data:', data);
-                setUser({ username: data.username, tier: data.tier });
-                console.log('AuthContext: Login successful for:', data.username);
-                return true;
+                const token = data.access_token;
+                if (token) {
+                    localStorage.setItem('access_token', token);
+                    const decoded: User = jwtDecode(token);
+                    setUser(decoded);
+                    console.log('AuthContext: Login successful for:', decoded.username, 'Token stored.');
+                    return true;
+                } else {
+                    console.error('AuthContext: Login successful but no token received.');
+                    return false;
+                }
             } else {
                 const errorData = await response.json();
                 console.error('AuthContext: Login failed:', errorData.error);
@@ -114,7 +143,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, email, password }),
-                credentials: 'include',
             });
 
             if (response.ok) {
@@ -137,21 +165,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = async () => {
         try {
             setLoading(true);
-            console.log('AuthContext: Attempting logout.');
-            const response = await fetch(`${API_BASE_URL}/logout`, {
+            console.log('AuthContext: Attempting logout (client-side JWT removal).');
+            // For JWT, logout is primarily removing the token from client storage
+            localStorage.removeItem('access_token');
+            setUser(null);
+            console.log('AuthContext: Logout successful.');
+            // Optionally, you can still hit a backend logout endpoint if it performs server-side cleanup
+            await fetch(`${API_BASE_URL}/logout`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
+                headers: getAuthHeaders(), // Send token just in case backend expects it for logging
             });
-
-            if (response.ok) {
-                setUser(null);
-                console.log('AuthContext: Logout successful.');
-            } else {
-                console.error('AuthContext: Logout failed.');
-            }
         } catch (error) {
             console.error('AuthContext: Error during logout:', error);
         } finally {
@@ -186,8 +209,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
 
     const handleLoginSuccess = async () => {
         console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
-        // AWAIT the parent's async callback to ensure explanation is generated
-        await onLoginSuccess(initialQuestion);
+        await onLoginSuccess(initialQuestion); // AWAIT the parent's async callback
         onClose(); // Close modal after the parent's async callback completes
     };
 
@@ -430,7 +452,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
 
 // --- TinyTutorAppContent Component ---
 const TinyTutorAppContent: React.FC = () => {
-    const { user, logout } = useAuth();
+    const { user, logout } = useAuth(); // useAuth now provides JWT-based user state
     const [inputQuestion, setInputQuestion] = useState('');
     const [explanation, setExplanation] = useState('');
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
@@ -442,6 +464,21 @@ const TinyTutorAppContent: React.FC = () => {
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
+    // Helper to get authorization headers with JWT (duplicated in AuthProvider for clarity in App.tsx)
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+        }
+        return {
+            'Content-Type': 'application/json',
+        };
+    };
+
+
     const generateExplanation = async (questionToGenerate: string) => {
         setAiError('');
         setIsLoadingExplanation(true);
@@ -452,11 +489,8 @@ const TinyTutorAppContent: React.FC = () => {
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: getAuthHeaders(), // Use JWT in headers
                 body: JSON.stringify({ question: questionToGenerate }), // Use the passed question
-                credentials: 'include',
             });
 
             if (response.ok) {
@@ -582,7 +616,6 @@ const TinyTutorAppContent: React.FC = () => {
                         // Explicitly set input and generate after successful login from modal
                         if (question.trim() !== '') {
                             setInputQuestion(question); // Update the input field
-                            // Removed the setTimeout here, as it was not the root cause and we need more direct control
                             await generateExplanation(question); // AWAIT the explanation generation
                         }
                         // Now that explanation is generated, the modal will be closed by AuthModal's handleLoginSuccess

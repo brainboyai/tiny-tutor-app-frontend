@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext, useRef } from 'react'; // Added useRef
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 
 // --- AuthContext Definition ---
 interface AuthContextType {
@@ -483,22 +483,23 @@ const TinyTutorAppContent: React.FC = () => {
         generateExplanation(inputQuestion);
     };
 
-    // Effect to auto-generate explanation after successful login from modal
+    // This useEffect will now only run once on component mount or when user changes
+    // to ensure the inputQuestion state is correctly set from the ref
+    // and then trigger the explanation.
     useEffect(() => {
-        // This effect runs when 'user' state changes (e.g., after login)
-        // and if there was a question typed before the modal appeared.
-        if (user && questionBeforeModalRef.current.trim() !== '' && !isLoadingExplanation && !explanation) {
-            console.log('User logged in with existing question from modal. Auto-generating explanation...');
-            // Use the question stored in the ref
-            generateExplanation(questionBeforeModalRef.current);
-            // Clear the ref after generation to prevent re-triggering
-            questionBeforeModalRef.current = '';
+        // Only trigger if user just logged in and there was a question from before modal
+        if (user && questionBeforeModalRef.current.trim() !== '' && !isLoadingExplanation) {
+            const questionToProcess = questionBeforeModalRef.current;
+            setInputQuestion(questionToProcess); // Set the input field to the stored question
+            questionBeforeModalRef.current = ''; // Clear the ref immediately
+            generateExplanation(questionToProcess); // Generate explanation
         }
-    }, [user, isLoadingExplanation, explanation]); // Removed inputQuestion from dependencies
+    }, [user]); // Only depend on user, so it only triggers on login/logout
 
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12 px-8 py-8 md:px-12 md:py-12 lg:px-16 lg:py-16 my-8"> {/* Adjusted width classes for better responsiveness */}
+            {/* Main content container: Removed w-full, added max-w-screen-lg for better balance */}
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-screen-lg lg:max-w-screen-xl my-8"> {/* Adjusted width classes */}
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -518,7 +519,12 @@ const TinyTutorAppContent: React.FC = () => {
                         className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 text-lg"
                         placeholder="e.g., Photosynthesis, Quantum Computing, Democracy"
                         value={inputQuestion}
-                        onChange={(e) => setInputQuestion(e.target.value)}
+                        onChange={(e) => {
+                            setInputQuestion(e.target.value);
+                            // Clear explanation and error if user starts typing a new question
+                            setExplanation('');
+                            setAiError('');
+                        }}
                         disabled={isLoadingExplanation}
                     />
                     <button
@@ -559,7 +565,13 @@ const TinyTutorAppContent: React.FC = () => {
 
                 {user && (
                     <button
-                        onClick={logout}
+                        onClick={() => {
+                            logout();
+                            // Clear input and explanation on logout
+                            setInputQuestion('');
+                            setExplanation('');
+                            setAiError('');
+                        }}
                         className="mt-10 px-6 py-3 bg-red-500 text-white rounded-lg font-bold text-lg hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg"
                     >
                         Logout
@@ -572,13 +584,10 @@ const TinyTutorAppContent: React.FC = () => {
                     onClose={() => setShowAuthModal(false)}
                     onLoginSuccess={(question) => {
                         setShowAuthModal(false);
-                        // After successful login, if there's a question, generate explanation
-                        if (question.trim() !== '') {
-                            setInputQuestion(question); // Set the input question back
-                            generateExplanation(question); // Generate explanation for that question
-                        }
+                        // The useEffect will now handle the auto-generation based on user change
+                        // and the questionBeforeModalRef.current being set.
                     }}
-                    initialQuestion={inputQuestion} // Pass the current inputQuestion to the modal
+                    initialQuestion={questionBeforeModalRef.current} // Pass the stored question
                 />
             )}
         </div>

@@ -490,7 +490,19 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 
     return (
         <div className="flex flex-col items-center w-full">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl">
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl relative"> {/* Added 'relative' here */}
+                {user && ( // Moved Logout button here, and added styling
+                    <button
+                        onClick={() => {
+                            logout();
+                            setInputQuestion('');
+                            setExplanation('');
+                        }}
+                        className="absolute top-4 right-4 p-2 bg-red-100 text-red-600 rounded-full text-sm font-semibold hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-300 transition duration-300"
+                    >
+                        Logout
+                    </button>
+                )}
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -572,19 +584,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         </div>
                     </div>
                 )}
-
-                {user && (
-                    <button
-                        onClick={() => {
-                            logout();
-                            setInputQuestion('');
-                            setExplanation('');
-                        }}
-                        className="mt-10 px-6 py-3 bg-red-500 text-white rounded-lg font-bold text-lg hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg"
-                    >
-                        Logout
-                    </button>
-                )}
+                {/* The old position of the logout button is now empty, removed */}
             </div>
         </div>
     );
@@ -593,21 +593,18 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 
 // --- Main App Component ---
 const App: React.FC = () => {
-    const { loading } = useAuth(); // Only destructure 'loading' here for App's direct use
+    const { loading } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
     const [explanation, setExplanation] = useState('');
-    const [isLoadingExplanation, setIsLoadingExplanation] = useState(false); // State for AI generation loading
-    const [aiError, setAiError] = useState(''); // State for AI explanation errors
-    const [showAuthModal, setShowAuthModal] = useState(false); // State for showing auth modal
-    // NEW: State to control which form is shown in the modal
+    const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+    const [aiError, setAiError] = useState('');
+    const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
-    // Use a ref to store the question when the modal is opened
-    const questionBeforeModalRef = useRef(''); // Still needed here in App for storing question before modal
+    const questionBeforeModalRef = useRef('');
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    // Helper to get authorization headers with JWT
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
         const headers: Record<string, string> = {
@@ -621,7 +618,7 @@ const App: React.FC = () => {
 
     const generateExplanation = async (questionToGenerate: string) => {
         setAiError('');
-        setIsLoadingExplanation(true); // Set loading for AI generation
+        setIsLoadingExplanation(true);
         setExplanation('');
 
         console.log('generateExplanation called with:', questionToGenerate);
@@ -646,23 +643,21 @@ const App: React.FC = () => {
             setAiError('Network error or unexpected response from AI service.');
             console.error('Error fetching AI explanation:', error);
         } finally {
-            setIsLoadingExplanation(false); // Reset loading for AI generation
+            setIsLoadingExplanation(false);
         }
     };
 
-    // NEW: Handlers to open the modal with specific modes
     const handleShowLoginModal = (question: string) => {
-        questionBeforeModalRef.current = question; // Keep this line as the ref is used in App's onLoginSuccess
+        questionBeforeModalRef.current = question;
         setAuthModalMode('login');
         setShowAuthModal(true);
     };
 
     const handleShowSignupModal = (question: string) => {
-        questionBeforeModalRef.current = question; // Keep this line as the ref is used in App's onLoginSuccess
+        questionBeforeModalRef.current = question;
         setAuthModalMode('signup');
         setShowAuthModal(true);
     };
-
 
     console.log('App: Rendering. Loading:', loading);
 
@@ -677,8 +672,8 @@ const App: React.FC = () => {
 
     console.log('App: Loading complete, showing TinyTutorAppContent.');
     return (
-        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 font-inter text-gray-900 overflow-x-hidden p-4"> {/* Added p-4 here */}
-            <div className="w-full max-w-3xl mx-auto my-8"> {/* This div now acts as the main content wrapper */}
+        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 font-inter text-gray-900 overflow-x-hidden p-4">
+            <div className="w-full max-w-3xl mx-auto my-8">
                 <TinyTutorAppContent
                     inputQuestion={inputQuestion}
                     setInputQuestion={setInputQuestion}
@@ -687,8 +682,8 @@ const App: React.FC = () => {
                     setShowLoginModal={handleShowLoginModal}
                     setShowSignupModal={handleShowSignupModal}
                     generateExplanation={generateExplanation}
-                    isLoadingExplanation={isLoadingExplanation} // Pass the state value as prop
-                    aiError={aiError} // Pass the state value as prop
+                    isLoadingExplanation={isLoadingExplanation}
+                    aiError={aiError}
                 />
             </div>
 
@@ -700,18 +695,15 @@ const App: React.FC = () => {
                     }}
                     onLoginSuccess={async (question) => {
                         console.log('App: onLoginSuccess handler called with question:', question);
-                        // Immediately close the modal as soon as login is successful
                         setShowAuthModal(false);
 
-                        // Use questionBeforeModalRef.current here, not the 'question' parameter from onLoginSuccess
-                        // The 'question' parameter was a placeholder to signal the ref should be used
                         if (questionBeforeModalRef.current.trim() !== '') {
                             setInputQuestion(questionBeforeModalRef.current);
                             await generateExplanation(questionBeforeModalRef.current);
-                            questionBeforeModalRef.current = ''; // Clear the ref after use
+                            questionBeforeModalRef.current = '';
                         }
                     }}
-                    initialQuestion={questionBeforeModalRef.current} // Pass the ref's current value
+                    initialQuestion={questionBeforeModalRef.current}
                     initialMode={authModalMode}
                 />
             )}

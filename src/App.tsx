@@ -640,7 +640,7 @@ const App: React.FC = () => {
 
     console.log('App: Loading complete, showing TinyTutorAppContent.');
     return (
-        <>
+        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900 overflow-x-hidden"> {/* Added overflow-x-hidden */}
             <TinyTutorAppContent
                 inputQuestion={inputQuestion}
                 setInputQuestion={setInputQuestion}
@@ -672,7 +672,7 @@ const App: React.FC = () => {
                     initialQuestion={inputQuestion}
                 />
             )}
-        </>
+        </div>
     );
 };
 

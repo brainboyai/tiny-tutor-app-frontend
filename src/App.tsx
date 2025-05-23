@@ -207,8 +207,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
 
     const handleLoginSuccess = async () => {
         console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
-        await onLoginSuccess(initialQuestion); // AWAIT the parent's async callback
-        onClose(); // Close modal after the parent's async callback completes
+        // AWAIT the parent's async callback which now also handles closing the modal
+        await onLoginSuccess(initialQuestion);
+        // REMOVED: onClose(); // This is now handled by the parent (App component)
     };
 
     return (
@@ -511,7 +512,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         onChange={(e) => {
                             setInputQuestion(e.target.value);
                             setExplanation(''); // Clear explanation on new input
-                            // aiError is managed by generateExplanation in App, no need to clear here
                         }}
                         disabled={isLoadingExplanation} // Use isLoadingExplanation from props
                     />
@@ -557,7 +557,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             logout(); // Use logout from useAuth()
                             setInputQuestion('');
                             setExplanation('');
-                            // aiError is managed by generateExplanation in App, no need to clear here
                         }}
                         className="mt-10 px-6 py-3 bg-red-500 text-white rounded-lg font-bold text-lg hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg"
                     >
@@ -572,7 +571,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 
 // --- Main App Component ---
 const App: React.FC = () => {
-    const { loading } = useAuth(); // Only destructure 'loading' here, as 'user' and 'logout' are used in TinyTutorAppContent directly
+    const { loading } = useAuth(); // Only destructure 'loading' here for App's direct use
     const [inputQuestion, setInputQuestion] = useState('');
     const [explanation, setExplanation] = useState('');
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false); // State for AI generation loading
@@ -584,7 +583,7 @@ const App: React.FC = () => {
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    // Helper to get authorization headers with JWT (duplicated in AuthProvider for clarity in App.tsx)
+    // Helper to get authorization headers with JWT
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
         const headers: Record<string, string> = {
@@ -666,7 +665,7 @@ const App: React.FC = () => {
                             setInputQuestion(question);
                             await generateExplanation(question);
                         }
-                        // AuthModal's handleLoginSuccess will call onClose() after this resolves
+                        setShowAuthModal(false); // <--- Explicitly close modal here after generation
                     }}
                     initialQuestion={inputQuestion}
                 />

@@ -271,7 +271,10 @@ interface TinyTutorAppContentProps {
     isLoadingExplanation: boolean;
     aiError: string | null;
     loggedIn: boolean;
-    currentUser: User | null; // Added currentUser prop
+    currentUser: User | null; // This prop is correctly passed and used
+    // New props for handling modal mode from inside TinyTutorAppContent
+    setShowLoginModal: (question: string) => void;
+    setShowSignupModal: (question: string) => void;
 }
 
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
@@ -288,13 +291,16 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     aiError,
     loggedIn,
     currentUser, // Destructure currentUser
+    setShowLoginModal, // Destructure new prop
+    setShowSignupModal, // Destructure new prop
 }) => {
-    const { logout } = useAuth();
+    // logout is now handled in App.tsx directly for the top-right button
+    // const { logout } = useAuth(); // Removed, no longer needed here
 
     const handleGenerateExplanationClick = () => {
         if (!loggedIn) {
-            questionBeforeModalRef.current = inputQuestion;
-            setShowAuthModal(true);
+            questionBeforeModalRef.current = inputQuestion; // Store question before showing modal
+            setShowAuthModal(true); // Open modal (defaulting to login via App.tsx)
             return;
         }
 
@@ -317,6 +323,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 
     const currentExplanationContent = generatedContents[activeMode];
     const showExplanationContent = currentExplanationContent || isLoadingExplanation || aiError;
+
 
     return (
         <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl relative">
@@ -374,16 +381,13 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 {aiError && !loggedIn && (
                     <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
                 )}
-                {!loggedIn && (
+                {!loggedIn && ( // Only show signup/login links if not logged in
                     <p className="text-gray-600 text-center text-sm mt-4">
                         <a
                             href="#"
                             onClick={(e) => {
                                 e.preventDefault();
-                                questionBeforeModalRef.current = inputQuestion;
-                                setShowAuthModal(true);
-                                // Set initial mode for AuthModal to signup
-                                // This requires passing setAuthModalMode down or handling it in App
+                                setShowSignupModal(inputQuestion); // Call prop to open signup modal
                             }}
                             className="font-semibold text-blue-600 hover:underline"
                         >
@@ -394,9 +398,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             href="#"
                             onClick={(e) => {
                                 e.preventDefault();
-                                questionBeforeModalRef.current = inputQuestion;
-                                setShowAuthModal(true);
-                                // Set initial mode for AuthModal to login
+                                setShowLoginModal(inputQuestion); // Call prop to open login modal
                             }}
                             className="font-semibold text-blue-600 hover:underline"
                         >
@@ -432,7 +434,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             )}
 
             {/* Explanation/Content Display Area - only show if there's content, loading, or an error */}
-            {showExplanationContent && (
+            {(showExplanationContent || (inputQuestion.trim() === '' && !loggedIn)) && ( // Show if content/loading/error OR if not logged in and no input
                 <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner max-w-2xl mx-auto">
                     <h3 className="text-2xl font-bold text-blue-800 mb-4">
                         {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}:
@@ -483,7 +485,6 @@ const App: React.FC = () => {
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    // Moved getAuthHeaders here as it's used by generateExplanation
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
         const headers: Record<string, string> = {
@@ -545,7 +546,7 @@ const App: React.FC = () => {
         setShowAuthModal(true);
     };
 
-    const handleShowSignupModal = (question: string) => { // This function is now used
+    const handleShowSignupModal = (question: string) => {
         questionBeforeModalRef.current = question;
         setAuthModalMode('signup');
         setShowAuthModal(true);
@@ -606,6 +607,8 @@ const App: React.FC = () => {
                     aiError={aiError}
                     loggedIn={user !== null}
                     currentUser={user} // Pass the user object as currentUser
+                    setShowLoginModal={handleShowLoginModal} // Pass this handler
+                    setShowSignupModal={handleShowSignupModal} // Pass this handler
                 />
             </div>
 
@@ -614,7 +617,7 @@ const App: React.FC = () => {
                     onClose={() => {
                         setShowAuthModal(false);
                     }}
-                    onLoginSuccess={async (questionAfterLogin: string) => { // Explicitly type questionAfterLogin
+                    onLoginSuccess={async (questionAfterLogin: string) => {
                         setShowAuthModal(false);
                         if (questionAfterLogin.trim() !== '') {
                             setInputQuestion(questionAfterLogin);
@@ -623,7 +626,7 @@ const App: React.FC = () => {
                         }
                     }}
                     initialQuestion={questionBeforeModalRef.current}
-                    initialMode={authModalMode} // Pass initialMode to AuthModal
+                    initialMode={authModalMode}
                 />
             )}
         </div>

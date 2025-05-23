@@ -40,6 +40,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     headers: {
                         'Content-Type': 'application/json',
                     },
+                    // Crucial for session cookies to be sent and received
                     credentials: 'include',
                 });
 
@@ -281,7 +282,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, 
                         {isSubmitting ? 'Logging in...' : 'Login'}
                     </button>
                 </form>
-                {onToggleSignup && ( // Only show if in modal context
+                {onToggleSignup && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Don't have an account?{' '}
                         <a href="#" onClick={onToggleSignup} className="text-blue-600 hover:underline font-semibold">
@@ -289,7 +290,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, 
                         </a>
                     </p>
                 )}
-                {!inModal && ( // Only show if not in modal context
+                {!inModal && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Don't have an account?{' '}
                         <a href="#" onClick={() => window.location.hash = '#signup'} className="text-blue-600 hover:underline font-semibold">
@@ -331,7 +332,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
             setUsername('');
             setEmail('');
             setPassword('');
-            onSignupSuccess?.(); // Call success callback if provided
+            onSignupSuccess?.();
         } else {
             setError('Registration failed. Username or email might already be taken, or inputs are invalid.');
         }
@@ -402,7 +403,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
                         {isSubmitting ? 'Registering...' : 'Sign Up'}
                     </button>
                 </form>
-                {onToggleLogin && ( // Only show if in modal context
+                {onToggleLogin && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Already have an account?{' '}
                         <a href="#" onClick={onToggleLogin} className="text-green-600 hover:underline font-semibold">
@@ -410,7 +411,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
                         </a>
                     </p>
                 )}
-                {!inModal && ( // Only show if not in modal context
+                {!inModal && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Already have an account?{' '}
                         <a href="#" onClick={() => window.location.hash = '#login'} className="text-green-600 hover:underline font-semibold">
@@ -431,20 +432,12 @@ const TinyTutorAppContent: React.FC = () => {
     const [explanation, setExplanation] = useState('');
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
     const [aiError, setAiError] = useState('');
-    const [showAuthModal, setShowAuthModal] = useState(false); // State to control auth modal visibility
+    const [showAuthModal, setShowAuthModal] = useState(false);
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    const handleGenerateExplanation = async () => {
-        setAiError(''); // Clear any previous errors
-
-        if (!user) {
-            // If not logged in, show the signup/login modal
-            setShowAuthModal(true);
-            return; // Stop execution here
-        }
-
-        // If logged in, proceed with AI generation
+    const generateExplanation = async () => { // Renamed for clarity
+        setAiError('');
         setIsLoadingExplanation(true);
         setExplanation('');
 
@@ -474,9 +467,27 @@ const TinyTutorAppContent: React.FC = () => {
         }
     };
 
+    const handleGenerateExplanationClick = () => {
+        if (!user) {
+            // If not logged in, show the signup/login modal
+            setShowAuthModal(true);
+            return; // Stop execution here
+        }
+        // If logged in, proceed with AI generation
+        generateExplanation();
+    };
+
+    // Effect to auto-generate explanation after successful login (if question exists)
+    useEffect(() => {
+        if (user && inputQuestion.trim() !== '' && !isLoadingExplanation && !explanation) {
+            console.log('User logged in with existing question. Auto-generating explanation...');
+            generateExplanation();
+        }
+    }, [user, inputQuestion, isLoadingExplanation, explanation]); // Dependencies include user, inputQuestion, and explanation state
+
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-full lg:max-w-7xl transform transition-all duration-300 hover:scale-105 my-8"> {/* Changed max-w-5xl to max-w-full/7xl, added my-8 */}
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full px-8 py-8 md:px-12 md:py-12 lg:px-16 lg:py-16 my-8"> {/* Removed max-w- class, added responsive padding */}
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -490,7 +501,7 @@ const TinyTutorAppContent: React.FC = () => {
                     <label htmlFor="question-input" className="block text-gray-700 text-xl font-bold mb-3">
                         Enter a word or concept:
                     </label>
-                    <input // Changed from textarea to input
+                    <input
                         type="text"
                         id="question-input"
                         className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 text-lg"
@@ -500,7 +511,7 @@ const TinyTutorAppContent: React.FC = () => {
                         disabled={isLoadingExplanation}
                     />
                     <button
-                        onClick={handleGenerateExplanation}
+                        onClick={handleGenerateExplanationClick} // Use the new click handler
                         className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
                         disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                     >
@@ -519,7 +530,7 @@ const TinyTutorAppContent: React.FC = () => {
                     {aiError && (
                         <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
                     )}
-                    {!user && !isLoadingExplanation && ( // Message for unauthenticated users
+                    {!user && !isLoadingExplanation && (
                         <p className="text-gray-600 text-center text-sm mt-4">
                             <span className="font-semibold text-blue-600">Sign up or Login</span> to generate explanations.
                         </p>
@@ -535,7 +546,7 @@ const TinyTutorAppContent: React.FC = () => {
                     </div>
                 )}
 
-                {user && ( // Only show logout if user is logged in
+                {user && (
                     <button
                         onClick={logout}
                         className="mt-10 px-6 py-3 bg-red-500 text-white rounded-lg font-bold text-lg hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg"
@@ -548,7 +559,13 @@ const TinyTutorAppContent: React.FC = () => {
             {showAuthModal && (
                 <AuthModal
                     onClose={() => setShowAuthModal(false)}
-                    onLoginSuccess={() => setShowAuthModal(false)} // Close modal on successful login
+                    onLoginSuccess={() => {
+                        setShowAuthModal(false);
+                        // After successful login, if there's a question, generate explanation
+                        if (inputQuestion.trim() !== '') {
+                            generateExplanation();
+                        }
+                    }}
                 />
             )}
         </div>
@@ -556,9 +573,9 @@ const TinyTutorAppContent: React.FC = () => {
 };
 
 
-// --- Main App Component (Modified to always show TinyTutorAppContent) ---
+// --- Main App Component (No changes needed here from previous step) ---
 const App: React.FC = () => {
-    const { loading } = useAuth(); // No longer checking 'user' directly here for rendering main content
+    const { loading } = useAuth();
 
     console.log('App: Rendering. Loading:', loading);
 
@@ -571,7 +588,6 @@ const App: React.FC = () => {
         );
     }
 
-    // Always render TinyTutorAppContent once loading is complete
     console.log('App: Loading complete, showing TinyTutorAppContent.');
     return <TinyTutorAppContent />;
 };

@@ -177,17 +177,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 // --- AuthModal Component (New) ---
 interface AuthModalProps {
     onClose: () => void;
-    // onLoginSuccess now accepts the current inputQuestion
     onLoginSuccess: (question: string) => void;
-    initialQuestion: string; // Pass the question from TinyTutorAppContent
+    initialQuestion: string;
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion }) => {
-    const [showLogin, setShowLogin] = useState(true); // State to toggle between login and signup forms
+    const [showLogin, setShowLogin] = useState(true);
 
     const handleLoginSuccess = () => {
-        onLoginSuccess(initialQuestion); // Pass the question back
-        onClose(); // Close modal on successful login
+        onLoginSuccess(initialQuestion);
+        onClose();
     };
 
     return (
@@ -231,7 +230,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, 
         setIsSubmitting(true);
         const success = await login(username, password);
         if (success) {
-            onLoginSuccess?.(); // Call success callback if provided
+            onLoginSuccess?.();
         } else {
             setError('Invalid username or password. Please try again.');
         }
@@ -416,8 +415,8 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
                 {!inModal && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Already have an account?{' '}
-                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-green-600 hover:underline font-semibold">
-                            Login.
+                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-blue-600 hover:underline font-semibold">
+                            Sign Up.
                         </a>
                     </p>
                 )}
@@ -483,23 +482,21 @@ const TinyTutorAppContent: React.FC = () => {
         generateExplanation(inputQuestion);
     };
 
-    // This useEffect will now only run once on component mount or when user changes
-    // to ensure the inputQuestion state is correctly set from the ref
-    // and then trigger the explanation.
+    // Effect to auto-generate explanation after successful login from modal
     useEffect(() => {
-        // Only trigger if user just logged in and there was a question from before modal
+        // Only trigger if user just logged in and there was a question typed before the modal appeared.
         if (user && questionBeforeModalRef.current.trim() !== '' && !isLoadingExplanation) {
             const questionToProcess = questionBeforeModalRef.current;
             setInputQuestion(questionToProcess); // Set the input field to the stored question
             questionBeforeModalRef.current = ''; // Clear the ref immediately
             generateExplanation(questionToProcess); // Generate explanation
         }
-    }, [user]); // Only depend on user, so it only triggers on login/logout
+    }, [user, isLoadingExplanation]); // Removed explanation from dependencies, added isLoadingExplanation
 
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
-            {/* Main content container: Removed w-full, added max-w-screen-lg for better balance */}
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-screen-lg lg:max-w-screen-xl my-8"> {/* Adjusted width classes */}
+            {/* Main content container: Adjusted width for better balance */}
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-screen-xl mx-auto my-8"> {/* Changed to max-w-screen-xl and added mx-auto for centering */}
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -567,7 +564,6 @@ const TinyTutorAppContent: React.FC = () => {
                     <button
                         onClick={() => {
                             logout();
-                            // Clear input and explanation on logout
                             setInputQuestion('');
                             setExplanation('');
                             setAiError('');
@@ -584,10 +580,13 @@ const TinyTutorAppContent: React.FC = () => {
                     onClose={() => setShowAuthModal(false)}
                     onLoginSuccess={(question) => {
                         setShowAuthModal(false);
-                        // The useEffect will now handle the auto-generation based on user change
-                        // and the questionBeforeModalRef.current being set.
+                        // Explicitly set input and generate after successful login from modal
+                        if (question.trim() !== '') {
+                            setInputQuestion(question);
+                            generateExplanation(question);
+                        }
                     }}
-                    initialQuestion={questionBeforeModalRef.current} // Pass the stored question
+                    initialQuestion={inputQuestion}
                 />
             )}
         </div>

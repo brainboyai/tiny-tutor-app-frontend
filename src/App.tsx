@@ -174,7 +174,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 };
 
-// --- AuthModal Component (New) ---
+// --- AuthModal Component ---
 interface AuthModalProps {
     onClose: () => void;
     onLoginSuccess: (question: string) => void;
@@ -185,9 +185,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     const [showLogin, setShowLogin] = useState(true);
 
     const handleLoginSuccess = () => {
-        console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion); // Debugging log
+        console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
         onLoginSuccess(initialQuestion); // Pass the question back to parent
-        onClose(); // Close modal
+        // onClose() is now called by the parent after explanation generation
     };
 
     return (
@@ -210,7 +210,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
 };
 
 
-// --- LoginForm Component (Modified for Modal) ---
+// --- LoginForm Component ---
 interface LoginFormProps {
     inModal?: boolean;
     onLoginSuccess?: () => void;
@@ -231,7 +231,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, 
         setIsSubmitting(true);
         const success = await login(username, password);
         if (success) {
-            onLoginSuccess?.(); // Call success callback if provided
+            onLoginSuccess?.();
         } else {
             setError('Invalid username or password. Please try again.');
         }
@@ -305,7 +305,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, 
     );
 };
 
-// --- SignupForm Component (Modified for Modal) ---
+// --- SignupForm Component ---
 interface SignupFormProps {
     inModal?: boolean;
     onSignupSuccess?: () => void;
@@ -416,7 +416,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
                 {!inModal && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Already have an account?{' '}
-                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-green-600 hover:underline font-semibold">
+                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-blue-600 hover:underline font-semibold">
                             Login.
                         </a>
                     </p>
@@ -427,7 +427,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
 };
 
 
-// --- TinyTutorAppContent Component (Modified for Freemium and Fullscreen) ---
+// --- TinyTutorAppContent Component ---
 const TinyTutorAppContent: React.FC = () => {
     const { user, logout } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
@@ -441,7 +441,7 @@ const TinyTutorAppContent: React.FC = () => {
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    const generateExplanation = async (questionToGenerate: string) => { // Accept question as argument
+    const generateExplanation = async (questionToGenerate: string) => {
         setAiError('');
         setIsLoadingExplanation(true);
         setExplanation(''); // Clear previous explanation
@@ -489,13 +489,10 @@ const TinyTutorAppContent: React.FC = () => {
         generateExplanation(inputQuestion);
     };
 
-    // Removed the problematic useEffect that was causing auto-generation issues.
-    // The auto-generation after login will now be handled directly by the onLoginSuccess callback.
-
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
             {/* Main content container: Adjusted width for better balance and centering */}
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl mx-auto my-8"> {/* max-w-3xl for consistent width, mx-auto for centering */}
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl mx-auto my-8">
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -517,7 +514,6 @@ const TinyTutorAppContent: React.FC = () => {
                         value={inputQuestion}
                         onChange={(e) => {
                             setInputQuestion(e.target.value);
-                            // Clear explanation and error if user starts typing a new question
                             setExplanation('');
                             setAiError('');
                         }}
@@ -577,19 +573,20 @@ const TinyTutorAppContent: React.FC = () => {
             {showAuthModal && (
                 <AuthModal
                     onClose={() => {
-                        console.log('AuthModal: onClose called.'); // Debugging log
+                        console.log('AuthModal: onClose called.');
                         setShowAuthModal(false);
                     }}
-                    onLoginSuccess={(question) => {
-                        console.log('AuthModal: onLoginSuccess called with question:', question); // Debugging log
-                        setShowAuthModal(false); // Close the modal
+                    onLoginSuccess={async (question) => { // Made this callback async
+                        console.log('AuthModal: onLoginSuccess called with question:', question);
+                        setShowAuthModal(false); // Close the modal immediately
+
                         // Explicitly set input and generate after successful login from modal
                         if (question.trim() !== '') {
                             setInputQuestion(question); // Update the input field
-                            generateExplanation(question); // Trigger the explanation
+                            await generateExplanation(question); // AWAIT the explanation generation
                         }
                     }}
-                    initialQuestion={inputQuestion} // Pass the current inputQuestion to the modal
+                    initialQuestion={inputQuestion}
                 />
             )}
         </div>
@@ -597,7 +594,7 @@ const TinyTutorAppContent: React.FC = () => {
 };
 
 
-// --- Main App Component (No changes needed here from previous step) ---
+// --- Main App Component ---
 const App: React.FC = () => {
     const { loading } = useAuth();
 

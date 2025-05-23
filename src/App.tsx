@@ -41,18 +41,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Base URL for your backend API
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    // Helper to get authorization headers with JWT
-    const getAuthHeaders = () => {
-        const token = localStorage.getItem('access_token');
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        return headers;
-    };
-
     // --- Authentication Functions ---
     const login = async (username: string, password: string): Promise<boolean> => {
         try {
@@ -108,8 +96,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const logout = async (): Promise<void> => {
         try {
-            // Optional: Call backend logout if server-side session invalidation is needed
-            // await fetch(`${API_BASE_URL}/logout`, { method: 'POST', headers: getAuthHeaders() });
             localStorage.removeItem('access_token');
             setUser(null);
             console.log('Logged out successfully.');
@@ -169,7 +155,7 @@ interface TinyTutorAppContentProps {
 
 type ContentMode = 'explain' | 'fact' | 'quiz' | 'deep' | 'image';
 
-const TinyTutorAppContent: React.FC<TinyTutorAppContentContentProps> = ({
+const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({ // Corrected typo here
     inputQuestion,
     setInputQuestion,
     explanation,
@@ -286,10 +272,131 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentContentProps> = ({
     );
 };
 
+// --- AuthModal Component ---
+interface AuthModalProps {
+    onClose: () => void;
+    onLoginSuccess: (question: string) => Promise<void>;
+    initialQuestion: string;
+}
+
+const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion }) => {
+    const { login, signup, loading: authLoading } = useAuth(); // Access login/signup from useAuth
+    const [isLoginMode, setIsLoginMode] = useState(true);
+    const [username, setUsername] = useState('');
+    const [email, setEmail] = useState(''); // Only for signup
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false); // For modal's internal loading
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        setIsLoading(true);
+
+        let success = false;
+        if (isLoginMode) {
+            success = await login(username, password);
+        } else {
+            success = await signup(username, email, password);
+        }
+
+        if (success) {
+            if (isLoginMode) {
+                await onLoginSuccess(initialQuestion);
+            } else {
+                // After successful signup, maybe auto-login or prompt user to login
+                setError('Signup successful! Please log in with your new credentials.');
+                setIsLoginMode(true); // Switch to login mode
+            }
+        } else {
+            setError(isLoginMode ? 'Login failed. Invalid username or password.' : 'Signup failed. Username or email might already exist, or invalid data.');
+        }
+        setIsLoading(false);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md mx-4">
+                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+                    {isLoginMode ? 'Login' : 'Sign Up'}
+                </h2>
+                <form onSubmit={handleSubmit}>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">
+                            Username
+                        </label>
+                        <input
+                            type="text"
+                            id="username"
+                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                        />
+                    </div>
+                    {!isLoginMode && (
+                        <div className="mb-4">
+                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">
+                                Email
+                            </label>
+                            <input
+                                type="email"
+                                id="email"
+                                className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required={!isLoginMode} // Required only for signup
+                            />
+                        </div>
+                    )}
+                    <div className="mb-6">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">
+                            Password
+                        </label>
+                        <input
+                            type="password"
+                            id="password"
+                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                    </div>
+                    {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
+                    <div className="flex items-center justify-between">
+                        <button
+                            type="submit"
+                            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                            disabled={isLoading || authLoading}
+                        >
+                            {isLoading ? 'Loading...' : (isLoginMode ? 'Login' : 'Sign Up')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIsLoginMode(!isLoginMode)}
+                            className="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800"
+                        >
+                            {isLoginMode ? 'Need an account? Sign Up' : 'Already have an account? Login'}
+                        </button>
+                    </div>
+                </form>
+                <div className="text-center mt-4">
+                    <button
+                        onClick={onClose}
+                        className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 // --- Main App Component ---
 const App: React.FC = () => {
-    const { user, loading: authLoading, login, signup, logout } = useAuth();
+    const { user, loading: authLoading, logout } = useAuth(); // Corrected destructuring
     const [inputQuestion, setInputQuestion] = useState('');
     const [explanation, setExplanation] = useState('');
     const [showAuthModal, setShowAuthModal] = useState(false);
@@ -395,7 +502,7 @@ const App: React.FC = () => {
                         console.log('AuthModal: onClose called.');
                         setShowAuthModal(false);
                     }}
-                    onLoginSuccess={async (question) => {
+                    onLoginSuccess={async (question: string) => { // Corrected type for 'question'
                         console.log('App: onLoginSuccess handler called with question:', question);
                         // Immediately close the modal as soon as login is successful
                         setShowAuthModal(false);

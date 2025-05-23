@@ -661,11 +661,14 @@ const App: React.FC = () => {
                     }}
                     onLoginSuccess={async (question) => {
                         console.log('App: onLoginSuccess handler called with question:', question);
+                        // Immediately close the modal as soon as login is successful
+                        setShowAuthModal(false); // <--- MOVED THIS HERE
+
                         if (question.trim() !== '') {
                             setInputQuestion(question);
                             await generateExplanation(question);
                         }
-                        setShowAuthModal(false); // <--- Explicitly close modal here after generation
+                        // AuthModal's handleLoginSuccess will call onClose() after this resolves
                     }}
                     initialQuestion={inputQuestion}
                 />

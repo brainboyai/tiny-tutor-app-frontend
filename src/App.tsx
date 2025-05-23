@@ -1,11 +1,11 @@
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
-import { jwtDecode } from 'jwt-decode'; // Import jwt-decode library
+import { jwtDecode } from 'jwt-decode';
 
 // --- AuthContext Definition ---
 interface User {
     username: string;
     tier: string;
-    exp?: number; // Expiration timestamp from JWT
+    exp?: number;
 }
 
 interface AuthContextType {
@@ -18,7 +18,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Custom hook to easily use AuthContext
 export const useAuth = () => {
     const context = useContext(AuthContext);
     if (context === undefined) {
@@ -27,29 +26,24 @@ export const useAuth = () => {
     return context;
 };
 
-// AuthProvider component: Handles login, signup, logout, and checks auth status on load.
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true); // Initial loading state for auth check
+    const [loading, setLoading] = useState(true);
 
-    // Base URL for your backend API
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    // Helper to get authorization headers with JWT
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
-        const headers: Record<string, string> = { // Explicitly type as Record<string, string>
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
         };
         if (token) {
-            headers['Authorization'] = `Bearer ${token}`; // Only add if token exists
+            headers['Authorization'] = `Bearer ${token}`;
         }
         return headers;
     };
 
-    // Function to check login status from the backend (now uses JWT)
     useEffect(() => {
-        console.log('AuthContext: useEffect triggered to check login status (JWT).');
         const checkLoginStatus = async () => {
             setLoading(true);
             const token = localStorage.getItem('access_token');
@@ -57,22 +51,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (token) {
                 try {
                     const decoded: User = jwtDecode(token);
-                    // Check if token is expired
                     if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-                        console.log('AuthContext: JWT expired, clearing token.');
                         localStorage.removeItem('access_token');
                         setUser(null);
                     } else {
                         setUser(decoded);
-                        console.log('AuthContext: User restored from JWT:', decoded.username);
-                        // Optionally, hit /status to ensure backend also recognizes the token
-                        // This is good practice, but for JWTs, the token itself is often enough.
-                        // const response = await fetch(`${API_BASE_URL}/status`, { headers: getAuthHeaders() });
-                        // if (!response.ok) {
-                        //     localStorage.removeItem('access_token');
-                        //     setUser(null);
-                        //     console.log('AuthContext: Backend status check failed, token likely invalid.');
-                        // }
                     }
                 } catch (error) {
                     console.error('AuthContext: Error decoding JWT:', error);
@@ -80,46 +63,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setUser(null);
                 }
             } else {
-                console.log('AuthContext: No JWT found in localStorage.');
                 setUser(null);
             }
             setLoading(false);
-            console.log('AuthContext: Loading status check complete. setLoading(false).');
         };
 
         checkLoginStatus();
-    }, []); // Run only once on mount
+    }, []);
 
-    // Function to handle user login
     const login = async (username: string, password: string) => {
         try {
             setLoading(true);
-            console.log('AuthContext: Attempting login for:', username);
             const response = await fetch(`${API_BASE_URL}/login`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
             });
 
             if (response.ok) {
                 const data = await response.json();
-                console.log('AuthContext: Login response data:', data);
                 const token = data.access_token;
                 if (token) {
                     localStorage.setItem('access_token', token);
                     const decoded: User = jwtDecode(token);
                     setUser(decoded);
-                    console.log('AuthContext: Login successful for:', decoded.username, 'Token stored.');
                     return true;
-                } else {
-                    console.error('AuthContext: Login successful but no token received.');
-                    return false;
                 }
+                return false;
             } else {
-                const errorData = await response.json();
-                console.error('AuthContext: Login failed:', errorData.error);
                 return false;
             }
         } catch (error) {
@@ -130,25 +101,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    // Function to handle user signup
     const signup = async (username: string, email: string, password: string) => {
         try {
             setLoading(true);
-            console.log('AuthContext: Attempting signup for:', username);
             const response = await fetch(`${API_BASE_URL}/signup`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, email, password }),
             });
 
             if (response.ok) {
-                console.log('AuthContext: Signup successful.');
                 return true;
             } else {
-                const errorData = await response.json();
-                console.error('AuthContext: Signup failed:', errorData.error);
                 return false;
             }
         } catch (error) {
@@ -159,34 +123,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    // Function to handle user logout
     const logout = async () => {
         try {
             setLoading(true);
-            console.log('AuthContext: Attempting logout (client-side JWT removal).');
-            // For JWT, logout is primarily removing the token from client storage
             localStorage.removeItem('access_token');
             setUser(null);
-            console.log('AuthContext: Logout successful.');
-            // Optionally, you can still hit a backend logout endpoint if it performs server-side cleanup
-            await fetch(`${API_BASE_URL}/logout`, {
-                method: 'POST',
-                headers: getAuthHeaders(), // Send token just in case backend expects it for logging
-            });
+            await fetch(`${API_BASE_URL}/logout`, { method: 'POST', headers: getAuthHeaders() });
         } catch (error) {
             console.error('AuthContext: Error during logout:', error);
         } finally {
             setLoading(false);
         }
     };
-
-    useEffect(() => {
-        console.log('AuthContext: User state changed to:', user);
-    }, [user]);
-
-    useEffect(() => {
-        console.log('AuthContext: Loading state changed to:', loading);
-    }, [loading]);
 
     return (
         <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
@@ -200,19 +148,14 @@ interface AuthModalProps {
     onClose: () => void;
     onLoginSuccess: (question: string) => Promise<void>;
     initialQuestion: string;
-    // NEW: Prop to control which form is initially shown
     initialMode: 'login' | 'signup';
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion, initialMode }) => {
-    // NEW: Initialize showLogin based on initialMode prop
     const [showLogin, setShowLogin] = useState(initialMode === 'login');
 
     const handleLoginSuccess = async () => {
-        console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
-        // AWAIT the parent's async callback which now also handles closing the modal
         await onLoginSuccess(initialQuestion);
-        // REMOVED: onClose(); // This is now handled by the parent (App component)
     };
 
     return (
@@ -234,7 +177,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     );
 };
 
-
 // --- LoginForm Component ---
 interface LoginFormProps {
     inModal?: boolean;
@@ -251,7 +193,6 @@ const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        console.log('LoginForm: Submitting login form.');
         setError('');
         setIsSubmitting(true);
         const success = await login(username, password);
@@ -348,7 +289,6 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        console.log('SignupForm: Submitting signup form.');
         setError('');
         setSuccessMessage('');
         setIsSubmitting(true);
@@ -453,14 +393,19 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
 
 
 // --- TinyTutorAppContent Component ---
+// Define a type for the content modes
+type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
+
 interface TinyTutorAppContentProps {
     inputQuestion: string;
     setInputQuestion: React.Dispatch<React.SetStateAction<string>>;
-    explanation: string;
-    setExplanation: React.Dispatch<React.SetStateAction<string>>;
+    generatedContents: Record<ContentMode, string>; // New prop for all generated content
+    setGeneratedContents: React.Dispatch<React.SetStateAction<Record<ContentMode, string>>>; // New prop
+    activeMode: ContentMode; // New prop for current active mode
+    setActiveMode: React.Dispatch<React.SetStateAction<ContentMode>>; // New prop
     setShowLoginModal: (question: string) => void;
     setShowSignupModal: (question: string) => void;
-    generateExplanation: (question: string) => Promise<void>;
+    generateExplanation: (question: string, mode: ContentMode) => Promise<void>; // Modified prop
     isLoadingExplanation: boolean;
     aiError: string;
 }
@@ -468,8 +413,10 @@ interface TinyTutorAppContentProps {
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     inputQuestion,
     setInputQuestion,
-    explanation,
-    setExplanation,
+    generatedContents,
+    setGeneratedContents,
+    activeMode,
+    setActiveMode,
     setShowLoginModal,
     setShowSignupModal,
     generateExplanation,
@@ -485,18 +432,33 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             return;
         }
         console.log('User logged in. Generating explanation for:', inputQuestion);
-        generateExplanation(inputQuestion);
+        setGeneratedContents(prev => ({ // Clear all content except for image placeholder on new question
+            explain: '',
+            image: 'Image generation feature coming soon! You can imagine an image of...',
+            fact: '',
+            quiz: '',
+            deep: '',
+        }));
+        setActiveMode('explain'); // Ensure 'explain' tab is active on initial generate
+        generateExplanation(inputQuestion, 'explain'); // Explicitly generate 'explain' content
     };
 
     return (
         <div className="flex flex-col items-center w-full">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl relative"> {/* Added 'relative' here */}
-                {user && ( // Moved Logout button here, and added styling
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl relative">
+                {user && (
                     <button
                         onClick={() => {
                             logout();
                             setInputQuestion('');
-                            setExplanation('');
+                            setGeneratedContents({ // Clear all content on logout
+                                explain: '',
+                                image: 'Image generation feature coming soon! You can imagine an image of...',
+                                fact: '',
+                                quiz: '',
+                                deep: '',
+                            });
+                            setActiveMode('explain'); // Reset active mode on logout
                         }}
                         className="absolute top-4 right-4 p-2 bg-red-100 text-red-600 rounded-full text-sm font-semibold hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-300 transition duration-300"
                     >
@@ -524,7 +486,16 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         value={inputQuestion}
                         onChange={(e) => {
                             setInputQuestion(e.target.value);
-                            setExplanation('');
+                            // Clear all generated content when input changes
+                            setGeneratedContents(prev => ({
+                                explain: '',
+                                image: 'Image generation feature coming soon! You can imagine an image of...',
+                                fact: '',
+                                quiz: '',
+                                deep: '',
+                            }));
+                            setExplanation(''); // This is actually removed, handled by generatedContents now
+                            setActiveMode('explain'); // Reset to explain tab on input change
                         }}
                         disabled={isLoadingExplanation}
                     />
@@ -533,7 +504,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
                         disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                     >
-                        {isLoadingExplanation ? (
+                        {isLoadingExplanation && activeMode === 'explain' ? ( // Only show spinner if actively loading 'explain'
                             <>
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -576,15 +547,61 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     )}
                 </div>
 
-                {explanation && (
+                {/* NEW: Toggle Buttons */}
+                {inputQuestion.trim() !== '' && ( // Only show buttons if a question has been entered
+                    <div className="flex justify-center space-x-2 mt-6 mb-4">
+                        {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
+                            <button
+                                key={mode}
+                                onClick={async () => {
+                                    setActiveMode(mode);
+                                    // If content for this mode isn't already generated AND it's not the image placeholder,
+                                    // AND there's a question, trigger generation.
+                                    // The 'image' content is a fixed placeholder, so no API call needed for it.
+                                    if (inputQuestion.trim() !== '' && !generatedContents[mode] && mode !== 'image') {
+                                        await generateExplanation(inputQuestion, mode);
+                                    }
+                                }}
+                                className={`px-4 py-2 rounded-full font-semibold text-sm transition-colors duration-200
+                                            ${activeMode === mode
+                                                ? 'bg-blue-600 text-white shadow-md'
+                                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                            >
+                                {mode.charAt(0).toUpperCase() + mode.slice(1)} {/* Capitalize first letter */}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+
+                {/* Explanation/Content Display Area */}
+                {inputQuestion.trim() !== '' && ( // Only show explanation box if a question has been entered
                     <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner max-w-2xl mx-auto">
-                        <h3 className="text-2xl font-bold text-blue-800 mb-4">Explanation:</h3>
+                        <h3 className="text-2xl font-bold text-blue-800 mb-4">
+                            {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}: {/* Title based on active mode */}
+                        </h3>
                         <div className="prose prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
-                            {explanation}
+                            {isLoadingExplanation && generatedContents[activeMode] === '' && inputQuestion.trim() !== '' ? (
+                                 <div className="flex items-center justify-center">
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Generating {activeMode} content...
+                                </div>
+                            ) : (
+                                generatedContents[activeMode] || aiError || (inputQuestion.trim() === '' ? (
+                                    <p className="text-gray-500">Enter a concept and click "Generate Explanation" to get started.</p>
+                                ) : (
+                                    <p className="text-gray-500">Select a tab above to generate more content.</p>
+                                ))
+                            )}
+                            {/* Display AI error if present for current mode */}
+                            {aiError && activeMode === 'explain' && <p className="text-red-600 text-sm mt-2">{aiError}</p>}
                         </div>
                     </div>
                 )}
-                {/* The old position of the logout button is now empty, removed */}
             </div>
         </div>
     );
@@ -595,7 +612,17 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 const App: React.FC = () => {
     const { loading } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
-    const [explanation, setExplanation] = useState('');
+    // NEW: State to hold all generated contents by type
+    const [generatedContents, setGeneratedContents] = useState<Record<ContentMode, string>>({
+        explain: '',
+        image: 'Image generation feature coming soon! You can imagine an image of...', // Initial placeholder
+        fact: '',
+        quiz: '',
+        deep: '',
+    });
+    // NEW: State to track the currently active content mode (tab)
+    const [activeMode, setActiveMode] = useState<ContentMode>('explain');
+
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
     const [aiError, setAiError] = useState('');
     const [showAuthModal, setShowAuthModal] = useState(false);
@@ -616,34 +643,50 @@ const App: React.FC = () => {
         return headers;
     };
 
-    const generateExplanation = async (questionToGenerate: string) => {
-        setAiError('');
-        setIsLoadingExplanation(true);
-        setExplanation('');
+    // MODIFIED: generateExplanation now takes 'mode' as an argument
+    const generateExplanation = async (questionToGenerate: string, mode: ContentMode) => {
+        setAiError(''); // Clear error on new generation attempt
+        setIsLoadingExplanation(true); // Set loading for any AI generation
 
-        console.log('generateExplanation called with:', questionToGenerate);
+        console.log(`generateExplanation called for mode '${mode}' with question:`, questionToGenerate);
 
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
                 headers: getAuthHeaders(),
-                body: JSON.stringify({ question: questionToGenerate }),
+                body: JSON.stringify({ question: questionToGenerate, content_type: mode }), // Pass content_type
             });
 
             if (response.ok) {
                 const data = await response.json();
-                setExplanation(data.explanation);
-                console.log('Explanation generated:', data.explanation);
+                const newContent = data.explanation;
+
+                // Update the specific content in the generatedContents object
+                setGeneratedContents(prev => ({
+                    ...prev,
+                    [mode]: newContent,
+                }));
+                console.log(`'${mode}' content generated.`);
             } else {
                 const errorData = await response.json();
-                setAiError(errorData.error || 'Failed to generate explanation. Please try again.');
-                console.error('AI Explanation Error:', errorData);
+                setAiError(errorData.error || `Failed to generate ${mode} content. Please try again.`);
+                console.error(`AI Generation Error for ${mode}:`, errorData);
+                // Also clear content for the errored mode
+                setGeneratedContents(prev => ({
+                    ...prev,
+                    [mode]: '',
+                }));
             }
         } catch (error) {
-            setAiError('Network error or unexpected response from AI service.');
-            console.error('Error fetching AI explanation:', error);
+            setAiError(`Network error or unexpected response for ${mode}.`);
+            console.error(`Error fetching AI explanation for ${mode}:`, error);
+            // Also clear content for the errored mode
+            setGeneratedContents(prev => ({
+                ...prev,
+                [mode]: '',
+            }));
         } finally {
-            setIsLoadingExplanation(false);
+            setIsLoadingExplanation(false); // Reset loading
         }
     };
 
@@ -659,10 +702,7 @@ const App: React.FC = () => {
         setShowAuthModal(true);
     };
 
-    console.log('App: Rendering. Loading:', loading);
-
     if (loading) {
-        console.log('App: Showing loading message.');
         return (
             <div className="flex items-center justify-center min-h-screen bg-gray-100 text-gray-700 text-2xl font-semibold">
                 Loading application...
@@ -670,18 +710,19 @@ const App: React.FC = () => {
         );
     }
 
-    console.log('App: Loading complete, showing TinyTutorAppContent.');
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 font-inter text-gray-900 overflow-x-hidden p-4">
             <div className="w-full max-w-3xl mx-auto my-8">
                 <TinyTutorAppContent
                     inputQuestion={inputQuestion}
                     setInputQuestion={setInputQuestion}
-                    explanation={explanation}
-                    setExplanation={setExplanation}
+                    generatedContents={generatedContents} // Pass new state
+                    setGeneratedContents={setGeneratedContents} // Pass new state setter
+                    activeMode={activeMode} // Pass new state
+                    setActiveMode={setActiveMode} // Pass new state setter
                     setShowLoginModal={handleShowLoginModal}
                     setShowSignupModal={handleShowSignupModal}
-                    generateExplanation={generateExplanation}
+                    generateExplanation={generateExplanation} // Pass modified function
                     isLoadingExplanation={isLoadingExplanation}
                     aiError={aiError}
                 />
@@ -690,16 +731,14 @@ const App: React.FC = () => {
             {showAuthModal && (
                 <AuthModal
                     onClose={() => {
-                        console.log('AuthModal: onClose called.');
                         setShowAuthModal(false);
                     }}
                     onLoginSuccess={async (question) => {
-                        console.log('App: onLoginSuccess handler called with question:', question);
                         setShowAuthModal(false);
-
                         if (questionBeforeModalRef.current.trim() !== '') {
                             setInputQuestion(questionBeforeModalRef.current);
-                            await generateExplanation(questionBeforeModalRef.current);
+                            // After login, automatically generate the initial 'explain' content
+                            await generateExplanation(questionBeforeModalRef.current, 'explain');
                             questionBeforeModalRef.current = '';
                         }
                     }}

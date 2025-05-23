@@ -487,15 +487,14 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         value={inputQuestion}
                         onChange={(e) => {
                             setInputQuestion(e.target.value);
-                            // Clear all generated content when input changes
-                            setGeneratedContents(prev => ({
+                            // Corrected: Use _prev to satisfy TS6133
+                            setGeneratedContents((_prev) => ({
                                 explain: '',
                                 image: 'Image generation feature coming soon! You can imagine an image of...',
                                 fact: '',
                                 quiz: '',
                                 deep: '',
                             }));
-                            // Corrected: Removed `setExplanation('')` as it's no longer a direct state
                             setActiveMode('explain'); // Reset to explain tab on input change
                         }}
                         disabled={isLoadingExplanation}
@@ -662,9 +661,9 @@ const App: React.FC = () => {
                 const data = await response.json();
                 const newContent = data.explanation;
 
-                // Corrected: Changed 'prev' to '_prev' to silence 'unused' warning
-                setGeneratedContents(_prev => ({
-                    ..._prev,
+                // Corrected: Changed '_prev' to 'currentContents' to satisfy TS6133
+                setGeneratedContents((currentContents) => ({
+                    ...currentContents,
                     [mode]: newContent,
                 }));
                 console.log(`'${mode}' content generated.`);
@@ -673,8 +672,8 @@ const App: React.FC = () => {
                 setAiError(errorData.error || `Failed to generate ${mode} content. Please try again.`);
                 console.error(`AI Generation Error for ${mode}:`, errorData);
                 // Also clear content for the errored mode
-                setGeneratedContents(_prev => ({
-                    ..._prev,
+                setGeneratedContents((currentContents) => ({
+                    ...currentContents,
                     [mode]: '',
                 }));
             }
@@ -682,8 +681,8 @@ const App: React.FC = () => {
             setAiError(`Network error or unexpected response for ${mode}.`);
             console.error(`Error fetching AI explanation for ${mode}:`, error);
             // Also clear content for the errored mode
-            setGeneratedContents(_prev => ({
-                ..._prev,
+            setGeneratedContents((currentContents) => ({
+                ...currentContents,
                 [mode]: '',
             }));
         } finally {

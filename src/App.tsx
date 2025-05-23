@@ -545,7 +545,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 {explanation && (
                     <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner">
                         <h3 className="text-2xl font-bold text-blue-800 mb-4">Explanation:</h3>
-                        <div className="prose prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap">
+                        <div className="prose prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
                             {explanation}
                         </div>
                     </div>
@@ -662,13 +662,12 @@ const App: React.FC = () => {
                     onLoginSuccess={async (question) => {
                         console.log('App: onLoginSuccess handler called with question:', question);
                         // Immediately close the modal as soon as login is successful
-                        setShowAuthModal(false); // <--- MOVED THIS HERE
+                        setShowAuthModal(false); // <--- THIS WAS THE KEY CHANGE
 
                         if (question.trim() !== '') {
                             setInputQuestion(question);
                             await generateExplanation(question);
                         }
-                        // AuthModal's handleLoginSuccess will call onClose() after this resolves
                     }}
                     initialQuestion={inputQuestion}
                 />

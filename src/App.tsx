@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react'; // Added useRef
 
 // --- AuthContext Definition ---
 interface AuthContextType {
@@ -177,14 +177,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 // --- AuthModal Component (New) ---
 interface AuthModalProps {
     onClose: () => void;
-    onLoginSuccess: () => void;
+    // onLoginSuccess now accepts the current inputQuestion
+    onLoginSuccess: (question: string) => void;
+    initialQuestion: string; // Pass the question from TinyTutorAppContent
 }
 
-const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion }) => {
     const [showLogin, setShowLogin] = useState(true); // State to toggle between login and signup forms
 
     const handleLoginSuccess = () => {
-        onLoginSuccess();
+        onLoginSuccess(initialQuestion); // Pass the question back
         onClose(); // Close modal on successful login
     };
 
@@ -434,12 +436,15 @@ const TinyTutorAppContent: React.FC = () => {
     const [aiError, setAiError] = useState('');
     const [showAuthModal, setShowAuthModal] = useState(false);
 
+    // Use a ref to store the question when the modal is opened
+    const questionBeforeModalRef = useRef('');
+
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    const generateExplanation = async () => { // Renamed for clarity
+    const generateExplanation = async (questionToGenerate: string) => { // Accept question as argument
         setAiError('');
         setIsLoadingExplanation(true);
-        setExplanation('');
+        setExplanation(''); // Clear previous explanation
 
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -447,7 +452,7 @@ const TinyTutorAppContent: React.FC = () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ question: inputQuestion }),
+                body: JSON.stringify({ question: questionToGenerate }), // Use the passed question
                 credentials: 'include',
             });
 
@@ -469,25 +474,31 @@ const TinyTutorAppContent: React.FC = () => {
 
     const handleGenerateExplanationClick = () => {
         if (!user) {
-            // If not logged in, show the signup/login modal
+            // If not logged in, store the current question and show the signup/login modal
+            questionBeforeModalRef.current = inputQuestion;
             setShowAuthModal(true);
-            return; // Stop execution here
+            return;
         }
-        // If logged in, proceed with AI generation
-        generateExplanation();
+        // If logged in, proceed with AI generation using current inputQuestion
+        generateExplanation(inputQuestion);
     };
 
-    // Effect to auto-generate explanation after successful login (if question exists)
+    // Effect to auto-generate explanation after successful login from modal
     useEffect(() => {
-        if (user && inputQuestion.trim() !== '' && !isLoadingExplanation && !explanation) {
-            console.log('User logged in with existing question. Auto-generating explanation...');
-            generateExplanation();
+        // This effect runs when 'user' state changes (e.g., after login)
+        // and if there was a question typed before the modal appeared.
+        if (user && questionBeforeModalRef.current.trim() !== '' && !isLoadingExplanation && !explanation) {
+            console.log('User logged in with existing question from modal. Auto-generating explanation...');
+            // Use the question stored in the ref
+            generateExplanation(questionBeforeModalRef.current);
+            // Clear the ref after generation to prevent re-triggering
+            questionBeforeModalRef.current = '';
         }
-    }, [user, inputQuestion, isLoadingExplanation, explanation]); // Dependencies include user, inputQuestion, and explanation state
+    }, [user, isLoadingExplanation, explanation]); // Removed inputQuestion from dependencies
 
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full px-8 py-8 md:px-12 md:py-12 lg:px-16 lg:py-16 my-8"> {/* Removed max-w- class, added responsive padding */}
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12 px-8 py-8 md:px-12 md:py-12 lg:px-16 lg:py-16 my-8"> {/* Adjusted width classes for better responsiveness */}
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -511,7 +522,7 @@ const TinyTutorAppContent: React.FC = () => {
                         disabled={isLoadingExplanation}
                     />
                     <button
-                        onClick={handleGenerateExplanationClick} // Use the new click handler
+                        onClick={handleGenerateExplanationClick}
                         className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
                         disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                     >
@@ -559,13 +570,15 @@ const TinyTutorAppContent: React.FC = () => {
             {showAuthModal && (
                 <AuthModal
                     onClose={() => setShowAuthModal(false)}
-                    onLoginSuccess={() => {
+                    onLoginSuccess={(question) => {
                         setShowAuthModal(false);
                         // After successful login, if there's a question, generate explanation
-                        if (inputQuestion.trim() !== '') {
-                            generateExplanation();
+                        if (question.trim() !== '') {
+                            setInputQuestion(question); // Set the input question back
+                            generateExplanation(question); // Generate explanation for that question
                         }
                     }}
+                    initialQuestion={inputQuestion} // Pass the current inputQuestion to the modal
                 />
             )}
         </div>

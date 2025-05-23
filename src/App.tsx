@@ -38,15 +38,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Helper to get authorization headers with JWT
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
-        if (token) {
-            return {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            };
-        }
-        return {
+        const headers: Record<string, string> = { // Explicitly type as Record<string, string>
             'Content-Type': 'application/json',
         };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`; // Only add if token exists
+        }
+        return headers;
     };
 
     // Function to check login status from the backend (now uses JWT)
@@ -464,18 +462,16 @@ const TinyTutorAppContent: React.FC = () => {
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-    // Helper to get authorization headers with JWT (duplicated in AuthProvider for clarity in App.tsx)
+    // Helper to get authorization headers with JWT
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
-        if (token) {
-            return {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            };
-        }
-        return {
+        const headers: Record<string, string> = { // Explicitly type as Record<string, string>
             'Content-Type': 'application/json',
         };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`; // Only add if token exists
+        }
+        return headers;
     };
 
 
@@ -490,7 +486,7 @@ const TinyTutorAppContent: React.FC = () => {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
                 headers: getAuthHeaders(), // Use JWT in headers
-                body: JSON.stringify({ question: questionToGenerate }), // Use the passed question
+                body: JSON.stringify({ question: questionToGenerate }),
             });
 
             if (response.ok) {

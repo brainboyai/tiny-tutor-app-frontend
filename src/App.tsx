@@ -449,80 +449,51 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
 
 
 // --- TinyTutorAppContent Component ---
-const TinyTutorAppContent: React.FC = () => {
-    const { user, logout } = useAuth(); // useAuth now provides JWT-based user state
-    const [inputQuestion, setInputQuestion] = useState('');
-    const [explanation, setExplanation] = useState('');
-    const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
-    const [aiError, setAiError] = useState('');
-    const [showAuthModal, setShowAuthModal] = useState(false);
+interface TinyTutorAppContentProps {
+    inputQuestion: string;
+    setInputQuestion: React.Dispatch<React.SetStateAction<string>>;
+    explanation: string;
+    setExplanation: React.Dispatch<React.SetStateAction<string>>;
+    isLoadingExplanation: boolean;
+    setIsLoadingExplanation: React.Dispatch<React.SetStateAction<boolean>>;
+    aiError: string;
+    setAiError: React.Dispatch<React.SetStateAction<string>>;
+    showAuthModal: boolean;
+    setShowAuthModal: React.Dispatch<React.SetStateAction<boolean>>;
+    questionBeforeModalRef: React.MutableRefObject<string>;
+    generateExplanation: (question: string) => Promise<void>;
+}
 
-    // Use a ref to store the question when the modal is opened
-    const questionBeforeModalRef = useRef('');
-
-    const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
-
-    // Helper to get authorization headers with JWT
-    const getAuthHeaders = () => {
-        const token = localStorage.getItem('access_token');
-        const headers: Record<string, string> = { // Explicitly type as Record<string, string>
-            'Content-Type': 'application/json',
-        };
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`; // Only add if token exists
-        }
-        return headers;
-    };
-
-
-    const generateExplanation = async (questionToGenerate: string) => {
-        setAiError('');
-        setIsLoadingExplanation(true);
-        setExplanation(''); // Clear previous explanation
-
-        console.log('generateExplanation called with:', questionToGenerate); // Debugging log
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-                method: 'POST',
-                headers: getAuthHeaders(), // Use JWT in headers
-                body: JSON.stringify({ question: questionToGenerate }),
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setExplanation(data.explanation);
-                console.log('Explanation generated:', data.explanation); // Debugging log
-            } else {
-                const errorData = await response.json();
-                setAiError(errorData.error || 'Failed to generate explanation. Please try again.');
-                console.error('AI Explanation Error:', errorData);
-            }
-        } catch (error) {
-            setAiError('Network error or unexpected response from AI service.');
-            console.error('Error fetching AI explanation:', error);
-        } finally {
-            setIsLoadingExplanation(false);
-        }
-    };
+const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
+    inputQuestion,
+    setInputQuestion,
+    explanation,
+    setExplanation,
+    isLoadingExplanation,
+    setIsLoadingExplanation,
+    aiError,
+    setAiError,
+    showAuthModal,
+    setShowAuthModal,
+    questionBeforeModalRef,
+    generateExplanation,
+}) => {
+    const { user, logout } = useAuth();
 
     const handleGenerateExplanationClick = () => {
-        console.log('Generate Explanation button clicked. Current user:', user); // Debugging log
+        console.log('Generate Explanation button clicked. Current user:', user);
         if (!user) {
-            // If not logged in, store the current question and show the signup/login modal
             questionBeforeModalRef.current = inputQuestion;
-            console.log('User not logged in. Storing question:', inputQuestion, 'and showing modal.'); // Debugging log
+            console.log('User not logged in. Storing question:', inputQuestion, 'and showing modal.');
             setShowAuthModal(true);
             return;
         }
-        // If logged in, proceed with AI generation using current inputQuestion
-        console.log('User logged in. Generating explanation for:', inputQuestion); // Debugging log
+        console.log('User logged in. Generating explanation for:', inputQuestion);
         generateExplanation(inputQuestion);
     };
 
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
-            {/* Main content container: Adjusted width for better balance and centering */}
             <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl mx-auto my-8">
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
@@ -600,25 +571,6 @@ const TinyTutorAppContent: React.FC = () => {
                     </button>
                 )}
             </div>
-
-            {showAuthModal && (
-                <AuthModal
-                    onClose={() => {
-                        console.log('AuthModal: onClose called.');
-                        setShowAuthModal(false);
-                    }}
-                    onLoginSuccess={async (question) => { // This is the callback from AuthModal
-                        console.log('TinyTutorAppContent: onLoginSuccess handler called with question:', question);
-                        // Explicitly set input and generate after successful login from modal
-                        if (question.trim() !== '') {
-                            setInputQuestion(question); // Update the input field
-                            await generateExplanation(question); // AWAIT the explanation generation
-                        }
-                        // Now that explanation is generated, the modal will be closed by AuthModal's handleLoginSuccess
-                    }}
-                    initialQuestion={inputQuestion}
-                />
-            )}
         </div>
     );
 };
@@ -626,7 +578,61 @@ const TinyTutorAppContent: React.FC = () => {
 
 // --- Main App Component ---
 const App: React.FC = () => {
-    const { loading } = useAuth();
+    const { loading, user, logout } = useAuth();
+    const [inputQuestion, setInputQuestion] = useState('');
+    const [explanation, setExplanation] = useState('');
+    const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+    const [aiError, setAiError] = useState('');
+    const [showAuthModal, setShowAuthModal] = useState(false);
+
+    // Use a ref to store the question when the modal is opened
+    const questionBeforeModalRef = useRef('');
+
+    const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
+
+    // Helper to get authorization headers with JWT (duplicated in AuthProvider for clarity in App.tsx)
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('access_token');
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+        };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+    };
+
+    const generateExplanation = async (questionToGenerate: string) => {
+        setAiError('');
+        setIsLoadingExplanation(true);
+        setExplanation('');
+
+        console.log('generateExplanation called with:', questionToGenerate);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ question: questionToGenerate }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setExplanation(data.explanation);
+                console.log('Explanation generated:', data.explanation);
+            } else {
+                const errorData = await response.json();
+                setAiError(errorData.error || 'Failed to generate explanation. Please try again.');
+                console.error('AI Explanation Error:', errorData);
+            }
+        } catch (error) {
+            setAiError('Network error or unexpected response from AI service.');
+            console.error('Error fetching AI explanation:', error);
+        } finally {
+            setIsLoadingExplanation(false);
+        }
+    };
+
 
     console.log('App: Rendering. Loading:', loading);
 
@@ -640,7 +646,42 @@ const App: React.FC = () => {
     }
 
     console.log('App: Loading complete, showing TinyTutorAppContent.');
-    return <TinyTutorAppContent />;
+    return (
+        <>
+            <TinyTutorAppContent
+                inputQuestion={inputQuestion}
+                setInputQuestion={setInputQuestion}
+                explanation={explanation}
+                setExplanation={setExplanation}
+                isLoadingExplanation={isLoadingExplanation}
+                setIsLoadingExplanation={setIsLoadingExplanation}
+                aiError={aiError}
+                setAiError={setAiError}
+                showAuthModal={showAuthModal}
+                setShowAuthModal={setShowAuthModal}
+                questionBeforeModalRef={questionBeforeModalRef}
+                generateExplanation={generateExplanation}
+            />
+
+            {showAuthModal && (
+                <AuthModal
+                    onClose={() => {
+                        console.log('AuthModal: onClose called.');
+                        setShowAuthModal(false);
+                    }}
+                    onLoginSuccess={async (question) => {
+                        console.log('App: onLoginSuccess handler called with question:', question);
+                        if (question.trim() !== '') {
+                            setInputQuestion(question);
+                            await generateExplanation(question);
+                        }
+                        // AuthModal's handleLoginSuccess will call onClose() after this resolves
+                    }}
+                    initialQuestion={inputQuestion}
+                />
+            )}
+        </>
+    );
 };
 
 export default App;

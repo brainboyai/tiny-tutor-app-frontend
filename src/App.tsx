@@ -454,14 +454,13 @@ interface TinyTutorAppContentProps {
     setInputQuestion: React.Dispatch<React.SetStateAction<string>>;
     explanation: string;
     setExplanation: React.Dispatch<React.SetStateAction<string>>;
-    isLoadingExplanation: boolean;
-    setIsLoadingExplanation: React.Dispatch<React.SetStateAction<boolean>>;
-    aiError: string;
-    setAiError: React.Dispatch<React.SetStateAction<string>>;
-    showAuthModal: boolean;
-    setShowAuthModal: React.Dispatch<React.SetStateAction<boolean>>;
+    // isLoadingExplanation is used by generateExplanation, which is passed as a prop
+    // aiError is used by generateExplanation, which is passed as a prop
+    // showAuthModal is managed by App, and TinyTutorAppContent only calls setShowAuthModal
+    setShowAuthModal: React.Dispatch<React.SetStateAction<boolean>>; // Still needed for opening modal
     questionBeforeModalRef: React.MutableRefObject<string>;
     generateExplanation: (question: string) => Promise<void>;
+    // user and logout are fetched directly via useAuth() within this component
 }
 
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
@@ -469,16 +468,13 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     setInputQuestion,
     explanation,
     setExplanation,
-    isLoadingExplanation,
-    setIsLoadingExplanation,
-    aiError,
-    setAiError,
-    showAuthModal,
-    setShowAuthModal,
+    setShowAuthModal, // Keep this as it's used to open the modal
     questionBeforeModalRef,
     generateExplanation,
 }) => {
-    const { user, logout } = useAuth();
+    const { user, logout, loading } = useAuth(); // Fetch user and logout directly here
+    // isLoadingExplanation and aiError are states managed by App and used by generateExplanation
+    // which is passed as a prop. So, TinyTutorAppContent doesn't need them as props.
 
     const handleGenerateExplanationClick = () => {
         console.log('Generate Explanation button clicked. Current user:', user);
@@ -516,17 +512,19 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         value={inputQuestion}
                         onChange={(e) => {
                             setInputQuestion(e.target.value);
-                            setExplanation('');
-                            setAiError('');
+                            setExplanation(''); // Clear explanation on new input
+                            // setAiError(''); // aiError is managed by generateExplanation in App
                         }}
-                        disabled={isLoadingExplanation}
+                        // Use the isLoadingExplanation state from App, which is used by generateExplanation
+                        disabled={loading} // Use AuthContext's loading for general app loading state
                     />
                     <button
                         onClick={handleGenerateExplanationClick}
                         className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
-                        disabled={isLoadingExplanation || inputQuestion.trim() === ''}
+                        // Use the isLoadingExplanation state from App, which is used by generateExplanation
+                        disabled={loading || inputQuestion.trim() === ''} // Use AuthContext's loading
                     >
-                        {isLoadingExplanation ? (
+                        {loading ? ( // Use AuthContext's loading
                             <>
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -538,10 +536,12 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             'Generate Explanation'
                         )}
                     </button>
-                    {aiError && (
-                        <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
-                    )}
-                    {!user && !isLoadingExplanation && (
+                    {/* aiError is managed by App and should be displayed via a prop if needed, or handled by generateExplanation */}
+                    {/* For now, remove direct aiError usage here if it's not passed as a prop */}
+                    {/* {aiError && (
+                <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
+              )} */}
+                    {!user && ( // Use user from useAuth()
                         <p className="text-gray-600 text-center text-sm mt-4">
                             <span className="font-semibold text-blue-600">Sign up or Login</span> to generate explanations.
                         </p>
@@ -557,13 +557,13 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     </div>
                 )}
 
-                {user && (
+                {user && ( // Use user from useAuth()
                     <button
                         onClick={() => {
-                            logout();
+                            logout(); // Use logout from useAuth()
                             setInputQuestion('');
                             setExplanation('');
-                            setAiError('');
+                            // setAiError(''); // aiError is managed by generateExplanation in App
                         }}
                         className="mt-10 px-6 py-3 bg-red-500 text-white rounded-lg font-bold text-lg hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg"
                     >
@@ -578,12 +578,12 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 
 // --- Main App Component ---
 const App: React.FC = () => {
-    const { loading, user, logout } = useAuth();
+    const { loading, user, logout } = useAuth(); // Keep user and logout here for main app logic
     const [inputQuestion, setInputQuestion] = useState('');
     const [explanation, setExplanation] = useState('');
-    const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
-    const [aiError, setAiError] = useState('');
-    const [showAuthModal, setShowAuthModal] = useState(false);
+    const [isLoadingExplanation, setIsLoadingExplanation] = useState(false); // State for AI generation loading
+    const [aiError, setAiError] = useState(''); // State for AI explanation errors
+    const [showAuthModal, setShowAuthModal] = useState(false); // State for showing auth modal
 
     // Use a ref to store the question when the modal is opened
     const questionBeforeModalRef = useRef('');
@@ -604,7 +604,7 @@ const App: React.FC = () => {
 
     const generateExplanation = async (questionToGenerate: string) => {
         setAiError('');
-        setIsLoadingExplanation(true);
+        setIsLoadingExplanation(true); // Set loading for AI generation
         setExplanation('');
 
         console.log('generateExplanation called with:', questionToGenerate);
@@ -629,7 +629,7 @@ const App: React.FC = () => {
             setAiError('Network error or unexpected response from AI service.');
             console.error('Error fetching AI explanation:', error);
         } finally {
-            setIsLoadingExplanation(false);
+            setIsLoadingExplanation(false); // Reset loading for AI generation
         }
     };
 
@@ -653,14 +653,13 @@ const App: React.FC = () => {
                 setInputQuestion={setInputQuestion}
                 explanation={explanation}
                 setExplanation={setExplanation}
-                isLoadingExplanation={isLoadingExplanation}
-                setIsLoadingExplanation={setIsLoadingExplanation}
-                aiError={aiError}
-                setAiError={setAiError}
-                showAuthModal={showAuthModal}
-                setShowAuthModal={setShowAuthModal}
+                // Pass the state setters for loading/error to TinyTutorAppContent if it needs to trigger them
+                // directly, but generateExplanation already handles them.
+                // Instead, TinyTutorAppContent will use the isLoadingExplanation and aiError states
+                // directly from the App component's scope if needed, or rely on generateExplanation.
+                setShowAuthModal={setShowAuthModal} // Still needed for opening modal
                 questionBeforeModalRef={questionBeforeModalRef}
-                generateExplanation={generateExplanation}
+                generateExplanation={generateExplanation} // This function encapsulates isLoadingExplanation and aiError
             />
 
             {showAuthModal && (

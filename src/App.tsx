@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from 'react'; // Ensure useContext is imported here
+import React, { useState, useEffect, createContext, useContext } from 'react';
 
 // --- AuthContext Definition ---
 interface AuthContextType {
@@ -11,9 +11,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Custom hook to easily use AuthContext (defined after AuthContext)
-export const useAuth = () => { // Exported for main.tsx, but also used internally
-    const context = useContext(AuthContext); // Correctly using useContext here
+// Custom hook to easily use AuthContext
+export const useAuth = () => {
+    const context = useContext(AuthContext);
     if (context === undefined) {
         throw new Error('useAuth must be used within an AuthProvider');
     }
@@ -40,7 +40,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    // Crucial for session cookies to be sent and received
                     credentials: 'include',
                 });
 
@@ -55,13 +54,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         console.log('AuthContext: User is NOT logged in.');
                     }
                 } else {
-                    // Handle cases where status check fails (e.g., server error)
                     console.error('AuthContext: Failed to check login status:', response.status);
                     setUser(null);
                 }
             } catch (error) {
                 console.error('AuthContext: Error checking login status:', error);
-                setUser(null); // Ensure user is null on network errors
+                setUser(null);
             } finally {
                 setLoading(false);
                 console.log('AuthContext: Loading status check complete. setLoading(false).');
@@ -69,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         checkLoginStatus();
-    }, []); // Empty dependency array means this runs once on mount
+    }, []);
 
     // Function to handle user login
     const login = async (username: string, password: string) => {
@@ -82,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, password }),
-                credentials: 'include', // Crucial for session cookies
+                credentials: 'include',
             });
 
             if (response.ok) {
@@ -115,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, email, password }),
-                credentials: 'include', // Crucial for session cookies
+                credentials: 'include',
             });
 
             if (response.ok) {
@@ -144,7 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                credentials: 'include', // Crucial for session cookies
+                credentials: 'include',
             });
 
             if (response.ok) {
@@ -160,7 +158,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    // Log user and loading state changes
     useEffect(() => {
         console.log('AuthContext: User state changed to:', user);
     }, [user]);
@@ -176,9 +173,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 };
 
+// --- AuthModal Component (New) ---
+interface AuthModalProps {
+    onClose: () => void;
+    onLoginSuccess: () => void;
+}
 
-// --- LoginForm Component ---
-const LoginForm: React.FC = () => {
+const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess }) => {
+    const [showLogin, setShowLogin] = useState(true); // State to toggle between login and signup forms
+
+    const handleLoginSuccess = () => {
+        onLoginSuccess();
+        onClose(); // Close modal on successful login
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 scale-100 relative">
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                >
+                    &times;
+                </button>
+                {showLogin ? (
+                    <LoginForm inModal={true} onLoginSuccess={handleLoginSuccess} onToggleSignup={() => setShowLogin(false)} />
+                ) : (
+                    <SignupForm inModal={true} onSignupSuccess={() => setShowLogin(true)} onToggleLogin={() => setShowLogin(true)} />
+                )}
+            </div>
+        </div>
+    );
+};
+
+
+// --- LoginForm Component (Modified for Modal) ---
+interface LoginFormProps {
+    inModal?: boolean;
+    onLoginSuccess?: () => void;
+    onToggleSignup?: () => void;
+}
+
+const LoginForm: React.FC<LoginFormProps> = ({ inModal = false, onLoginSuccess, onToggleSignup }) => {
     const { login } = useAuth();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -191,15 +227,17 @@ const LoginForm: React.FC = () => {
         setError('');
         setIsSubmitting(true);
         const success = await login(username, password);
-        if (!success) {
+        if (success) {
+            onLoginSuccess?.(); // Call success callback if provided
+        } else {
             setError('Invalid username or password. Please try again.');
         }
         setIsSubmitting(false);
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 p-4">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 hover:scale-105">
+        <div className={!inModal ? "flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 p-4" : ""}>
+            <div className={!inModal ? "bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 hover:scale-105" : "p-8"}>
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-8">Login</h2>
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
@@ -243,19 +281,35 @@ const LoginForm: React.FC = () => {
                         {isSubmitting ? 'Logging in...' : 'Login'}
                     </button>
                 </form>
-                <p className="text-center text-gray-600 text-sm mt-6">
-                    Don't have an account?{' '}
-                    <a href="#" onClick={() => window.location.hash = '#signup'} className="text-blue-600 hover:underline font-semibold">
-                        Sign Up.
-                    </a>
-                </p>
+                {onToggleSignup && ( // Only show if in modal context
+                    <p className="text-center text-gray-600 text-sm mt-6">
+                        Don't have an account?{' '}
+                        <a href="#" onClick={onToggleSignup} className="text-blue-600 hover:underline font-semibold">
+                            Sign Up.
+                        </a>
+                    </p>
+                )}
+                {!inModal && ( // Only show if not in modal context
+                    <p className="text-center text-gray-600 text-sm mt-6">
+                        Don't have an account?{' '}
+                        <a href="#" onClick={() => window.location.hash = '#signup'} className="text-blue-600 hover:underline font-semibold">
+                            Sign Up.
+                        </a>
+                    </p>
+                )}
             </div>
         </div>
     );
 };
 
-// --- SignupForm Component ---
-const SignupForm: React.FC = () => {
+// --- SignupForm Component (Modified for Modal) ---
+interface SignupFormProps {
+    inModal?: boolean;
+    onSignupSuccess?: () => void;
+    onToggleLogin?: () => void;
+}
+
+const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSuccess, onToggleLogin }) => {
     const { signup } = useAuth();
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
@@ -277,6 +331,7 @@ const SignupForm: React.FC = () => {
             setUsername('');
             setEmail('');
             setPassword('');
+            onSignupSuccess?.(); // Call success callback if provided
         } else {
             setError('Registration failed. Username or email might already be taken, or inputs are invalid.');
         }
@@ -284,8 +339,8 @@ const SignupForm: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-green-500 to-teal-600 p-4">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 hover:scale-105">
+        <div className={!inModal ? "flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-green-500 to-teal-600 p-4" : ""}>
+            <div className={!inModal ? "bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 hover:scale-105" : "p-8"}>
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-8">Sign Up</h2>
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
@@ -347,30 +402,51 @@ const SignupForm: React.FC = () => {
                         {isSubmitting ? 'Registering...' : 'Sign Up'}
                     </button>
                 </form>
-                <p className="text-center text-gray-600 text-sm mt-6">
-                    Already have an account?{' '}
-                    <a href="#" onClick={() => window.location.hash = '#login'} className="text-green-600 hover:underline font-semibold">
-                        Login.
-                    </a>
-                </p>
+                {onToggleLogin && ( // Only show if in modal context
+                    <p className="text-center text-gray-600 text-sm mt-6">
+                        Already have an account?{' '}
+                        <a href="#" onClick={onToggleLogin} className="text-green-600 hover:underline font-semibold">
+                            Login.
+                        </a>
+                    </p>
+                )}
+                {!inModal && ( // Only show if not in modal context
+                    <p className="text-center text-gray-600 text-sm mt-6">
+                        Already have an account?{' '}
+                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-green-600 hover:underline font-semibold">
+                            Login.
+                        </a>
+                    </p>
+                )}
             </div>
         </div>
     );
 };
 
+
+// --- TinyTutorAppContent Component (Modified for Freemium and Fullscreen) ---
 const TinyTutorAppContent: React.FC = () => {
     const { user, logout } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
     const [explanation, setExplanation] = useState('');
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
     const [aiError, setAiError] = useState('');
+    const [showAuthModal, setShowAuthModal] = useState(false); // State to control auth modal visibility
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
     const handleGenerateExplanation = async () => {
+        setAiError(''); // Clear any previous errors
+
+        if (!user) {
+            // If not logged in, show the signup/login modal
+            setShowAuthModal(true);
+            return; // Stop execution here
+        }
+
+        // If logged in, proceed with AI generation
         setIsLoadingExplanation(true);
         setExplanation('');
-        setAiError('');
 
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -399,28 +475,30 @@ const TinyTutorAppContent: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-5xl transform transition-all duration-300 hover:scale-105">
+        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-full lg:max-w-7xl transform transition-all duration-300 hover:scale-105 my-8"> {/* Changed max-w-5xl to max-w-full/7xl, added my-8 */}
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
-                    Welcome, {user?.username}!
+                    Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
-                <p className="text-center text-gray-600 text-lg mb-8">
-                    Your tier: <span className="font-semibold text-blue-600">{user?.tier}</span>
-                </p>
+                {user && (
+                    <p className="text-center text-gray-600 text-lg mb-8">
+                        Your tier: <span className="font-semibold text-blue-600">{user.tier}</span>
+                    </p>
+                )}
 
                 <div className="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
                     <label htmlFor="question-input" className="block text-gray-700 text-xl font-bold mb-3">
-                        Ask Tiny Tutor:
+                        Enter a word or concept:
                     </label>
-                    <textarea
+                    <input // Changed from textarea to input
+                        type="text"
                         id="question-input"
-                        className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 text-lg resize-y min-h-[120px]"
-                        placeholder="e.g., 'Explain photosynthesis in simple terms' or 'What is quantum computing?'"
+                        className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 text-lg"
+                        placeholder="e.g., Photosynthesis, Quantum Computing, Democracy"
                         value={inputQuestion}
                         onChange={(e) => setInputQuestion(e.target.value)}
-                        rows={5}
                         disabled={isLoadingExplanation}
-                    ></textarea>
+                    />
                     <button
                         onClick={handleGenerateExplanation}
                         className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
@@ -441,6 +519,11 @@ const TinyTutorAppContent: React.FC = () => {
                     {aiError && (
                         <p className="text-red-600 text-center text-sm font-medium mt-4">{aiError}</p>
                     )}
+                    {!user && !isLoadingExplanation && ( // Message for unauthenticated users
+                        <p className="text-gray-600 text-center text-sm mt-4">
+                            <span className="font-semibold text-blue-600">Sign up or Login</span> to generate explanations.
+                        </p>
+                    )}
                 </div>
 
                 {explanation && (
@@ -452,21 +535,32 @@ const TinyTutorAppContent: React.FC = () => {
                     </div>
                 )}
 
-                <button
-                    onClick={logout}
-                    className="mt-10 px-6 py-3 bg-red-500 text-white rounded-lg font-bold text-lg hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg"
-                >
-                    Logout
-                </button>
+                {user && ( // Only show logout if user is logged in
+                    <button
+                        onClick={logout}
+                        className="mt-10 px-6 py-3 bg-red-500 text-white rounded-lg font-bold text-lg hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg"
+                    >
+                        Logout
+                    </button>
+                )}
             </div>
+
+            {showAuthModal && (
+                <AuthModal
+                    onClose={() => setShowAuthModal(false)}
+                    onLoginSuccess={() => setShowAuthModal(false)} // Close modal on successful login
+                />
+            )}
         </div>
     );
 };
 
-const App: React.FC = () => {
-    const { user, loading } = useAuth();
 
-    console.log('App: Rendering. Loading:', loading, 'User:', user);
+// --- Main App Component (Modified to always show TinyTutorAppContent) ---
+const App: React.FC = () => {
+    const { loading } = useAuth(); // No longer checking 'user' directly here for rendering main content
+
+    console.log('App: Rendering. Loading:', loading);
 
     if (loading) {
         console.log('App: Showing loading message.');
@@ -477,17 +571,9 @@ const App: React.FC = () => {
         );
     }
 
-    if (user) {
-        console.log('App: User is logged in, showing TinyTutorAppContent.');
-        return <TinyTutorAppContent />;
-    } else {
-        console.log('App: User is NOT logged in, showing authentication forms.');
-        const currentHash = window.location.hash;
-        if (currentHash === '#signup') {
-            return <SignupForm />;
-        }
-        return <LoginForm />;
-    }
+    // Always render TinyTutorAppContent once loading is complete
+    console.log('App: Loading complete, showing TinyTutorAppContent.');
+    return <TinyTutorAppContent />;
 };
 
 export default App;

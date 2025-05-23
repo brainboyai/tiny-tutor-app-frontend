@@ -488,8 +488,9 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     };
 
     return (
-        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900">
-            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl mx-auto my-8">
+        // Removed p-4 from here, it will be handled by the main App container
+        <div className="flex flex-col items-center w-full"> {/* Changed to w-full */}
+            <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl"> {/* Removed mx-auto my-8 as it's for App */}
                 <h2 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
                     Welcome to Tiny Tutor! {user?.username && `(${user.username})`}
                 </h2>
@@ -640,18 +641,20 @@ const App: React.FC = () => {
 
     console.log('App: Loading complete, showing TinyTutorAppContent.');
     return (
-        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4 font-inter text-gray-900 overflow-x-hidden"> {/* Added overflow-x-hidden */}
-            <TinyTutorAppContent
-                inputQuestion={inputQuestion}
-                setInputQuestion={setInputQuestion}
-                explanation={explanation}
-                setExplanation={setExplanation}
-                setShowAuthModal={setShowAuthModal}
-                questionBeforeModalRef={questionBeforeModalRef}
-                generateExplanation={generateExplanation}
-                isLoadingExplanation={isLoadingExplanation} // Pass the state value as prop
-                aiError={aiError} // Pass the state value as prop
-            />
+        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 font-inter text-gray-900 overflow-x-hidden p-4"> {/* Added p-4 here */}
+            <div className="w-full max-w-3xl mx-auto my-8"> {/* This div now acts as the main content wrapper */}
+                <TinyTutorAppContent
+                    inputQuestion={inputQuestion}
+                    setInputQuestion={setInputQuestion}
+                    explanation={explanation}
+                    setExplanation={setExplanation}
+                    setShowAuthModal={setShowAuthModal}
+                    questionBeforeModalRef={questionBeforeModalRef}
+                    generateExplanation={generateExplanation}
+                    isLoadingExplanation={isLoadingExplanation} // Pass the state value as prop
+                    aiError={aiError} // Pass the state value as prop
+                />
+            </div>
 
             {showAuthModal && (
                 <AuthModal
@@ -662,7 +665,7 @@ const App: React.FC = () => {
                     onLoginSuccess={async (question) => {
                         console.log('App: onLoginSuccess handler called with question:', question);
                         // Immediately close the modal as soon as login is successful
-                        setShowAuthModal(false); // <--- THIS WAS THE KEY CHANGE
+                        setShowAuthModal(false);
 
                         if (question.trim() !== '') {
                             setInputQuestion(question);

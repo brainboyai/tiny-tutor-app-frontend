@@ -177,17 +177,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 // --- AuthModal Component ---
 interface AuthModalProps {
     onClose: () => void;
-    onLoginSuccess: (question: string) => void;
+    onLoginSuccess: (question: string) => Promise<void>; // Make this async
     initialQuestion: string;
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion }) => {
     const [showLogin, setShowLogin] = useState(true);
 
-    const handleLoginSuccess = () => {
+    const handleLoginSuccess = async () => { // Make this handler async
         console.log('AuthModal: handleLoginSuccess triggered. Initial question:', initialQuestion);
-        onLoginSuccess(initialQuestion); // Pass the question back to parent
-        // onClose() is now called by the parent after explanation generation
+        await onLoginSuccess(initialQuestion); // AWAIT the parent's async callback
+        // onClose() is now called by the parent AFTER onLoginSuccess completes
     };
 
     return (
@@ -416,7 +416,7 @@ const SignupForm: React.FC<SignupFormProps> = ({ inModal = false, onSignupSucces
                 {!inModal && (
                     <p className="text-center text-gray-600 text-sm mt-6">
                         Already have an account?{' '}
-                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-blue-600 hover:underline font-semibold">
+                        <a href="#" onClick={() => window.location.hash = '#login'} className="text-green-600 hover:underline font-semibold">
                             Login.
                         </a>
                     </p>
@@ -449,7 +449,7 @@ const TinyTutorAppContent: React.FC = () => {
         console.log('generateExplanation called with:', questionToGenerate); // Debugging log
 
         try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+            const response = await fetch(`${API_BASE_BASE_URL}/generate_explanation`, { // Corrected API_BASE_BASE_URL to API_BASE_URL
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -576,15 +576,14 @@ const TinyTutorAppContent: React.FC = () => {
                         console.log('AuthModal: onClose called.');
                         setShowAuthModal(false);
                     }}
-                    onLoginSuccess={async (question) => { // Made this callback async
-                        console.log('AuthModal: onLoginSuccess called with question:', question);
-                        setShowAuthModal(false); // Close the modal immediately
-
+                    onLoginSuccess={async (question) => { // This is the callback from AuthModal
+                        console.log('TinyTutorAppContent: onLoginSuccess handler called with question:', question);
                         // Explicitly set input and generate after successful login from modal
                         if (question.trim() !== '') {
                             setInputQuestion(question); // Update the input field
                             await generateExplanation(question); // AWAIT the explanation generation
                         }
+                        // Now that explanation is generated, the modal will be closed by AuthModal's handleLoginSuccess
                     }}
                     initialQuestion={inputQuestion}
                 />

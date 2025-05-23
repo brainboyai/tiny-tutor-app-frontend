@@ -1,6 +1,6 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react'; // Ensure useContext is imported here
 
-// --- AuthContext Definition (from previous steps) ---
+// --- AuthContext Definition ---
 interface AuthContextType {
     user: { username: string; tier: string } | null;
     loading: boolean;
@@ -11,12 +11,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Custom hook to easily use AuthContext (defined after AuthContext)
+export const useAuth = () => { // Exported for main.tsx, but also used internally
+    const context = useContext(AuthContext); // Correctly using useContext here
+    if (context === undefined) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
+};
+
+// AuthProvider component: Handles login, signup, logout, and checks auth status on load.
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<{ username: string; tier: string } | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true); // Initial loading state for auth check
 
+    // Base URL for your backend API
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
+    // Function to check login status from the backend
     useEffect(() => {
         console.log('AuthContext: useEffect triggered to check login status.');
         const checkLoginStatus = async () => {
@@ -28,6 +40,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     headers: {
                         'Content-Type': 'application/json',
                     },
+                    // Crucial for session cookies to be sent and received
                     credentials: 'include',
                 });
 
@@ -42,12 +55,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         console.log('AuthContext: User is NOT logged in.');
                     }
                 } else {
+                    // Handle cases where status check fails (e.g., server error)
                     console.error('AuthContext: Failed to check login status:', response.status);
                     setUser(null);
                 }
             } catch (error) {
                 console.error('AuthContext: Error checking login status:', error);
-                setUser(null);
+                setUser(null); // Ensure user is null on network errors
             } finally {
                 setLoading(false);
                 console.log('AuthContext: Loading status check complete. setLoading(false).');
@@ -55,8 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         checkLoginStatus();
-    }, []);
+    }, []); // Empty dependency array means this runs once on mount
 
+    // Function to handle user login
     const login = async (username: string, password: string) => {
         try {
             setLoading(true);
@@ -67,7 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, password }),
-                credentials: 'include',
+                credentials: 'include', // Crucial for session cookies
             });
 
             if (response.ok) {
@@ -89,6 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    // Function to handle user signup
     const signup = async (username: string, email: string, password: string) => {
         try {
             setLoading(true);
@@ -99,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, email, password }),
-                credentials: 'include',
+                credentials: 'include', // Crucial for session cookies
             });
 
             if (response.ok) {
@@ -118,6 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    // Function to handle user logout
     const logout = async () => {
         try {
             setLoading(true);
@@ -127,7 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                credentials: 'include',
+                credentials: 'include', // Crucial for session cookies
             });
 
             if (response.ok) {
@@ -143,6 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    // Log user and loading state changes
     useEffect(() => {
         console.log('AuthContext: User state changed to:', user);
     }, [user]);
@@ -158,6 +176,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 };
 
+
+// --- LoginForm Component ---
 const LoginForm: React.FC = () => {
     const { login } = useAuth();
     const [username, setUsername] = useState('');
@@ -234,6 +254,7 @@ const LoginForm: React.FC = () => {
     );
 };
 
+// --- SignupForm Component ---
 const SignupForm: React.FC = () => {
     const { signup } = useAuth();
     const [username, setUsername] = useState('');
@@ -342,14 +363,14 @@ const TinyTutorAppContent: React.FC = () => {
     const [inputQuestion, setInputQuestion] = useState('');
     const [explanation, setExplanation] = useState('');
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
-    const [aiError, setAiError] = useState(''); // State for AI explanation errors
+    const [aiError, setAiError] = useState('');
 
-    const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; // Define API_BASE_URL here
+    const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
     const handleGenerateExplanation = async () => {
         setIsLoadingExplanation(true);
-        setExplanation(''); // Clear previous explanation
-        setAiError(''); // Clear previous AI error
+        setExplanation('');
+        setAiError('');
 
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -358,7 +379,7 @@ const TinyTutorAppContent: React.FC = () => {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ question: inputQuestion }),
-                credentials: 'include', // Important for session
+                credentials: 'include',
             });
 
             if (response.ok) {

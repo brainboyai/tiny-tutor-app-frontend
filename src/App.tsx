@@ -432,7 +432,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             return;
         }
         console.log('User logged in. Generating explanation for:', inputQuestion);
-        // Corrected: Remove 'prev =>' as we're not using previous state to compute new state
         setGeneratedContents({
             explain: '',
             image: 'Image generation feature coming soon! You can imagine an image of...',
@@ -440,9 +439,12 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             quiz: '',
             deep: '',
         });
-        setActiveMode('explain'); // Ensure 'explain' tab is active on initial generate
-        generateExplanation(inputQuestion, 'explain'); // Explicitly generate 'explain' content
+        setActiveMode('explain');
+        generateExplanation(inputQuestion, 'explain');
     };
+
+    // Determine if the explanation box should be visible
+    const showExplanationBox = inputQuestion.trim() !== '' && (generatedContents[activeMode] || isLoadingExplanation);
 
     return (
         <div className="flex flex-col items-center w-full">
@@ -452,14 +454,14 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         onClick={() => {
                             logout();
                             setInputQuestion('');
-                            setGeneratedContents({ // Clear all content on logout
+                            setGeneratedContents({
                                 explain: '',
                                 image: 'Image generation feature coming soon! You can imagine an image of...',
                                 fact: '',
                                 quiz: '',
                                 deep: '',
                             });
-                            setActiveMode('explain'); // Reset active mode on logout
+                            setActiveMode('explain');
                         }}
                         className="absolute top-4 right-4 p-2 bg-red-100 text-red-600 rounded-full text-sm font-semibold hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-300 transition duration-300"
                     >
@@ -487,7 +489,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         value={inputQuestion}
                         onChange={(e) => {
                             setInputQuestion(e.target.value);
-                            // Corrected: Use _prev to satisfy TS6133
                             setGeneratedContents((_prev) => ({
                                 explain: '',
                                 image: 'Image generation feature coming soon! You can imagine an image of...',
@@ -495,7 +496,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                                 quiz: '',
                                 deep: '',
                             }));
-                            setActiveMode('explain'); // Reset to explain tab on input change
+                            setActiveMode('explain');
                         }}
                         disabled={isLoadingExplanation}
                     />
@@ -504,7 +505,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
                         disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                     >
-                        {isLoadingExplanation && activeMode === 'explain' ? ( // Only show spinner if actively loading 'explain'
+                        {isLoadingExplanation && activeMode === 'explain' ? (
                             <>
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -555,9 +556,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                                 key={mode}
                                 onClick={async () => {
                                     setActiveMode(mode);
-                                    // If content for this mode isn't already generated AND it's not the image placeholder,
-                                    // AND there's a question, trigger generation.
-                                    // The 'image' content is a fixed placeholder, so no API call needed for it.
                                     if (inputQuestion.trim() !== '' && !generatedContents[mode] && mode !== 'image') {
                                         await generateExplanation(inputQuestion, mode);
                                     }
@@ -568,7 +566,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                                                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                             }`}
                             >
-                                {mode.charAt(0).toUpperCase() + mode.slice(1)} {/* Capitalize first letter */}
+                                {mode.charAt(0).toUpperCase() + mode.slice(1)}
                             </button>
                         ))}
                     </div>
@@ -576,13 +574,13 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 
 
                 {/* Explanation/Content Display Area */}
-                {inputQuestion.trim() !== '' && ( // Only show explanation box if a question has been entered
+                {showExplanationBox && ( // MODIFIED CONDITION HERE
                     <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner max-w-2xl mx-auto">
                         <h3 className="text-2xl font-bold text-blue-800 mb-4">
-                            {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}: {/* Title based on active mode */}
+                            {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}:
                         </h3>
                         <div className="prose prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
-                            {isLoadingExplanation && generatedContents[activeMode] === '' && inputQuestion.trim() !== '' ? (
+                            {isLoadingExplanation && generatedContents[activeMode] === '' ? (
                                  <div className="flex items-center justify-center">
                                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -594,11 +592,10 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                                 generatedContents[activeMode] || aiError || (inputQuestion.trim() === '' ? (
                                     <p className="text-gray-500">Enter a concept and click "Generate Explanation" to get started.</p>
                                 ) : (
-                                    <p className="text-gray-500">Select a tab above to generate more content.</p>
+                                    <p className="text-gray-500">Select a tab above or generate an explanation.</p>
                                 ))
                             )}
-                            {/* Display AI error if present for current mode */}
-                            {aiError && activeMode === 'explain' && <p className="text-red-600 text-sm mt-2">{aiError}</p>}
+                            {aiError && <p className="text-red-600 text-sm mt-2">{aiError}</p>}
                         </div>
                     </div>
                 )}
@@ -612,15 +609,13 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
 const App: React.FC = () => {
     const { loading } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
-    // NEW: State to hold all generated contents by type
     const [generatedContents, setGeneratedContents] = useState<Record<ContentMode, string>>({
         explain: '',
-        image: 'Image generation feature coming soon! You can imagine an image of...', // Initial placeholder
+        image: 'Image generation feature coming soon! You can imagine an image of...',
         fact: '',
         quiz: '',
         deep: '',
     });
-    // NEW: State to track the currently active content mode (tab)
     const [activeMode, setActiveMode] = useState<ContentMode>('explain');
 
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
@@ -628,7 +623,7 @@ const App: React.FC = () => {
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
-    const questionBeforeModalRef = useRef(''); // Used to store question when modal pops up
+    const questionBeforeModalRef = useRef('');
 
     const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
@@ -643,10 +638,9 @@ const App: React.FC = () => {
         return headers;
     };
 
-    // MODIFIED: generateExplanation now takes 'mode' as an argument
     const generateExplanation = async (questionToGenerate: string, mode: ContentMode) => {
-        setAiError(''); // Clear error on new generation attempt
-        setIsLoadingExplanation(true); // Set loading for any AI generation
+        setAiError('');
+        setIsLoadingExplanation(true);
 
         console.log(`generateExplanation called for mode '${mode}' with question:`, questionToGenerate);
 
@@ -654,14 +648,13 @@ const App: React.FC = () => {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
                 headers: getAuthHeaders(),
-                body: JSON.stringify({ question: questionToGenerate, content_type: mode }), // Pass content_type
+                body: JSON.stringify({ question: questionToGenerate, content_type: mode }),
             });
 
             if (response.ok) {
                 const data = await response.json();
                 const newContent = data.explanation;
 
-                // Corrected: Changed '_prev' to 'currentContents' to satisfy TS6133
                 setGeneratedContents((currentContents) => ({
                     ...currentContents,
                     [mode]: newContent,
@@ -671,7 +664,6 @@ const App: React.FC = () => {
                 const errorData = await response.json();
                 setAiError(errorData.error || `Failed to generate ${mode} content. Please try again.`);
                 console.error(`AI Generation Error for ${mode}:`, errorData);
-                // Also clear content for the errored mode
                 setGeneratedContents((currentContents) => ({
                     ...currentContents,
                     [mode]: '',
@@ -680,13 +672,12 @@ const App: React.FC = () => {
         } catch (error) {
             setAiError(`Network error or unexpected response for ${mode}.`);
             console.error(`Error fetching AI explanation for ${mode}:`, error);
-            // Also clear content for the errored mode
             setGeneratedContents((currentContents) => ({
                 ...currentContents,
                 [mode]: '',
             }));
         } finally {
-            setIsLoadingExplanation(false); // Reset loading
+            setIsLoadingExplanation(false);
         }
     };
 
@@ -716,13 +707,13 @@ const App: React.FC = () => {
                 <TinyTutorAppContent
                     inputQuestion={inputQuestion}
                     setInputQuestion={setInputQuestion}
-                    generatedContents={generatedContents} // Pass new state
-                    setGeneratedContents={setGeneratedContents} // Pass new state setter
-                    activeMode={activeMode} // Pass new state
-                    setActiveMode={setActiveMode} // Pass new state setter
+                    generatedContents={generatedContents}
+                    setGeneratedContents={setGeneratedContents}
+                    activeMode={activeMode}
+                    setActiveMode={setActiveMode}
                     setShowLoginModal={handleShowLoginModal}
                     setShowSignupModal={handleShowSignupModal}
-                    generateExplanation={generateExplanation} // Pass modified function
+                    generateExplanation={generateExplanation}
                     isLoadingExplanation={isLoadingExplanation}
                     aiError={aiError}
                 />
@@ -733,17 +724,15 @@ const App: React.FC = () => {
                     onClose={() => {
                         setShowAuthModal(false);
                     }}
-                    // Corrected: Use the 'questionToGenerateAfterLogin' parameter directly
                     onLoginSuccess={async (questionToGenerateAfterLogin) => {
                         setShowAuthModal(false);
                         if (questionToGenerateAfterLogin.trim() !== '') {
                             setInputQuestion(questionToGenerateAfterLogin);
-                            // After login, automatically generate the initial 'explain' content
                             await generateExplanation(questionToGenerateAfterLogin, 'explain');
-                            questionBeforeModalRef.current = ''; // Clear ref after use
+                            questionBeforeModalRef.current = '';
                         }
                     }}
-                    initialQuestion={questionBeforeModalRef.current} // Pass the question from the ref
+                    initialQuestion={questionBeforeModalRef.current}
                     initialMode={authModalMode}
                 />
             )}

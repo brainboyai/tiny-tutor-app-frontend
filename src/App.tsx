@@ -12,11 +12,10 @@ type Page = 'tutor' | 'profile';
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
 
 interface ExploredWord {
-    id: string; // sanitized_word_id from backend
+    id: string;
     word: string;
     is_favorite: boolean;
-    last_explored_at?: string; // ISO string
-    // The cache might contain various modes, 'explain' is often primary for snippets
+    last_explored_at?: string;
     generated_content_cache?: Partial<Record<ContentMode, string>>;
     modes_generated?: string[];
 }
@@ -165,7 +164,6 @@ interface ProfilePageProps {
     setCurrentPage: (page: Page) => void;
     getAuthHeaders: () => Record<string, string>;
     user: User | null;
-    // Callback to set tutor page state when a word is clicked
     onWordClick: (word: string, cachedContent?: Partial<Record<ContentMode, string>>) => void;
 }
 const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeaders, user, onWordClick }) => {
@@ -204,16 +202,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeader
         } catch (err) { setProfileData(originalProfileData); setProfileError("Network error toggling favorite."); }
     };
 
-    // WordListItem sub-component for cleaner rendering
     const WordListItem: React.FC<{ item: ExploredWord, onToggleFavorite: () => void, onWordItemClick: () => void }> = ({ item, onToggleFavorite, onWordItemClick }) => (
         <li className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex justify-between items-center hover:bg-gray-100 transition-colors duration-150 group">
-            <div
-                className="flex-1 min-w-0 mr-2 cursor-pointer group-hover:text-indigo-600"
-                onClick={onWordItemClick}
-                title={`View details for "${item.word}"`}
-            >
+            <div className="flex-1 min-w-0 mr-2 cursor-pointer group-hover:text-indigo-600" onClick={onWordItemClick} title={`View details for "${item.word}"`}>
                 <span className="font-medium text-gray-700 block truncate group-hover:underline">{item.word}</span>
-                {/* Removed explanation snippet from here to keep items compact */}
                 <p className="text-xs text-gray-400">Last seen: {item.last_explored_at ? new Date(item.last_explored_at).toLocaleDateString() : 'N/A'}</p>
             </div>
             <button onClick={onToggleFavorite} className={`text-xl p-1 rounded-full hover:bg-yellow-200 ${item.is_favorite ? 'text-yellow-500' : 'text-gray-300 hover:text-yellow-400'}`} title={item.is_favorite ? "Remove from favorites" : "Add to favorites"}>
@@ -258,11 +250,9 @@ const App: React.FC = () => {
         }
         setAiError(null); setIsLoadingExplanation(true);
 
-        // Frontend placeholder handling for image and deep modes
         if (mode === 'image') {
             setGeneratedContents(cc => ({ ...cc, image: 'Image generation feature coming soon!' }));
             setIsLoadingExplanation(false);
-            // Still log interaction with backend for placeholders if desired
             fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ question: questionToGenerate, content_type: 'image' }) }).catch(console.error);
             return;
         }
@@ -307,25 +297,22 @@ const App: React.FC = () => {
 
     const handleWordClickFromProfile = (word: string, cachedContent?: Partial<Record<ContentMode, string>>) => {
         setInputQuestion(word);
-        if (cachedContent?.explain) {
-            setGeneratedContents(prev => ({
-                ...prev, // Keep other cached contents if any, or reset them
-                explain: cachedContent.explain,
-                // Optionally pre-fill other modes if they are in cachedContent
-                fact: cachedContent.fact || '',
-                quiz: cachedContent.quiz || '',
-                // image and deep will use placeholders unless also cached differently
-                image: cachedContent.image || 'Image generation feature coming soon!',
-                deep: cachedContent.deep || 'In-depth explanation feature coming soon!',
-            }));
+        const initialContent = {
+            explain: cachedContent?.explain || '',
+            image: cachedContent?.image || 'Image generation feature coming soon!',
+            fact: cachedContent?.fact || '',
+            quiz: cachedContent?.quiz || '',
+            deep: cachedContent?.deep || 'In-depth explanation feature coming soon!',
+        };
+        setGeneratedContents(initialContent);
+
+        if (initialContent.explain) {
             setActiveMode('explain');
-            setIsExplainGeneratedForCurrentWord(true); // Since we are showing 'explain'
+            setIsExplainGeneratedForCurrentWord(true);
         } else {
-            // If no cached 'explain', clear things and let user generate
-            setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
-            setActiveMode('explain');
+            // If no cached 'explain', user will need to click "Generate Explanation"
+            setActiveMode('explain'); // Default to explain tab
             setIsExplainGeneratedForCurrentWord(false);
-            // Optionally, you could auto-trigger generateExplanation(word, 'explain') here
         }
         setCurrentPage('tutor');
     };
@@ -335,16 +322,21 @@ const App: React.FC = () => {
     if (authLoadingGlobal) return <div className="flex items-center justify-center min-h-screen bg-gray-100 text-2xl">Loading...</div>;
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-700 to-purple-800 font-inter text-gray-900 p-2 sm:p-4 overflow-y-auto"> {/* Darker gradient */}
-            <header className="w-full max-w-5xl mx-auto py-2.5 px-2 sm:px-4 flex justify-end items-center sticky top-0 z-30 bg-blue-700/70 backdrop-blur-sm"> {/* Simpler sticky header bg */}
+        <div className="flex flex-col items-center justify-center min-h-screen bg-blue-700 font-inter text-gray-900 p-2 sm:p-4 overflow-y-auto"> {/* Solid darker blue bg */}
+            <header className="w-full max-w-5xl mx-auto py-2.5 px-2 sm:px-4 flex justify-end items-center sticky top-0 z-30 bg-blue-700/80 backdrop-blur-sm"> {/* Slightly more opaque header */}
                 {user && (
                     <div className="flex items-center gap-2 sm:gap-3">
-                        {currentPage === 'tutor' && ( // Only show "View Profile" on tutor page
+                        {currentPage === 'tutor' && (
                             <button onClick={() => setCurrentPage('profile')} className="py-1 px-3 sm:py-2 sm:px-4 bg-white/20 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-white/30 shadow">
                                 View Profile
                             </button>
                         )}
-                        {/* Logout button is always visible if logged in */}
+                        {/* Only show "Back to Tutor" if on profile page, otherwise only Logout */}
+                        {currentPage === 'profile' && (
+                            <button onClick={() => setCurrentPage('tutor')} className="py-1 px-3 sm:py-2 sm:px-4 bg-white/20 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-white/30 shadow">
+                                &larr; Back to Tutor
+                            </button>
+                        )}
                         <button onClick={handleLogout} className="py-1 px-3 sm:py-2 sm:px-4 bg-red-500 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-red-600 shadow">
                             Logout
                         </button>
@@ -368,7 +360,7 @@ const App: React.FC = () => {
                         setCurrentPage={setCurrentPage}
                         getAuthHeaders={getAuthHeaders}
                         user={user}
-                        onWordClick={handleWordClickFromProfile} // Pass the new callback
+                        onWordClick={handleWordClickFromProfile}
                     />
                 )}
             </main>

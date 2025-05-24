@@ -2,8 +2,7 @@ import React, { useState, useEffect, createContext, useContext, useRef } from 'r
 import { jwtDecode, JwtPayload } from 'jwt-decode';
 
 // --- Constants ---
-// API_BASE_URL is a string, do not call it like API_BASE_URL()
-const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; // Or your local backend URL
+const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
 // --- AuthContext Definition ---
 interface CustomJwtPayload extends JwtPayload {
@@ -42,67 +41,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const login = async (username: string, password: string): Promise<boolean> => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/login`, { // Ensure API_BASE_URL is used as a string
+            const response = await fetch(`${API_BASE_URL}/login`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
             });
-
             if (response.ok) {
                 const data = await response.json();
                 localStorage.setItem('access_token', data.access_token);
                 const decodedUser: CustomJwtPayload = jwtDecode(data.access_token);
                 setUser({ username: decodedUser.username, tier: decodedUser.tier, exp: decodedUser.exp });
-                console.log('Login successful for user:', decodedUser.username);
-                setLoading(false);
                 return true;
-            } else {
-                // const errorData = await response.json(); // Already handled by caller potentially
-                console.error('Login failed:', await response.text());
-                setLoading(false);
-                return false;
             }
-        } catch (error) {
-            console.error('Network or other error during login:', error);
-            setLoading(false);
+            console.error('Login failed:', await response.text());
             return false;
+        } catch (error) {
+            console.error('Network error during login:', error);
+            return false;
+        } finally {
+            setLoading(false);
         }
     };
 
     const signup = async (username: string, email: string, password: string): Promise<boolean> => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/signup`, { // Ensure API_BASE_URL is used as a string
+            const response = await fetch(`${API_BASE_URL}/signup`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, email, password }),
             });
-
-            if (response.ok) {
-                console.log('Signup successful!');
-                setLoading(false);
-                return true;
-            } else {
-                // const errorData = await response.json(); // Already handled by caller
-                console.error('Signup failed:', await response.text());
-                setLoading(false);
-                return false;
-            }
-        } catch (error) {
-            console.error('Network or other error during signup:', error);
-            setLoading(false);
+            if (response.ok) return true;
+            console.error('Signup failed:', await response.text());
             return false;
+        } catch (error) {
+            console.error('Network error during signup:', error);
+            return false;
+        } finally {
+            setLoading(false);
         }
     };
 
     const logout = async (): Promise<void> => {
         localStorage.removeItem('access_token');
         setUser(null);
-        console.log('Logged out successfully.');
     };
 
     useEffect(() => {
@@ -113,7 +95,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (token) {
                     const decodedUser: CustomJwtPayload = jwtDecode(token);
                     if (decodedUser.exp && decodedUser.exp * 1000 < Date.now()) {
-                        console.log('Token expired. Logging out automatically.');
                         localStorage.removeItem('access_token');
                         setUser(null);
                     } else {
@@ -121,7 +102,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }
                 }
             } catch (error) {
-                console.error('Error decoding token or token invalid. Clearing local storage.', error);
                 localStorage.removeItem('access_token');
                 setUser(null);
             } finally {
@@ -129,28 +109,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         };
         checkAuthStatus();
-
         const handleStorageChange = (event: StorageEvent) => {
-            if (event.key === 'access_token' && !event.newValue) {
-                setUser(null);
-                console.log('Token removed from storage, logging out.');
-            }
+            if (event.key === 'access_token' && !event.newValue) setUser(null);
         };
-
         window.addEventListener('storage', handleStorageChange);
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-        };
-
+        return () => window.removeEventListener('storage', handleStorageChange);
     }, []);
 
-    return (
-        <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
-            {children}
-        </AuthContext.Provider>
-    );
+    return <AuthContext.Provider value={{ user, loading, login, signup, logout }}>{children}</AuthContext.Provider>;
 };
 
+// --- AuthModal Component ---
 interface AuthModalProps {
     onClose: () => void;
     onLoginSuccess: (question: string) => Promise<void>;
@@ -171,24 +140,16 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
         e.preventDefault();
         setError(null);
         setIsLoading(true);
-
-        let success = false;
-        if (isLoginMode) {
-            success = await login(username, password);
-        } else {
-            success = await signup(username, email, password);
-        }
-
+        const success = isLoginMode ? await login(username, password) : await signup(username, email, password);
         if (success) {
-            if (isLoginMode) {
-                await onLoginSuccess(initialQuestion);
-            } else {
-                setError('Signup successful! Please log in with your new credentials.');
+            if (isLoginMode) await onLoginSuccess(initialQuestion);
+            else {
+                setError('Signup successful! Please log in.');
                 setIsLoginMode(true);
                 setPassword('');
             }
         } else {
-            setError(isLoginMode ? 'Login failed. Invalid username or password.' : 'Signup failed. Username or email might already exist, or invalid data.');
+            setError(isLoginMode ? 'Login failed. Invalid credentials.' : 'Signup failed. User might exist or data invalid.');
         }
         setIsLoading(false);
     };
@@ -196,83 +157,30 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     return (
         <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 sm:p-8 rounded-lg shadow-xl w-full max-w-md relative">
-                <button
-                    onClick={onClose}
-                    className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                    aria-label="Close modal"
-                >
-                    &times;
-                </button>
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-                    {isLoginMode ? 'Login' : 'Sign Up'}
-                </h2>
+                <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl" aria-label="Close modal">&times;</button>
+                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">{isLoginMode ? 'Login' : 'Sign Up'}</h2>
                 <form onSubmit={handleSubmit}>
+                    {/* Username, Email, Password fields - ensure unique IDs if multiple forms exist */}
                     <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username-modal">
-                            Username
-                        </label>
-                        <input
-                            type="text"
-                            id="username-modal"
-                            className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            required
-                        />
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="modal-username">Username</label>
+                        <input type="text" id="modal-username" className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" value={username} onChange={(e) => setUsername(e.target.value)} required />
                     </div>
                     {!isLoginMode && (
                         <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email-modal">
-                                Email
-                            </label>
-                            <input
-                                type="email"
-                                id="email-modal"
-                                className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required={!isLoginMode}
-                            />
+                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="modal-email">Email</label>
+                            <input type="email" id="modal-email" className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" value={email} onChange={(e) => setEmail(e.target.value)} required={!isLoginMode} />
                         </div>
                     )}
                     <div className="mb-6">
-                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password-modal">
-                            Password
-                        </label>
-                        <input
-                            type="password"
-                            id="password-modal"
-                            className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                        />
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="modal-password">Password</label>
+                        <input type="password" id="modal-password" className="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500" value={password} onChange={(e) => setPassword(e.target.value)} required />
                     </div>
                     {error && <p className="text-red-500 text-xs italic mb-4 text-center">{error}</p>}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <button
-                            type="submit"
-                            className="w-full sm:w-auto bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded focus:outline-none focus:shadow-outline transition-colors duration-150 flex items-center justify-center"
-                            disabled={isLoading || authHookLoading}
-                        >
-                            {isLoading || authHookLoading ? (
-                                <>
-                                    <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Processing...
-                                </>
-                            ) : (isLoginMode ? 'Login' : 'Sign Up')}
+                        <button type="submit" className="w-full sm:w-auto bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded focus:outline-none focus:shadow-outline transition-colors duration-150 flex items-center justify-center" disabled={isLoading || authHookLoading}>
+                            {isLoading || authHookLoading ? <><svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Processing...</> : (isLoginMode ? 'Login' : 'Sign Up')}
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsLoginMode(!isLoginMode);
-                                setError(null);
-                            }}
-                            className="w-full sm:w-auto inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800"
-                        >
+                        <button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setError(null); }} className="w-full sm:w-auto font-bold text-sm text-blue-500 hover:text-blue-800">
                             {isLoginMode ? 'Need an account? Sign Up' : 'Already have an account? Login'}
                         </button>
                     </div>
@@ -282,6 +190,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     );
 };
 
+// --- TinyTutorAppContent Component ---
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
 
 interface TinyTutorAppContentProps {
@@ -291,7 +200,6 @@ interface TinyTutorAppContentProps {
     setGeneratedContents: React.Dispatch<React.SetStateAction<Record<ContentMode, string>>>;
     activeMode: ContentMode;
     setActiveMode: React.Dispatch<React.SetStateAction<ContentMode>>;
-    questionBeforeModalRef: React.MutableRefObject<string>;
     generateExplanation: (question: string, mode: ContentMode) => Promise<void>;
     isLoadingExplanation: boolean;
     aiError: string | null;
@@ -302,22 +210,12 @@ interface TinyTutorAppContentProps {
 }
 
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
-    inputQuestion,
-    setInputQuestion,
-    generatedContents,
-    setGeneratedContents,
-    activeMode,
-    setActiveMode,
-    questionBeforeModalRef,
-    generateExplanation,
-    isLoadingExplanation,
-    aiError,
-    setAiError,
-    currentUser,
-    setShowLoginModal,
-    setShowSignupModal,
+    inputQuestion, setInputQuestion, generatedContents, setGeneratedContents,
+    activeMode, setActiveMode, generateExplanation, isLoadingExplanation,
+    aiError, setAiError, currentUser, setShowLoginModal, setShowSignupModal,
 }) => {
     const loggedIn = currentUser !== null;
+    const questionBeforeModalRef = useRef(''); // Keep ref local if only used here
 
     const handleGenerateExplanationClick = () => {
         setAiError(null);
@@ -326,203 +224,132 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             setShowLoginModal(inputQuestion);
             return;
         }
-
         if (inputQuestion.trim() === '') {
-            setAiError('Please enter a concept to generate an explanation.');
-            setActiveMode('explain');
+            setAiError('Please enter a concept.');
             return;
         }
-        setGeneratedContents({
-            explain: '',
-            image: 'Image generation feature coming soon! You can imagine an image of...',
-            fact: '',
-            quiz: '',
-            deep: '',
-        });
+        setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: '' });
         setActiveMode('explain');
         generateExplanation(inputQuestion, 'explain');
+    };
+
+    const handleClearInput = () => {
+        setInputQuestion('');
+        setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: '' });
+        setActiveMode('explain');
+        setAiError(null);
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setInputQuestion(e.target.value);
         setAiError(null);
-        if (e.target.value.trim() === '') {
-            setGeneratedContents({
-                explain: '',
-                image: 'Image generation feature coming soon! You can imagine an image of...',
-                fact: '',
-                quiz: '',
-                deep: '',
-            });
-            setActiveMode('explain');
-        }
+        // Don't clear generated content on every keystroke, only when 'x' is pressed or new generation.
     };
 
     const currentExplanationContent = generatedContents[activeMode];
-    const showExplanationContent =
-        (loggedIn && (currentExplanationContent || isLoadingExplanation || aiError)) ||
-        (!loggedIn && (aiError || (inputQuestion.trim() !== '' && currentExplanationContent)));
+    // Show content box if logged in, OR if there's an AI error to display, OR if not logged in but an initial prompt is there.
+    const showContentBoxStructure = loggedIn || aiError || (!loggedIn && inputQuestion.trim() === '');
+
 
     return (
-        <div className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-3xl mx-auto flex flex-col min-h-[75vh] md:min-h-[650px] max-h-[90vh]">
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-center text-gray-800 mb-2 sm:mb-4">
-                Tiny Tutor {loggedIn && currentUser?.username && <span className="text-indigo-600">({currentUser.username})</span>}
-            </h2>
-            {loggedIn && currentUser && (
-                <p className="text-center text-gray-600 text-sm sm:text-base mb-4 sm:mb-6">
-                    Your tier: <span className="font-semibold text-blue-600">{currentUser.tier}</span>
-                </p>
-            )}
+        // Main content card: Added fixed height and overflow hidden to prevent stretching the page.
+        // Children will use flex to distribute space.
+        <div className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-3xl mx-auto flex flex-col h-[85vh] max-h-[700px] min-h-[550px] overflow-hidden">
+            <div className="flex-shrink-0"> {/* Header part, does not grow */}
+                <h2 className="text-3xl sm:text-4xl font-extrabold text-center text-gray-800 mb-2 sm:mb-4">
+                    Tiny Tutor {loggedIn && currentUser?.username && <span className="text-indigo-600">({currentUser.username})</span>}
+                </h2>
+                {loggedIn && currentUser && (
+                    <p className="text-center text-gray-600 text-sm sm:text-base mb-4 sm:mb-6">
+                        Your tier: <span className="font-semibold text-blue-600">{currentUser.tier}</span>
+                    </p>
+                )}
+            </div>
 
-            <div className="mb-4 sm:mb-6 p-4 sm:p-6 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="mb-4 sm:mb-6 p-4 sm:p-6 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0"> {/* Input section */}
                 <label htmlFor="question-input-main" className="block text-gray-700 text-lg sm:text-xl font-bold mb-2 sm:mb-3">
                     Enter a word or concept:
                 </label>
                 <div className="relative">
                     <input
-                        type="text"
-                        id="question-input-main"
-                        className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-transparent transition duration-200 text-base sm:text-lg"
-                        placeholder="e.g., Photosynthesis, Quantum Computing"
-                        value={inputQuestion}
-                        onChange={handleInputChange}
-                        disabled={isLoadingExplanation}
+                        type="text" id="question-input-main"
+                        className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400"
+                        placeholder="e.g., Photosynthesis" value={inputQuestion}
+                        onChange={handleInputChange} disabled={isLoadingExplanation}
                     />
                     {inputQuestion && (
-                        <button
-                            onClick={() => {
-                                setInputQuestion('');
-                                setGeneratedContents({ explain: '', image: 'Image generation feature coming soon! You can imagine an image of...', fact: '', quiz: '', deep: '' });
-                                setActiveMode('explain');
-                                setAiError(null);
-                            }}
-                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xl"
-                            aria-label="Clear input"
-                        >
+                        <button onClick={handleClearInput} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xl" aria-label="Clear input">
                             &times;
                         </button>
                     )}
                 </div>
                 <button
                     onClick={handleGenerateExplanationClick}
-                    className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-lg sm:text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-300 transform hover:scale-100 active:scale-95 shadow-lg flex items-center justify-center"
+                    className="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-lg sm:text-xl hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center"
                     disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                 >
-                    {isLoadingExplanation && activeMode === 'explain' ? (
-                        <>
-                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Generating...
-                        </>
-                    ) : (
-                        'Generate Explanation'
-                    )}
+                    {isLoadingExplanation && activeMode === 'explain' ? <><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</> : 'Generate Explanation'}
                 </button>
-                {aiError && (
-                    <p className="text-red-600 text-center text-sm font-medium mt-3">{aiError}</p>
-                )}
+                {aiError && <p className="text-red-600 text-center text-sm font-medium mt-3">{aiError}</p>}
                 {!loggedIn && !aiError && (
                     <p className="text-gray-600 text-center text-sm mt-3">
-                        <button
-                            onClick={() => setShowSignupModal(inputQuestion)}
-                            className="font-semibold text-blue-600 hover:underline"
-                        >
-                            Sign up
-                        </button>
+                        <button onClick={() => setShowSignupModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>
                         {' '}or{' '}
-                        <button
-                            onClick={() => setShowLoginModal(inputQuestion)}
-                            className="font-semibold text-blue-600 hover:underline"
-                        >
-                            Login
-                        </button>
+                        <button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>
                         {' '}to generate explanations.
                     </p>
                 )}
             </div>
 
-            {loggedIn && inputQuestion.trim() !== '' && (
-                <div className="flex flex-wrap justify-center gap-2 mt-2 mb-4">
-                    {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
-                        <button
-                            key={mode}
-                            onClick={async () => {
-                                setAiError(null);
-                                setActiveMode(mode);
-                                if (inputQuestion.trim() !== '' && !generatedContents[mode] && mode !== 'image') {
-                                    await generateExplanation(inputQuestion, mode);
-                                } else if (mode === 'image') {
-                                    setGeneratedContents(prev => ({ ...prev, image: 'Image generation feature coming soon! You can imagine an image of...' }));
-                                }
-                            }}
-                            className={`px-3 py-2 sm:px-4 sm:py-2 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200
-                                        ${activeMode === mode
-                                    ? 'bg-blue-600 text-white shadow-md scale-105'
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                }`}
-                            disabled={isLoadingExplanation && activeMode !== mode}
-                        >
-                            {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                            {isLoadingExplanation && activeMode === mode && (
-                                <svg className="animate-spin ml-2 -mr-1 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            )}
-                        </button>
-                    ))}
-                </div>
-            )}
+            {/* Toggle Buttons Container: Takes up space only when visible to reduce jump */}
+            <div className={`flex-shrink-0 flex flex-wrap justify-center gap-2 mb-4 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' ? 'opacity-100 h-auto mt-2' : 'opacity-0 h-0 mt-0'}`}>
+                {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
+                    <button
+                        key={mode}
+                        onClick={async () => {
+                            if (!loggedIn || inputQuestion.trim() === '') return;
+                            setAiError(null); setActiveMode(mode);
+                            if (!generatedContents[mode] && mode !== 'image') await generateExplanation(inputQuestion, mode);
+                            else if (mode === 'image') setGeneratedContents(prev => ({ ...prev, image: 'Image generation feature coming soon!' }));
+                        }}
+                        className={`px-3 py-2 sm:px-4 sm:py-2 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                        disabled={isLoadingExplanation && activeMode !== mode}
+                    >
+                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                        {isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-2 -mr-1 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                    </button>
+                ))}
+            </div>
 
-            <div className="flex-grow mt-1 p-4 sm:p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner min-h-[200px] md:min-h-[250px] overflow-y-auto relative">
-                {showExplanationContent || (loggedIn && inputQuestion.trim() !== '') ? (
+            {/* Explanation/Content Display Area: flex-grow allows it to take remaining space, overflow-y-auto for scrolling */}
+            <div className="flex-grow p-4 sm:p-6 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto relative min-h-[150px]"> {/* min-h to prevent full collapse */}
+                {showContentBoxStructure ? (
                     <>
                         <h3 className="text-xl sm:text-2xl font-bold text-blue-800 mb-3 sm:mb-4 sticky top-0 bg-blue-50 py-2 z-10">
                             {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}:
                         </h3>
                         <div className="prose prose-sm sm:prose-base max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap">
                             {isLoadingExplanation && !currentExplanationContent ? (
-                                <div className="flex items-center justify-center text-gray-500">
-                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Generating {activeMode} content...
-                                </div>
+                                <div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode}...</div>
                             ) : (
-                                currentExplanationContent || (aiError && loggedIn ? (
-                                    <p className="text-red-600">{aiError}</p>
-                                ) : (loggedIn && inputQuestion.trim() !== '' ?
-                                    <p className="text-gray-500">Select a mode or generate explanation.</p>
-                                    :
-                                    <p className="text-gray-500">Enter a concept and click "Generate Explanation" to get started, or login if you haven't.</p>
-                                ))
+                                currentExplanationContent || (loggedIn && aiError ? <p className="text-red-600">{aiError}</p> : <p className="text-gray-500">{loggedIn ? "Enter a concept or select a mode." : "Login to see explanations."}</p>)
                             )}
                         </div>
                     </>
                 ) : (
-                    <div className="flex items-center justify-center h-full">
-                        <p className="text-gray-400 text-center">
-                            {loggedIn ? "Your generated content will appear here." : "Login to see explanations."}
-                        </p>
-                    </div>
+                    <div className="flex items-center justify-center h-full"><p className="text-gray-400 text-center">{loggedIn ? "Your generated content will appear here." : "Login to see explanations."}</p></div>
                 )}
             </div>
         </div>
     );
 };
 
+// --- Main App Component ---
 const App: React.FC = () => {
     const { user, loading: authLoadingGlobal, logout: authLogout } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
     const [generatedContents, setGeneratedContents] = useState<Record<ContentMode, string>>({
-        explain: '',
-        image: 'Image generation feature coming soon! You can imagine an image of...',
-        fact: '',
-        quiz: '',
-        deep: '',
+        explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: '',
     });
     const [activeMode, setActiveMode] = useState<ContentMode>('explain');
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
@@ -533,160 +360,90 @@ const App: React.FC = () => {
 
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
         return headers;
     };
 
     const generateExplanation = async (questionToGenerate: string, mode: ContentMode) => {
         if (!user) {
             setAiError("Please login to generate explanations.");
-            handleShowLoginModal(questionToGenerate); // Corrected: Call the local handler
+            handleShowLoginModal(questionToGenerate);
             return;
         }
-        setAiError(null);
-        setIsLoadingExplanation(true);
-
+        setAiError(null); setIsLoadingExplanation(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, { // Ensure API_BASE_URL is used as a string
-                method: 'POST',
-                headers: getAuthHeaders(),
+            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+                method: 'POST', headers: getAuthHeaders(),
                 body: JSON.stringify({ question: questionToGenerate, content_type: mode }),
                 signal: AbortSignal.timeout(30000)
             });
-
             if (response.ok) {
                 const data = await response.json();
-                const newContent = data.explanation;
-                setGeneratedContents((currentContents) => ({
-                    ...currentContents,
-                    [mode]: newContent,
-                }));
+                setGeneratedContents(cc => ({ ...cc, [mode]: data.explanation }));
             } else {
-                const errorData = await response.json().catch(() => ({ error: "Failed to parse error response from server." })); // Graceful error parsing
-                let errorMessage = errorData.error || `Failed to generate ${mode} content. Status: ${response.status}`;
-                if (response.status === 401) errorMessage = "Your session may have expired. Please login again.";
-                setAiError(errorMessage);
+                const errorData = await response.json().catch(() => ({ error: "Parse error" }));
+                setAiError(errorData.error || `Failed: ${response.status}`);
+                if (response.status === 401) setAiError("Session expired. Please login again.");
             }
         } catch (error: any) {
-            if (error.name === 'TimeoutError') {
-                setAiError(`The request for ${mode} content timed out. Please try again.`);
-            } else {
-                setAiError(`Network error or unexpected response for ${mode}. Check console for details.`);
-            }
-            console.error(`Error fetching AI explanation for ${mode}:`, error);
+            setAiError(error.name === 'TimeoutError' ? `Request for ${mode} timed out.` : `Network error for ${mode}.`);
+            console.error(`Error fetching AI for ${mode}:`, error);
         } finally {
             setIsLoadingExplanation(false);
         }
     };
 
     const handleShowLoginModal = (question: string) => {
-        questionBeforeModalRef.current = question;
-        setAuthModalMode('login');
-        setShowAuthModal(true);
+        questionBeforeModalRef.current = question; setAuthModalMode('login'); setShowAuthModal(true);
     };
-
     const handleShowSignupModal = (question: string) => {
-        questionBeforeModalRef.current = question;
-        setAuthModalMode('signup');
-        setShowAuthModal(true);
+        questionBeforeModalRef.current = question; setAuthModalMode('signup'); setShowAuthModal(true);
     };
-
     const handleLogout = () => {
-        authLogout(); // Call logout from AuthContext via authLogout
-        setInputQuestion('');
-        setGeneratedContents({
-            explain: '',
-            image: 'Image generation feature coming soon! You can imagine an image of...',
-            fact: '',
-            quiz: '',
-            deep: '',
-        });
-        setActiveMode('explain');
-        setAiError(null);
+        authLogout(); setInputQuestion('');
+        setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: '' });
+        setActiveMode('explain'); setAiError(null);
     };
 
-    if (authLoadingGlobal) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-100 text-gray-700 text-2xl font-semibold">
-                Loading application...
-            </div>
-        );
-    }
+    if (authLoadingGlobal) return <div className="flex items-center justify-center min-h-screen bg-gray-100 text-2xl">Loading...</div>;
 
     return (
-        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 font-inter text-gray-900 p-4 overflow-x-hidden">
+        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 font-inter text-gray-900 p-4 overflow-hidden"> {/* Changed to justify-center and overflow-hidden */}
             <div className="absolute top-4 right-4 z-20">
-                {user ? (
-                    <button
-                        onClick={handleLogout}
-                        className="py-2 px-4 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50 transition duration-300 shadow"
-                    >
+                {user && ( // Only show Logout button if user is logged in
+                    <button onClick={handleLogout} className="py-2 px-4 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 shadow">
                         Logout
                     </button>
-                ) : (
-                    <button
-                        onClick={() => handleShowLoginModal(inputQuestion)}
-                        className="py-2 px-4 bg-green-500 text-white rounded-lg text-sm font-semibold hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-opacity-50 transition-colors duration-200 shadow"
-                    >
-                        Login / Signup
-                    </button>
                 )}
+                {/* Login/Signup button removed from here as requested */}
             </div>
-            <main className="w-full flex justify-center items-center flex-grow my-auto">
+            <main className="w-full flex justify-center items-center"> {/* Removed flex-grow and my-auto to let card define its space */}
                 <TinyTutorAppContent
-                    inputQuestion={inputQuestion}
-                    setInputQuestion={setInputQuestion}
-                    generatedContents={generatedContents}
-                    setGeneratedContents={setGeneratedContents}
-                    activeMode={activeMode}
-                    setActiveMode={setActiveMode}
-                    questionBeforeModalRef={questionBeforeModalRef}
-                    generateExplanation={generateExplanation}
-                    isLoadingExplanation={isLoadingExplanation}
-                    aiError={aiError}
-                    setAiError={setAiError}
-                    currentUser={user}
-                    setShowLoginModal={handleShowLoginModal}
-                    setShowSignupModal={handleShowSignupModal}
+                    inputQuestion={inputQuestion} setInputQuestion={setInputQuestion}
+                    generatedContents={generatedContents} setGeneratedContents={setGeneratedContents}
+                    activeMode={activeMode} setActiveMode={setActiveMode}
+                    generateExplanation={generateExplanation} isLoadingExplanation={isLoadingExplanation}
+                    aiError={aiError} setAiError={setAiError} currentUser={user}
+                    setShowLoginModal={handleShowLoginModal} setShowSignupModal={handleShowSignupModal}
                 />
             </main>
             {showAuthModal && (
                 <AuthModal
-                    onClose={() => {
-                        setShowAuthModal(false);
-                        setAiError(null);
-                    }}
-                    onLoginSuccess={async (questionAfterLogin: string) => {
-                        setShowAuthModal(false);
-                        setAiError(null);
-                        if (questionAfterLogin.trim() !== '') {
-                            setInputQuestion(questionAfterLogin);
-                            await generateExplanation(questionAfterLogin, 'explain');
-                        } else {
-                            setGeneratedContents(prev => ({ ...prev, explain: "Welcome! Enter a concept to get started." }));
-                        }
+                    onClose={() => { setShowAuthModal(false); setAiError(null); }}
+                    onLoginSuccess={async (q) => {
+                        setShowAuthModal(false); setAiError(null);
+                        if (q.trim() !== '') { setInputQuestion(q); await generateExplanation(q, 'explain'); }
+                        else setGeneratedContents(prev => ({ ...prev, explain: "Welcome! Enter a concept." }));
                         questionBeforeModalRef.current = '';
                     }}
-                    initialQuestion={questionBeforeModalRef.current}
-                    initialMode={authModalMode}
+                    initialQuestion={questionBeforeModalRef.current} initialMode={authModalMode}
                 />
             )}
-            <footer className="text-center py-4 text-xs text-blue-200">
-                Tiny Tutor App &copy; {new Date().getFullYear()}
-            </footer>
+            <footer className="text-center py-4 text-xs text-blue-200 flex-shrink-0">Tiny Tutor App &copy; {new Date().getFullYear()}</footer>
         </div>
     );
 };
 
-const AppWithAuthProvider: React.FC = () => (
-    <AuthProvider>
-        <App />
-    </AuthProvider>
-);
-
+const AppWithAuthProvider: React.FC = () => <AuthProvider><App /></AuthProvider>;
 export default AppWithAuthProvider;

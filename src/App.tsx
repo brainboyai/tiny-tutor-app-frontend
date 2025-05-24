@@ -19,7 +19,7 @@ interface User {
 interface AuthContextType {
     user: User | null;
     loading: boolean;
-    login: (username: string, password: string) => Promise<User | null>; // Modified to return User or null
+    login: (username: string, password: string) => Promise<User | null>;
     signup: (username: string, email: string, password: string) => Promise<boolean>;
     logout: () => Promise<void>;
 }
@@ -38,7 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // MODIFIED: Login now returns User object or null
     const login = async (username: string, password: string): Promise<User | null> => {
         setLoading(true);
         try {
@@ -53,13 +52,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const decodedUser: CustomJwtPayload = jwtDecode(data.access_token);
                 const newUser = { username: decodedUser.username, tier: decodedUser.tier, exp: decodedUser.exp };
                 setUser(newUser);
-                return newUser; // Return the new user object
+                return newUser;
             }
             console.error('Login failed:', await response.text());
-            return null; // Return null on failure
+            return null;
         } catch (error) {
             console.error('Network error during login:', error);
-            return null; // Return null on error
+            return null;
         } finally {
             setLoading(false);
         }
@@ -103,7 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         setUser({ username: decodedUser.username, tier: decodedUser.tier, exp: decodedUser.exp });
                     }
                 } else {
-                    setUser(null); // Explicitly set user to null if no token
+                    setUser(null);
                 }
             } catch (error) {
                 localStorage.removeItem('access_token');
@@ -123,10 +122,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return <AuthContext.Provider value={{ user, loading, login, signup, logout }}>{children}</AuthContext.Provider>;
 };
 
-// --- AuthModal Component ---
 interface AuthModalProps {
     onClose: () => void;
-    // MODIFIED: onLoginSuccess now receives the User object
     onLoginSuccess: (loggedInUser: User, question: string) => Promise<void>;
     initialQuestion: string;
     initialMode: 'login' | 'signup';
@@ -143,24 +140,15 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError(null);
-        setIsLoading(true);
+        setError(null); setIsLoading(true);
         if (isLoginMode) {
-            const loggedInUser = await login(username, password); // login now returns User or null
-            if (loggedInUser) {
-                await onLoginSuccess(loggedInUser, initialQuestion); // Pass user to callback
-            } else {
-                setError('Login failed. Invalid credentials.');
-            }
+            const loggedInUser = await login(username, password);
+            if (loggedInUser) await onLoginSuccess(loggedInUser, initialQuestion);
+            else setError('Login failed. Invalid credentials.');
         } else {
             const signedUp = await signup(username, email, password);
-            if (signedUp) {
-                setError('Signup successful! Please log in.');
-                setIsLoginMode(true);
-                setPassword('');
-            } else {
-                setError('Signup failed. User might exist or data invalid.');
-            }
+            if (signedUp) { setError('Signup successful! Please log in.'); setIsLoginMode(true); setPassword(''); }
+            else setError('Signup failed. User might exist or data invalid.');
         }
         setIsLoading(false);
     };
@@ -200,7 +188,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     );
 };
 
-// --- TinyTutorAppContent Component ---
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
 
 interface TinyTutorAppContentProps {
@@ -210,7 +197,7 @@ interface TinyTutorAppContentProps {
     setGeneratedContents: React.Dispatch<React.SetStateAction<Record<ContentMode, string>>>;
     activeMode: ContentMode;
     setActiveMode: React.Dispatch<React.SetStateAction<ContentMode>>;
-    generateExplanation: (question: string, mode: ContentMode, forceCheckUser?: User | null) => Promise<void>; // Added forceCheckUser
+    generateExplanation: (question: string, mode: ContentMode, forceCheckUser?: User | null) => Promise<void>;
     isLoadingExplanation: boolean;
     aiError: string | null;
     setAiError: React.Dispatch<React.SetStateAction<string | null>>;
@@ -240,7 +227,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
         }
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: '' });
         setActiveMode('explain');
-        generateExplanation(inputQuestion, 'explain'); // Will use currentUser from context here
+        generateExplanation(inputQuestion, 'explain');
     };
 
     const handleClearInput = () => {
@@ -259,45 +246,46 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     const showContentBoxStructure = loggedIn || aiError || (!loggedIn && inputQuestion.trim() !== '');
 
     return (
-        <div className="bg-white p-4 sm:p-6 rounded-xl shadow-2xl w-full max-w-3xl mx-auto flex flex-col h-[88vh] max-h-[750px] min-h-[600px] overflow-hidden"> {/* Adjusted padding and height */}
+        <div className="bg-white p-3 sm:p-5 rounded-xl shadow-2xl w-full max-w-3xl mx-auto flex flex-col h-[88vh] max-h-[800px] min-h-[650px] overflow-hidden"> {/* Increased max-h, min-h slightly */}
             <div className="flex-shrink-0">
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-center text-gray-800 mb-1 sm:mb-2"> {/* Reduced padding */}
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-center text-gray-800 mb-1">
                     Tiny Tutor {loggedIn && currentUser?.username && <span className="text-indigo-600">({currentUser.username})</span>}
                 </h2>
                 {loggedIn && currentUser && (
-                    <p className="text-center text-gray-600 text-xs sm:text-sm mb-2 sm:mb-3"> {/* Reduced padding */}
+                    <p className="text-center text-gray-600 text-xs sm:text-sm mb-2">
                         Your tier: <span className="font-semibold text-blue-600">{currentUser.tier}</span>
                     </p>
                 )}
             </div>
 
-            <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0"> {/* Reduced padding */}
-                <label htmlFor="question-input-main" className="block text-gray-700 text-base sm:text-lg font-bold mb-1 sm:mb-2">
+            <div className="mb-2 sm:mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0">
+                <label htmlFor="question-input-main" className="block text-gray-700 text-base sm:text-lg font-bold mb-1">
                     Enter a word or concept:
                 </label>
                 <div className="relative">
                     <input
                         type="text" id="question-input-main"
-                        className="w-full px-3 py-2 sm:px-4 sm:py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 text-sm sm:text-base" // Adjusted padding
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 text-sm sm:text-base"
                         placeholder="e.g., Photosynthesis" value={inputQuestion}
                         onChange={handleInputChange} disabled={isLoadingExplanation}
                     />
                     {inputQuestion && (
-                        <button onClick={handleClearInput} className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg sm:text-xl" aria-label="Clear input">
+                        <button onClick={handleClearInput} className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg" aria-label="Clear input">
                             &times;
                         </button>
                     )}
                 </div>
+                {/* Generate Explanation Button: Added min-w-full or specific width like min-w-[200px] and mx-auto if needed */}
                 <button
                     onClick={handleGenerateExplanationClick}
-                    className="mt-3 w-full bg-indigo-600 text-white py-2 sm:py-3 rounded-lg font-bold text-base sm:text-lg hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center" // Adjusted padding
+                    className="mt-3 w-full sm:min-w-[240px] sm:w-auto sm:mx-auto bg-indigo-600 text-white py-2.5 px-5 rounded-lg font-bold text-base hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center"
                     disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                 >
-                    {isLoadingExplanation && activeMode === 'explain' ? <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</> : 'Generate Explanation'}
+                    {isLoadingExplanation && activeMode === 'explain' ? <><svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</> : 'Generate Explanation'}
                 </button>
-                {aiError && <p className="text-red-600 text-center text-xs sm:text-sm font-medium mt-2">{aiError}</p>}
+                {aiError && <p className="text-red-600 text-center text-xs font-medium mt-1.5">{aiError}</p>}
                 {!loggedIn && !aiError && (
-                    <p className="text-gray-600 text-center text-xs sm:text-sm mt-2">
+                    <p className="text-gray-600 text-center text-xs mt-1.5">
                         <button onClick={() => setShowSignupModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>
                         {' '}or{' '}
                         <button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>
@@ -306,7 +294,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 )}
             </div>
 
-            <div className={`flex-shrink-0 flex flex-wrap justify-center gap-1 sm:gap-2 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0'}`}> {/* Reduced padding */}
+            <div className={`flex-shrink-0 flex flex-wrap justify-center gap-1 mb-2 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' ? 'opacity-100 h-auto mt-1' : 'opacity-0 h-0 mt-0'}`}>
                 {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
                     <button
                         key={mode}
@@ -316,23 +304,23 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             if (!generatedContents[mode] && mode !== 'image') await generateExplanation(inputQuestion, mode);
                             else if (mode === 'image') setGeneratedContents(prev => ({ ...prev, image: 'Image generation feature coming soon!' }));
                         }}
-                        className={`px-2 py-1 sm:px-3 sm:py-2 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} // Adjusted padding
+                        className={`px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
                         disabled={isLoadingExplanation && activeMode !== mode}
                     >
                         {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                        {isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-2 -mr-1 h-3 w-3 sm:h-4 sm:w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                        {isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1.5 -mr-0.5 h-3.5 w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
                     </button>
                 ))}
             </div>
 
-            <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto relative min-h-[200px] sm:min-h-[250px]"> {/* Adjusted padding & min-height */}
+            {/* Explanation Box: Increased min-h and added break-words to prose */}
+            <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto relative min-h-[250px] sm:min-h-[300px]">
                 {showContentBoxStructure ? (
                     <>
-                        <h3 className="text-lg sm:text-xl font-bold text-blue-800 mb-2 sm:mb-3 sticky top-0 bg-blue-50 py-1 sm:py-2 z-10"> {/* Adjusted padding & text size */}
+                        <h3 className="text-lg sm:text-xl font-bold text-blue-800 mb-2 sticky top-0 bg-blue-50 py-1.5 z-10">
                             {activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}:
                         </h3>
-                        {/* Increased text size for explanation content */}
-                        <div className="prose prose-sm sm:prose-base md:prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap">
+                        <div className="prose prose-base sm:prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap break-words"> {/* Added break-words */}
                             {isLoadingExplanation && !currentExplanationContent ? (
                                 <div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode}...</div>
                             ) : (
@@ -348,7 +336,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     );
 };
 
-// --- Main App Component ---
 const App: React.FC = () => {
     const { user, loading: authLoadingGlobal, logout: authLogout } = useAuth();
     const [inputQuestion, setInputQuestion] = useState('');
@@ -369,18 +356,11 @@ const App: React.FC = () => {
         return headers;
     };
 
-    // MODIFIED: generateExplanation now accepts an optional forceCheckUser
     const generateExplanation = async (questionToGenerate: string, mode: ContentMode, forceCheckUser?: User | null) => {
-        const currentUserToCheck = forceCheckUser !== undefined ? forceCheckUser : user; // Use passed user if available, else from context
-
-        if (!currentUserToCheck) { // Check against the most up-to-date user status
+        const currentUserToCheck = forceCheckUser !== undefined ? forceCheckUser : user;
+        if (!currentUserToCheck) {
             setAiError("Please login to generate explanations.");
-            // Do not show login modal again if it was just closed due to this check
-            // The calling function (onLoginSuccess) will handle modal closure.
-            // Or, if called from elsewhere, this check might trigger the modal.
-            if (forceCheckUser === undefined) { // Only show modal if not part of immediate post-login flow
-                handleShowLoginModal(questionToGenerate);
-            }
+            if (forceCheckUser === undefined) handleShowLoginModal(questionToGenerate);
             return;
         }
         setAiError(null); setIsLoadingExplanation(true);
@@ -442,28 +422,21 @@ const App: React.FC = () => {
             </main>
             {showAuthModal && (
                 <AuthModal
-                    onClose={() => { setShowAuthModal(false); /* Do not clear aiError here, let generateExplanation handle it */ }}
-                    // MODIFIED: onLoginSuccess now uses the returned loggedInUser
+                    onClose={() => { setShowAuthModal(false); }}
                     onLoginSuccess={async (loggedInUser, questionAfterLogin) => {
-                        setShowAuthModal(false);
-                        setAiError(null); // Clear any previous auth-related errors
-
-                        // Now that login is confirmed and we have the user object,
-                        // proceed to generate explanation if a question was pending.
+                        setShowAuthModal(false); setAiError(null);
                         if (questionAfterLogin.trim() !== '') {
                             setInputQuestion(questionAfterLogin);
-                            // Pass the freshly loggedInUser to generateExplanation to ensure it uses the new auth state
                             await generateExplanation(questionAfterLogin, 'explain', loggedInUser);
                         } else {
-                            // If no specific question, maybe fetch a welcome message or default content
-                            setGeneratedContents(prev => ({ ...prev, explain: "Welcome! Enter a concept to get started." }));
+                            setGeneratedContents(prev => ({ ...prev, explain: "Welcome! Enter a concept." }));
                         }
-                        questionBeforeModalRef.current = ''; // Clear the ref
+                        questionBeforeModalRef.current = '';
                     }}
                     initialQuestion={questionBeforeModalRef.current} initialMode={authModalMode}
                 />
             )}
-            <footer className="text-center py-2 sm:py-4 text-xs text-blue-200 flex-shrink-0">Tiny Tutor App &copy; {new Date().getFullYear()}</footer>
+            <footer className="text-center py-2 text-xs text-blue-200 flex-shrink-0">Tiny Tutor App &copy; {new Date().getFullYear()}</footer>
         </div>
     );
 };

@@ -115,11 +115,15 @@ interface TinyTutorAppContentProps {
     isLoadingExplanation: boolean; aiError: string | null; setAiError: React.Dispatch<React.SetStateAction<string | null>>;
     currentUser: User | null; setShowLoginModal: (question: string) => void; setShowSignupModal: (question: string) => void;
     isExplainGeneratedForCurrentWord: boolean; setIsExplainGeneratedForCurrentWord: React.Dispatch<React.SetStateAction<boolean>>;
+    // New props for favoriting from Tutor page
+    onToggleFavorite: (wordId: string, currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
+    currentWordIsFavorite: boolean | null; // Favorite status of the inputQuestion
 }
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     inputQuestion, setInputQuestion, generatedContents, setGeneratedContents, activeMode, setActiveMode,
     generateExplanation, isLoadingExplanation, aiError, setAiError, currentUser,
-    setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord, setIsExplainGeneratedForCurrentWord
+    setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord, setIsExplainGeneratedForCurrentWord,
+    onToggleFavorite, currentWordIsFavorite
 }) => {
     const loggedIn = currentUser !== null;
     const questionBeforeModalRef = useRef('');
@@ -137,6 +141,10 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     const currentExplanationContent = generatedContents[activeMode];
     const showContentBoxStructure = loggedIn || aiError || (!loggedIn && inputQuestion.trim() !== '');
 
+    // Determine sanitized ID for the current input question for favorite toggling
+    const sanitizedCurrentQuestionId = inputQuestion ? inputQuestion.trim().toLowerCase().replace(/[/*\[\]]/g, '_').substring(0, 100) : "";
+
+
     return (
         <div className="bg-white p-4 md:p-5 rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto flex flex-col min-h-[600px] max-h-[85vh] sm:max-h-[700px] overflow-hidden">
             <div className="flex-shrink-0">
@@ -150,8 +158,18 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 {aiError && <p className="text-red-600 text-center text-xs font-medium mt-1 sm:mt-1.5">{aiError}</p>}
                 {!loggedIn && !aiError && (<p className="text-gray-600 text-center text-xs mt-1 sm:mt-1.5"><button onClick={() => setShowSignupModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>{' '}or{' '}<button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>{' '}to generate explanations.</p>)}
             </div>
-            <div className={`flex-shrink-0 flex flex-wrap justify-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' && isExplainGeneratedForCurrentWord ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0 pointer-events-none'}`}>
+            <div className={`flex-shrink-0 flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' && isExplainGeneratedForCurrentWord ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0 pointer-events-none'}`}>
                 {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (<button key={mode} onClick={async () => { if (!loggedIn || !isExplainGeneratedForCurrentWord || inputQuestion.trim() === '') return; setAiError(null); setActiveMode(mode); if (!generatedContents[mode] || mode === 'explain' || (mode === 'image' && generatedContents.image === 'Image generation feature coming soon!') || (mode === 'deep' && generatedContents.deep === 'In-depth explanation feature coming soon!')) { await generateExplanation(inputQuestion, mode); } }} className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${mode !== 'explain' && !isExplainGeneratedForCurrentWord ? 'opacity-50 cursor-not-allowed' : ''} `} disabled={(isLoadingExplanation && activeMode !== mode) || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)}>{mode.charAt(0).toUpperCase() + mode.slice(1)}{isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-1.5 -mr-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}</button>))}
+                {/* Favorite button for Tutor Page */}
+                {loggedIn && isExplainGeneratedForCurrentWord && inputQuestion.trim() !== '' && currentWordIsFavorite !== null && (
+                    <button
+                        onClick={() => onToggleFavorite(sanitizedCurrentQuestionId, inputQuestion, !!currentWordIsFavorite)}
+                        className={`p-1.5 rounded-full text-xl ml-2 ${currentWordIsFavorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-500'} focus:outline-none focus:ring-2 focus:ring-red-300`}
+                        title={currentWordIsFavorite ? "Remove from favorites" : "Add to favorites"}
+                    >
+                        {currentWordIsFavorite ? '♥' : '♡'}
+                    </button>
+                )}
             </div>
             <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto overflow-x-hidden relative min-h-[250px] sm:min-h-[300px] md:min-h-[320px]">
                 {showContentBoxStructure ? (<div className="prose prose-sm sm:prose-base md:prose-lg max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap break-words pt-1">{isLoadingExplanation && !currentExplanationContent ? (<div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode} content...</div>) : (currentExplanationContent || (loggedIn && aiError ? <p className="text-red-600">{aiError}</p> : <p className="text-gray-500">{loggedIn ? "Enter a concept or select a mode." : "Login to see explanations."}</p>))}</div>) : (<div className="flex items-center justify-center h-full"><p className="text-gray-400 text-center text-sm sm:text-base">{loggedIn ? "Your generated content will appear here." : "Login to see explanations."}</p></div>)}
@@ -165,42 +183,35 @@ interface ProfilePageProps {
     getAuthHeaders: () => Record<string, string>;
     user: User | null;
     onWordClick: (word: string, cachedContent?: Partial<Record<ContentMode, string>>) => void;
+    // Pass the main toggle favorite handler
+    handleToggleFavoriteApp: (wordId: string, currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
+    // Pass the profile data for direct use
+    profileDataHook: [ProfileData | null, React.Dispatch<React.SetStateAction<ProfileData | null>>];
+
 }
-const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeaders, user, onWordClick }) => {
-    const [profileData, setProfileData] = useState<ProfileData | null>(null);
+const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeaders, user, onWordClick, handleToggleFavoriteApp, profileDataHook }) => {
+    const [profileData, setProfileData] = profileDataHook; // Use shared state
     const [isLoadingProfile, setIsLoadingProfile] = useState(false);
     const [profileError, setProfileError] = useState<string | null>(null);
 
+    // Fetch profile data when component mounts or user changes
     useEffect(() => {
         if (!user) { setCurrentPage('tutor'); return; }
-        const fetchProfileData = async () => {
-            setIsLoadingProfile(true); setProfileError(null);
-            try {
-                const response = await fetch(`${API_BASE_URL}/profile`, { headers: getAuthHeaders(), });
-                if (response.ok) { setProfileData(await response.json()); }
-                else { const errData = await response.json().catch(() => ({ error: "Failed to fetch profile" })); setProfileError(errData.error || "Could not load profile data."); }
-            } catch (err) { setProfileError("Network error fetching profile."); console.error(err); }
-            finally { setIsLoadingProfile(false); }
-        };
-        fetchProfileData();
-    }, [user, getAuthHeaders, setCurrentPage]);
-
-    const handleToggleFavorite = async (wordId: string, currentWordDisplay: string, currentFavStatus: boolean) => {
-        const originalProfileData = profileData ? JSON.parse(JSON.stringify(profileData)) : null;
-        if (profileData) {
-            const updatedExploredList = profileData.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: !currentFavStatus } : w);
-            const wordForFavList = updatedExploredList.find(w => w.id === wordId);
-            let updatedFavoriteList;
-            if (!currentFavStatus && wordForFavList) { updatedFavoriteList = [...profileData.favorite_words_list, wordForFavList].sort((a, b) => (b.last_explored_at || "").localeCompare(a.last_explored_at || "")); }
-            else { updatedFavoriteList = profileData.favorite_words_list.filter(w => w.id !== wordId); }
-            setProfileData({ ...profileData, explored_words_list: updatedExploredList, favorite_words_list: updatedFavoriteList });
+        // Only fetch if profileData is null, otherwise it's managed by App component
+        if (profileData === null) {
+            const fetchProfileData = async () => {
+                setIsLoadingProfile(true); setProfileError(null);
+                try {
+                    const response = await fetch(`${API_BASE_URL}/profile`, { headers: getAuthHeaders(), });
+                    if (response.ok) { setProfileData(await response.json()); }
+                    else { const errData = await response.json().catch(() => ({ error: "Failed to fetch profile" })); setProfileError(errData.error || "Could not load profile data."); }
+                } catch (err) { setProfileError("Network error fetching profile."); console.error(err); }
+                finally { setIsLoadingProfile(false); }
+            };
+            fetchProfileData();
         }
-        try {
-            const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ word: currentWordDisplay }) });
-            if (!response.ok) { setProfileData(originalProfileData); const errData = await response.json().catch(() => ({ error: "Failed to toggle favorite" })); setProfileError(errData.error || "Could not update favorite status."); }
-            else { console.log("Favorite toggled:", (await response.json()).message); }
-        } catch (err) { setProfileData(originalProfileData); setProfileError("Network error toggling favorite."); }
-    };
+    }, [user, getAuthHeaders, setCurrentPage, profileData, setProfileData]);
+
 
     const WordListItem: React.FC<{ item: ExploredWord, onToggleFavorite: () => void, onWordItemClick: () => void }> = ({ item, onToggleFavorite, onWordItemClick }) => (
         <li className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex justify-between items-center hover:bg-gray-100 transition-colors duration-150 group">
@@ -208,17 +219,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeader
                 <span className="font-medium text-gray-700 block truncate group-hover:underline">{item.word}</span>
                 <p className="text-xs text-gray-400">Last seen: {item.last_explored_at ? new Date(item.last_explored_at).toLocaleDateString() : 'N/A'}</p>
             </div>
-            <button onClick={onToggleFavorite} className={`text-xl p-1 rounded-full hover:bg-yellow-200 ${item.is_favorite ? 'text-yellow-500' : 'text-gray-300 hover:text-yellow-400'}`} title={item.is_favorite ? "Remove from favorites" : "Add to favorites"}>
-                {item.is_favorite ? '\u2605' : '\u2606'}
+            <button onClick={onToggleFavorite} className={`text-xl p-1 rounded-full hover:bg-red-100 ${item.is_favorite ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`} title={item.is_favorite ? "Remove from favorites" : "Add to favorites"}>
+                {item.is_favorite ? '♥' : '♡'} {/* Heart Icons */}
             </button>
         </li>
     );
 
-    if (isLoadingProfile) return <div className="text-center p-10 text-white text-lg">Loading profile... <svg className="animate-spin inline h-5 w-5 text-white ml-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>;
+    if (isLoadingProfile && !profileData) return <div className="text-center p-10 text-white text-lg">Loading profile... <svg className="animate-spin inline h-5 w-5 text-white ml-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>;
     if (profileError) return <div className="text-center p-10 text-red-300 bg-red-800 bg-opacity-30 rounded-lg">Error: {profileError} <button onClick={() => setCurrentPage('tutor')} className="text-blue-300 hover:underline ml-2">Go Back</button></div>;
-    if (!profileData) return <div className="text-center p-10 text-white">No profile data found. <button onClick={() => setCurrentPage('tutor')} className="text-blue-300 hover:underline ml-2">Go Back</button></div>;
+    if (!profileData) return <div className="text-center p-10 text-white">No profile data found yet. Explore some words! <button onClick={() => setCurrentPage('tutor')} className="text-blue-300 hover:underline ml-2">Go Back</button></div>;
 
-    return (<div className="bg-white p-4 md:p-6 rounded-xl shadow-2xl w-full max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto min-h-[600px] max-h-[85vh] sm:max-h-[700px] flex flex-col overflow-hidden"><div className="flex justify-between items-center mb-3 sm:mb-4 flex-shrink-0"><h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 truncate">{profileData.username}'s Profile</h2><button onClick={() => setCurrentPage('tutor')} className="py-1.5 px-3 sm:py-2 sm:px-4 bg-indigo-600 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-indigo-700 transition">&larr; Back to Tutor</button></div><p className="text-gray-600 mb-0.5 text-xs sm:text-sm">Tier: <span className="font-semibold">{profileData.tier}</span></p><p className="text-gray-600 mb-3 sm:mb-4 text-xs sm:text-sm">Words Explored: <span className="font-semibold">{profileData.explored_words_count}</span></p><div className="flex-grow overflow-y-auto space-y-4 sm:space-y-6 pr-1"><div><h3 className="text-lg sm:text-xl font-semibold text-gray-700 mb-1.5 sm:mb-2 sticky top-0 bg-white py-1 z-10 border-b">Favorite Words ({profileData.favorite_words_list.length})</h3>{profileData.favorite_words_list.length > 0 ? (<ul className="space-y-2">{profileData.favorite_words_list.map(item => (<WordListItem key={`fav-${item.id}`} item={item} onToggleFavorite={() => handleToggleFavorite(item.id, item.word, item.is_favorite)} onWordItemClick={() => onWordClick(item.word, item.generated_content_cache)} />))}</ul>) : <p className="text-gray-500 text-sm px-1">No favorite words yet.</p>}</div><div><h3 className="text-lg sm:text-xl font-semibold text-gray-700 mb-1.5 sm:mb-2 sticky top-0 bg-white py-1 z-10 border-b">All Explored Words ({profileData.explored_words_list.length})</h3>{profileData.explored_words_list.length > 0 ? (<ul className="space-y-2">{profileData.explored_words_list.map(item => (<WordListItem key={`exp-${item.id}`} item={item} onToggleFavorite={() => handleToggleFavorite(item.id, item.word, item.is_favorite)} onWordItemClick={() => onWordClick(item.word, item.generated_content_cache)} />))}</ul>) : <p className="text-gray-500 text-sm px-1">No words explored yet.</p>}</div></div></div>);
+    return (<div className="bg-white p-4 md:p-6 rounded-xl shadow-2xl w-full max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto min-h-[600px] max-h-[85vh] sm:max-h-[700px] flex flex-col overflow-hidden"><div className="flex justify-between items-center mb-3 sm:mb-4 flex-shrink-0"><h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 truncate">{profileData.username}'s Profile</h2><button onClick={() => setCurrentPage('tutor')} className="py-1.5 px-3 sm:py-2 sm:px-4 bg-indigo-600 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-indigo-700 transition">&larr; Back to Tutor</button></div><p className="text-gray-600 mb-0.5 text-xs sm:text-sm">Tier: <span className="font-semibold">{profileData.tier}</span></p><p className="text-gray-600 mb-3 sm:mb-4 text-xs sm:text-sm">Words Explored: <span className="font-semibold">{profileData.explored_words_count}</span></p><div className="flex-grow overflow-y-auto space-y-4 sm:space-y-6 pr-1"><div><h3 className="text-lg sm:text-xl font-semibold text-gray-700 mb-1.5 sm:mb-2 sticky top-0 bg-white py-1 z-10 border-b">Favorite Words ({profileData.favorite_words_list.length})</h3>{profileData.favorite_words_list.length > 0 ? (<ul className="space-y-2">{profileData.favorite_words_list.map(item => (<WordListItem key={`fav-${item.id}`} item={item} onToggleFavorite={() => handleToggleFavoriteApp(item.id, item.word, item.is_favorite)} onWordItemClick={() => onWordClick(item.word, item.generated_content_cache)} />))}</ul>) : <p className="text-gray-500 text-sm px-1">No favorite words yet. Use the ♡ icon to add some!</p>}</div><div><h3 className="text-lg sm:text-xl font-semibold text-gray-700 mb-1.5 sm:mb-2 sticky top-0 bg-white py-1 z-10 border-b">All Explored Words ({profileData.explored_words_list.length})</h3>{profileData.explored_words_list.length > 0 ? (<ul className="space-y-2">{profileData.explored_words_list.map(item => (<WordListItem key={`exp-${item.id}`} item={item} onToggleFavorite={() => handleToggleFavoriteApp(item.id, item.word, item.is_favorite)} onWordItemClick={() => onWordClick(item.word, item.generated_content_cache)} />))}</ul>) : <p className="text-gray-500 text-sm px-1">No words explored yet.</p>}</div></div></div>);
 };
 
 const App: React.FC = () => {
@@ -234,6 +245,12 @@ const App: React.FC = () => {
     const questionBeforeModalRef = useRef('');
     const [isExplainGeneratedForCurrentWord, setIsExplainGeneratedForCurrentWord] = useState(false);
 
+    // Lifted profileData state to App for sharing
+    const [profileData, setProfileData] = useState<ProfileData | null>(null);
+    // State for favorite status of the word currently in the tutor input
+    const [currentTutorWordIsFavorite, setCurrentTutorWordIsFavorite] = useState<boolean | null>(null);
+
+
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -241,40 +258,78 @@ const App: React.FC = () => {
         return headers;
     };
 
+    // Function to fetch or update profile data, can be called after favorite toggle
+    const refreshProfileData = async () => {
+        if (!user) { setProfileData(null); return; }
+        try {
+            const response = await fetch(`${API_BASE_URL}/profile`, { headers: getAuthHeaders() });
+            if (response.ok) {
+                const data = await response.json();
+                setProfileData(data);
+                // Update favorite status for the current inputQuestion if profile data is loaded
+                if (inputQuestion && data.explored_words_list) {
+                    const currentWordSanitizedId = inputQuestion.trim().toLowerCase().replace(/[/*\[\]]/g, '_').substring(0, 100);
+                    const foundWord = data.explored_words_list.find((w: ExploredWord) => w.id === currentWordSanitizedId);
+                    setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
+                } else {
+                    setCurrentTutorWordIsFavorite(null);
+                }
+            } else {
+                console.error("Failed to refresh profile data after favorite toggle");
+                // Potentially set an error, but avoid disrupting user too much
+            }
+        } catch (error) {
+            console.error("Error refreshing profile data:", error);
+        }
+    };
+
+    // Effect to load profile data when user logs in, or refresh if user changes
+    useEffect(() => {
+        if (user) {
+            refreshProfileData();
+        } else {
+            setProfileData(null); // Clear profile data on logout
+            setCurrentTutorWordIsFavorite(null);
+        }
+    }, [user]);
+
+    // Effect to update currentTutorWordIsFavorite when inputQuestion changes AND profileData is available
+    useEffect(() => {
+        if (inputQuestion && profileData?.explored_words_list) {
+            const currentWordSanitizedId = inputQuestion.trim().toLowerCase().replace(/[/*\[\]]/g, '_').substring(0, 100);
+            const foundWord = profileData.explored_words_list.find(w => w.id === currentWordSanitizedId);
+            setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
+        } else if (!inputQuestion) {
+            setCurrentTutorWordIsFavorite(null); // No input, no favorite status to show
+        }
+        // If profileData is not yet loaded, this will be handled by the refreshProfileData effect
+    }, [inputQuestion, profileData]);
+
+
     const generateExplanation = async (questionToGenerate: string, mode: ContentMode, forceCheckUser?: User | null) => {
         const currentUserToCheck = forceCheckUser !== undefined ? forceCheckUser : user;
-        if (!currentUserToCheck) {
-            setAiError("Please login to generate explanations.");
-            if (forceCheckUser === undefined) handleShowLoginModal(questionToGenerate);
-            return;
-        }
+        if (!currentUserToCheck) { setAiError("Please login to generate explanations."); if (forceCheckUser === undefined) handleShowLoginModal(questionToGenerate); return; }
         setAiError(null); setIsLoadingExplanation(true);
 
-        if (mode === 'image') {
-            setGeneratedContents(cc => ({ ...cc, image: 'Image generation feature coming soon!' }));
+        if (mode === 'image' || mode === 'deep') { // Handle placeholders in frontend
+            setGeneratedContents(cc => ({ ...cc, [mode]: mode === 'image' ? 'Image generation feature coming soon!' : 'In-depth explanation feature coming soon!' }));
             setIsLoadingExplanation(false);
-            fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ question: questionToGenerate, content_type: 'image' }) }).catch(console.error);
-            return;
-        }
-        if (mode === 'deep') {
-            setGeneratedContents(cc => ({ ...cc, deep: 'In-depth explanation feature coming soon!' }));
-            setIsLoadingExplanation(false);
-            fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ question: questionToGenerate, content_type: 'deep' }) }).catch(console.error);
+            // Log interaction with backend
+            fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ question: questionToGenerate, content_type: mode }) })
+                .then(() => refreshProfileData()) // Refresh profile data after logging placeholder interaction
+                .catch(console.error);
             return;
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-                method: 'POST', headers: getAuthHeaders(),
-                body: JSON.stringify({ question: questionToGenerate, content_type: mode }),
-                signal: AbortSignal.timeout(30000)
-            });
+            const response = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ question: questionToGenerate, content_type: mode }), signal: AbortSignal.timeout(30000) });
             if (response.ok) {
                 const data = await response.json();
                 setGeneratedContents(cc => ({ ...cc, [mode]: data.explanation }));
                 if (mode === 'explain' && data.explanation && data.explanation.trim() !== '') {
                     setIsExplainGeneratedForCurrentWord(true);
                 }
+                await refreshProfileData(); // Refresh profile data to get updated word history / favorite status
             } else {
                 const errorData = await response.json().catch(() => ({ error: "Parse error" }));
                 let errorMessage = errorData.error || `Failed: ${response.status}`;
@@ -291,29 +346,54 @@ const App: React.FC = () => {
         }
     };
 
+    const handleToggleFavoriteApp = async (wordId: string, currentWordDisplay: string, currentFavStatus: boolean) => {
+        // This function will now be used by both ProfilePage and TinyTutorAppContent
+        // It directly calls the API and then refreshes profileData which will update all relevant UI parts.
+        if (!user) { setAiError("Please login to favorite words."); return; }
+
+        // Optimistic update for currentTutorWordIsFavorite if applicable
+        if (inputQuestion === currentWordDisplay) {
+            setCurrentTutorWordIsFavorite(!currentFavStatus);
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ word: currentWordDisplay }) });
+            if (response.ok) {
+                await refreshProfileData(); // Refresh profile data to get the source of truth
+            } else {
+                // Revert optimistic update for currentTutorWordIsFavorite
+                if (inputQuestion === currentWordDisplay) {
+                    setCurrentTutorWordIsFavorite(currentFavStatus);
+                }
+                const errData = await response.json().catch(() => ({ error: "Failed to toggle favorite" }));
+                setAiError(errData.error || "Could not update favorite status."); // Show error on main UI
+                await refreshProfileData(); // Refresh to get correct state from backend on error too
+            }
+        } catch (err) {
+            // Revert optimistic update for currentTutorWordIsFavorite
+            if (inputQuestion === currentWordDisplay) {
+                setCurrentTutorWordIsFavorite(currentFavStatus);
+            }
+            setAiError("Network error toggling favorite.");
+            await refreshProfileData(); // Refresh to get correct state
+        }
+    };
+
+
     const handleShowLoginModal = (question: string) => { questionBeforeModalRef.current = question; setAuthModalMode('login'); setShowAuthModal(true); };
     const handleShowSignupModal = (question: string) => { questionBeforeModalRef.current = question; setAuthModalMode('signup'); setShowAuthModal(true); };
-    const handleLogout = () => { authLogout(); setCurrentPage('tutor'); setInputQuestion(''); setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' }); setActiveMode('explain'); setAiError(null); setIsExplainGeneratedForCurrentWord(false); };
+    const handleLogout = () => { authLogout(); setCurrentPage('tutor'); setInputQuestion(''); setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' }); setActiveMode('explain'); setAiError(null); setIsExplainGeneratedForCurrentWord(false); setProfileData(null); setCurrentTutorWordIsFavorite(null); };
 
     const handleWordClickFromProfile = (word: string, cachedContent?: Partial<Record<ContentMode, string>>) => {
         setInputQuestion(word);
         const initialContent = {
-            explain: cachedContent?.explain || '',
-            image: cachedContent?.image || 'Image generation feature coming soon!',
-            fact: cachedContent?.fact || '',
-            quiz: cachedContent?.quiz || '',
+            explain: cachedContent?.explain || '', image: cachedContent?.image || 'Image generation feature coming soon!',
+            fact: cachedContent?.fact || '', quiz: cachedContent?.quiz || '',
             deep: cachedContent?.deep || 'In-depth explanation feature coming soon!',
         };
         setGeneratedContents(initialContent);
-
-        if (initialContent.explain) {
-            setActiveMode('explain');
-            setIsExplainGeneratedForCurrentWord(true);
-        } else {
-            // If no cached 'explain', user will need to click "Generate Explanation"
-            setActiveMode('explain'); // Default to explain tab
-            setIsExplainGeneratedForCurrentWord(false);
-        }
+        if (initialContent.explain) { setActiveMode('explain'); setIsExplainGeneratedForCurrentWord(true); }
+        else { setActiveMode('explain'); setIsExplainGeneratedForCurrentWord(false); }
         setCurrentPage('tutor');
     };
 
@@ -322,8 +402,8 @@ const App: React.FC = () => {
     if (authLoadingGlobal) return <div className="flex items-center justify-center min-h-screen bg-gray-100 text-2xl">Loading...</div>;
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-blue-700 font-inter text-gray-900 p-2 sm:p-4 overflow-y-auto"> {/* Solid darker blue bg */}
-            <header className="w-full max-w-5xl mx-auto py-2.5 px-2 sm:px-4 flex justify-end items-center sticky top-0 z-30 bg-blue-700/80 backdrop-blur-sm"> {/* Slightly more opaque header */}
+        <div className="flex flex-col items-center justify-center min-h-screen bg-blue-800 font-inter text-gray-900 p-2 sm:p-4 overflow-y-auto"> {/* Solid darker blue bg */}
+            <header className="w-full max-w-5xl mx-auto py-2.5 px-2 sm:px-4 flex justify-end items-center sticky top-0 z-30 bg-blue-800/90 backdrop-blur-sm"> {/* Darker, more opaque header bg */}
                 {user && (
                     <div className="flex items-center gap-2 sm:gap-3">
                         {currentPage === 'tutor' && (
@@ -331,12 +411,7 @@ const App: React.FC = () => {
                                 View Profile
                             </button>
                         )}
-                        {/* Only show "Back to Tutor" if on profile page, otherwise only Logout */}
-                        {currentPage === 'profile' && (
-                            <button onClick={() => setCurrentPage('tutor')} className="py-1 px-3 sm:py-2 sm:px-4 bg-white/20 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-white/30 shadow">
-                                &larr; Back to Tutor
-                            </button>
-                        )}
+                        {/* "Back to Tutor" button is now ONLY in the ProfilePage component */}
                         <button onClick={handleLogout} className="py-1 px-3 sm:py-2 sm:px-4 bg-red-500 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-red-600 shadow">
                             Logout
                         </button>
@@ -354,6 +429,8 @@ const App: React.FC = () => {
                         setShowLoginModal={handleShowLoginModal} setShowSignupModal={handleShowSignupModal}
                         isExplainGeneratedForCurrentWord={isExplainGeneratedForCurrentWord}
                         setIsExplainGeneratedForCurrentWord={setIsExplainGeneratedForCurrentWord}
+                        onToggleFavorite={handleToggleFavoriteApp} // Pass the app-level toggle handler
+                        currentWordIsFavorite={currentTutorWordIsFavorite} // Pass the favorite status
                     />
                 ) : (
                     <ProfilePage
@@ -361,6 +438,8 @@ const App: React.FC = () => {
                         getAuthHeaders={getAuthHeaders}
                         user={user}
                         onWordClick={handleWordClickFromProfile}
+                        handleToggleFavoriteApp={handleToggleFavoriteApp} // Pass the app-level toggle handler
+                        profileDataHook={[profileData, setProfileData]} // Pass profileData state and setter
                     />
                 )}
             </main>

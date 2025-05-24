@@ -243,17 +243,15 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     };
 
     const currentExplanationContent = generatedContents[activeMode];
-    // Show content box structure if logged in, or if there's an AI error, or if not logged in but input is present.
     const showContentBoxStructure = loggedIn || aiError || (!loggedIn && inputQuestion.trim() !== '');
 
-
     return (
-        // Main Content Card: Adjusting width and height for a more balanced look.
-        // Using max-w- for width control, and a combination of min/max height.
-        // overflow-hidden on this parent is crucial for child overflow-y-auto to work without expanding parent.
-        <div className="bg-white p-4 md:p-6 rounded-xl shadow-2xl w-full max-w-xl lg:max-w-2xl xl:max-w-3xl mx-auto flex flex-col min-h-[580px] sm:min-h-[620px] max-h-[90vh] sm:max-h-[750px] overflow-hidden">
+        // Main Content Card: Adjusted width and height for a more balanced look.
+        // Using responsive max-width. min-h and max-h are for vertical sizing.
+        // overflow-hidden is CRITICAL for containing children and enabling internal scroll.
+        <div className="bg-white p-4 md:p-5 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl xl:max-w-3xl mx-auto flex flex-col min-h-[580px] max-h-[88vh] sm:max-h-[680px] overflow-hidden">
             <div className="flex-shrink-0"> {/* Header section */}
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-center text-gray-800 mb-1 sm:mb-2">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-center text-gray-800 mb-1 sm:mb-2">
                     Tiny Tutor {loggedIn && currentUser?.username && <span className="text-indigo-600">({currentUser.username})</span>}
                 </h2>
                 {loggedIn && currentUser && (
@@ -263,33 +261,33 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 )}
             </div>
 
-            <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0"> {/* Input section */}
-                <label htmlFor="question-input-main" className="block text-gray-700 text-base sm:text-lg font-bold mb-1 sm:mb-2">
+            <div className="mb-2 sm:mb-3 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0"> {/* Input section */}
+                <label htmlFor="question-input-main" className="block text-gray-700 text-sm sm:text-base md:text-lg font-bold mb-1 sm:mb-2">
                     Enter a word or concept:
                 </label>
                 <div className="relative">
                     <input
                         type="text" id="question-input-main"
-                        className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 text-sm sm:text-base"
+                        className="w-full px-3 py-2 sm:py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 text-xs sm:text-sm md:text-base"
                         placeholder="e.g., Photosynthesis" value={inputQuestion}
                         onChange={handleInputChange} disabled={isLoadingExplanation}
                     />
                     {inputQuestion && (
-                        <button onClick={handleClearInput} className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg sm:text-xl" aria-label="Clear input">
+                        <button onClick={handleClearInput} className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-base sm:text-lg md:text-xl" aria-label="Clear input">
                             &times;
                         </button>
                     )}
                 </div>
                 <button
                     onClick={handleGenerateExplanationClick}
-                    className="mt-3 w-full sm:w-auto sm:mx-auto sm:px-8 bg-indigo-600 text-white py-2.5 px-5 rounded-lg font-bold text-base hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center"
+                    className="mt-2.5 sm:mt-3 w-full sm:w-auto sm:mx-auto sm:px-6 md:px-8 bg-indigo-600 text-white py-2 sm:py-2.5 px-4 rounded-lg font-bold text-sm sm:text-base hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center"
                     disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                 >
-                    {isLoadingExplanation && activeMode === 'explain' ? <><svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</> : 'Generate Explanation'}
+                    {isLoadingExplanation && activeMode === 'explain' ? <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</> : 'Generate Explanation'}
                 </button>
-                {aiError && <p className="text-red-600 text-center text-xs font-medium mt-1.5">{aiError}</p>}
+                {aiError && <p className="text-red-600 text-center text-xs font-medium mt-1 sm:mt-1.5">{aiError}</p>}
                 {!loggedIn && !aiError && (
-                    <p className="text-gray-600 text-center text-xs mt-1.5">
+                    <p className="text-gray-600 text-center text-xs mt-1 sm:mt-1.5">
                         <button onClick={() => setShowSignupModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>
                         {' '}or{' '}
                         <button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>
@@ -298,7 +296,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 )}
             </div>
 
-            <div className={`flex-shrink-0 flex flex-wrap justify-center gap-1.5 sm:gap-2 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0'}`}> {/* Toggle buttons */}
+            <div className={`flex-shrink-0 flex flex-wrap justify-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0'}`}> {/* Toggle buttons */}
                 {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
                     <button
                         key={mode}
@@ -308,29 +306,27 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             if (!generatedContents[mode] && mode !== 'image') await generateExplanation(inputQuestion, mode);
                             else if (mode === 'image') setGeneratedContents(prev => ({ ...prev, image: 'Image generation feature coming soon!' }));
                         }}
-                        className={`px-3 py-1.5 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                        className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
                         disabled={isLoadingExplanation && activeMode !== mode}
                     >
                         {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                        {isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1.5 -mr-0.5 h-3.5 w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                        {isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-1.5 -mr-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
                     </button>
                 ))}
             </div>
 
-            {/* Explanation Box: Removed the H3 heading, increased text size, ensured scrolling */}
-            <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto relative min-h-[200px] sm:min-h-[280px]"> {/* Increased min-h */}
+            {/* Explanation Box: Removed heading, increased text size, ensured scrolling */}
+            {/* overflow-x-hidden added to this scrollable container as an extra precaution */}
+            <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto overflow-x-hidden relative min-h-[200px] sm:min-h-[280px] md:min-h-[300px]">
                 {showContentBoxStructure ? (
-                    <>
-                        {/* REMOVED: <h3 className="text-lg sm:text-xl font-bold text-blue-800 mb-2 sticky top-0 bg-blue-50 py-1.5 z-10">{activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}:</h3> */}
-                        {/* Increased text size using prose-lg, and prose-xl on larger screens */}
-                        <div className="prose prose-base sm:prose-lg md:prose-xl max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap break-words pt-1"> {/* Added pt-1 for a little space if heading was removed */}
-                            {isLoadingExplanation && !currentExplanationContent ? (
-                                <div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode} content...</div>
-                            ) : (
-                                currentExplanationContent || (loggedIn && aiError ? <p className="text-red-600">{aiError}</p> : <p className="text-gray-500">{loggedIn ? "Enter a concept or select a mode." : "Login to see explanations."}</p>)
-                            )}
-                        </div>
-                    </>
+                    // The prose class itself handles text styling. break-words is crucial for preventing horizontal overflow.
+                    <div className="prose prose-sm sm:prose-base md:prose-lg max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap break-words pt-1">
+                        {isLoadingExplanation && !currentExplanationContent ? (
+                            <div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode} content...</div>
+                        ) : (
+                            currentExplanationContent || (loggedIn && aiError ? <p className="text-red-600">{aiError}</p> : <p className="text-gray-500">{loggedIn ? "Enter a concept or select a mode." : "Login to see explanations."}</p>)
+                        )}
+                    </div>
                 ) : (
                     <div className="flex items-center justify-center h-full"><p className="text-gray-400 text-center text-sm sm:text-base">{loggedIn ? "Your generated content will appear here." : "Login to see explanations."}</p></div>
                 )}

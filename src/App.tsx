@@ -246,10 +246,8 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     const showContentBoxStructure = loggedIn || aiError || (!loggedIn && inputQuestion.trim() !== '');
 
     return (
-        // Main Content Card: Adjusted width and height for a more balanced look.
-        // Using responsive max-width. min-h and max-h are for vertical sizing.
-        // overflow-hidden is CRITICAL for containing children and enabling internal scroll.
-        <div className="bg-white p-4 md:p-5 rounded-xl shadow-2xl w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl xl:max-w-3xl mx-auto flex flex-col min-h-[580px] max-h-[88vh] sm:max-h-[680px] overflow-hidden">
+        // Main Content Card: Wider max-width, balanced min/max height. overflow-hidden is CRITICAL.
+        <div className="bg-white p-4 md:p-5 rounded-xl shadow-2xl w-full max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto flex flex-col min-h-[580px] max-h-[680px] sm:max-h-[720px] overflow-hidden">
             <div className="flex-shrink-0"> {/* Header section */}
                 <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-center text-gray-800 mb-1 sm:mb-2">
                     Tiny Tutor {loggedIn && currentUser?.username && <span className="text-indigo-600">({currentUser.username})</span>}
@@ -316,10 +314,11 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             </div>
 
             {/* Explanation Box: Removed heading, increased text size, ensured scrolling */}
-            {/* overflow-x-hidden added to this scrollable container as an extra precaution */}
-            <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto overflow-x-hidden relative min-h-[200px] sm:min-h-[280px] md:min-h-[300px]">
+            {/* CRITICAL: overflow-x-hidden added to this scrollable container */}
+            <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto overflow-x-hidden relative min-h-[250px] sm:min-h-[300px] md:min-h-[320px]">
                 {showContentBoxStructure ? (
                     // The prose class itself handles text styling. break-words is crucial for preventing horizontal overflow.
+                    // Ensure max-w-none is on the prose div so it tries to fill its parent.
                     <div className="prose prose-sm sm:prose-base md:prose-lg max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap break-words pt-1">
                         {isLoadingExplanation && !currentExplanationContent ? (
                             <div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode} content...</div>
@@ -409,7 +408,7 @@ const App: React.FC = () => {
                     </button>
                 )}
             </div>
-            <main className="w-full flex justify-center items-center">
+            <main className="w-full flex justify-center items-center"> {/* This centers the TinyTutorAppContent card */}
                 <TinyTutorAppContent
                     inputQuestion={inputQuestion} setInputQuestion={setInputQuestion}
                     generatedContents={generatedContents} setGeneratedContents={setGeneratedContents}

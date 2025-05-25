@@ -34,7 +34,7 @@ interface AuthContextType {
   login: (usernameOrEmailInput: string, passwordInput: string) => Promise<void>;
   signup: (usernameInput: string, emailInput: string, passwordInput: string) => Promise<void>;
   logout: () => void;
-  getAuthHeaders: () => Record<string, string>;
+  getAuthHeaders: () => Record<string, string>; // Corrected type
 }
 
 interface GeneratedContent {
@@ -188,9 +188,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     // Potentially clear other app-specific states if needed
   };
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => { // Ensure consistent return type
     const token = localStorage.getItem('tinyTutorToken');
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    if (token) {
+      return { Authorization: `Bearer ${token}` };
+    }
+    return {}; // Return empty object if no token
   };
 
   return (
@@ -400,7 +403,7 @@ interface ProfileModalProps {
 const CompactWordListItem: React.FC<{
   item: ExploredWord;
   onWordClick: () => void;
-  onToggleFavorite: (event?: React.MouseEvent) => Promise<void>; // CORRECTED LINE
+  onToggleFavorite: (event?: React.MouseEvent) => Promise<void>;
   isFavoriteList?: boolean;
 }> = ({ item, onWordClick, onToggleFavorite, isFavoriteList }) => {
   const [isFavoritedOptimistic, setIsFavoritedOptimistic] = useState(item.is_favorite);
@@ -1039,7 +1042,7 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
-  const handleWordClickFromProfile = (word: string, cachedContent?: string, connections?: string[], modesGenerated?: string[]) => {
+  const handleWordClickFromProfile = (word: string, cachedContent?: string, _connections?: string[], _modesGenerated?: string[]) => {
     setInputQuestion(word);
     if (cachedContent) {
         setGeneratedContents({ explain: cachedContent });

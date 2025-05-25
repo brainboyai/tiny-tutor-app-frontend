@@ -172,13 +172,17 @@ const WordStreakHistoryModal: React.FC<WordStreakHistoryModalProps> = ({ isOpen,
 // --- Tiny Tutor App Content Component ---
 interface TinyTutorAppContentProps {
     inputQuestion: string;
-    onInputChange: (value: string) => void; // Changed prop name for clarity
-    onClearInput: () => void; // New prop for clearing input
+    onInputChange: (value: string) => void;
+    onClearInput: () => void;
     generatedContents: Record<ContentMode, string>;
     activeMode: ContentMode; setActiveMode: React.Dispatch<React.SetStateAction<ContentMode>>;
     triggerGenerateExplanation: (question: string, mode: ContentMode, isNewRootWord: boolean, isRefresh: boolean) => Promise<void>;
-    isLoadingExplanation: boolean; aiError: string | null;
-    currentUser: User | null; setShowLoginModal: (question: string) => void; setShowSignupModal: (question: string) => void;
+    isLoadingExplanation: boolean;
+    aiError: string | null;
+    setAiError: React.Dispatch<React.SetStateAction<string | null>>; // Added this prop
+    currentUser: User | null;
+    setShowLoginModal: (question: string) => void;
+    setShowSignupModal: (question: string) => void; // This prop is used
     isExplainGeneratedForCurrentWord: boolean;
     onToggleFavorite: (currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
     currentWordIsFavorite: boolean | null;
@@ -188,15 +192,14 @@ interface TinyTutorAppContentProps {
 }
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     inputQuestion, onInputChange, onClearInput, generatedContents, activeMode, setActiveMode,
-    triggerGenerateExplanation, isLoadingExplanation, aiError, currentUser,
-    setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord,
+    triggerGenerateExplanation, isLoadingExplanation, aiError, setAiError, // Destructure setAiError
+    currentUser, setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord,
     onToggleFavorite, currentWordIsFavorite, handleHighlightedWordClick, onShowStreakHistory, handleRefreshCurrentWord
 }) => {
     const loggedIn = currentUser !== null;
     const mainGenerateClick = () => {
         if (inputQuestion.trim() === '') {
-            // setAiError directly in App component if needed, or pass setAiError prop
-            alert('Please enter a concept.'); // Simple alert for now
+            setAiError('Please enter a concept.'); // Use setAiError prop
             return;
         }
         triggerGenerateExplanation(inputQuestion, 'explain', true, false);
@@ -218,7 +221,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 </div>
                 <button onClick={mainGenerateClick} className="mt-2.5 sm:mt-3 w-full sm:w-auto sm:mx-auto sm:px-6 md:px-8 bg-indigo-600 text-white py-2 sm:py-2.5 px-4 rounded-lg font-bold text-sm sm:text-base hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center" disabled={isLoadingExplanation || inputQuestion.trim() === ''}>{isLoadingExplanation && activeMode === 'explain' ? <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</> : 'Generate Explanation'}</button>
                 {aiError && <p className="text-red-600 text-center text-xs font-medium mt-1 sm:mt-1.5">{aiError}</p>}
-                {!loggedIn && !aiError && (<p className="text-gray-600 text-center text-xs mt-1 sm:mt-1.5"><button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>{' '}or{' '}<button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>{' '}to generate explanations.</p>)}
+                {!loggedIn && !aiError && (<p className="text-gray-600 text-center text-xs mt-1 sm:mt-1.5"><button onClick={() => setShowSignupModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>{' '}or{' '}<button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>{' '}to generate explanations.</p>)}
             </div>
             <div className={`flex-shrink-0 flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' && isExplainGeneratedForCurrentWord ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0 pointer-events-none'}`}>
                 {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (<button key={mode} onClick={async () => { if (!loggedIn || !isExplainGeneratedForCurrentWord || inputQuestion.trim() === '') return; setActiveMode(mode); if (!generatedContents[mode] || (mode === 'image' && generatedContents.image.startsWith('Image generation feature coming soon!')) || (mode === 'deep' && generatedContents.deep.startsWith('In-depth explanation feature coming soon!'))) { await triggerGenerateExplanation(inputQuestion, mode, false, false); } }} className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${mode !== 'explain' && !isExplainGeneratedForCurrentWord ? 'opacity-50 cursor-not-allowed' : ''} `} disabled={(isLoadingExplanation && activeMode !== mode) || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)}>{mode.charAt(0).toUpperCase() + mode.slice(1)}{isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-1.5 -mr-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}</button>))}
@@ -321,7 +324,7 @@ const App: React.FC = () => {
         if (!currentUserToCheck) {
             setAiError("Please login to generate explanations.");
             if (forceCheckUser === undefined) handleShowLoginModal(question);
-            setIsLoadingExplanation(false); // Stop loading if user not logged in
+            setIsLoadingExplanation(false);
             return;
         }
 
@@ -331,14 +334,12 @@ const App: React.FC = () => {
         }
 
         setAiError(null); setIsLoadingExplanation(true);
-        // Optimistically set active mode and clear content for this mode
         setActiveMode(mode);
         setGeneratedContents(prev => ({ ...prev, [mode]: '' }));
 
         if (mode === 'explain' && (isNewRootWord || isRefresh)) {
             setIsExplainGeneratedForCurrentWord(false);
         }
-
 
         if (mode === 'image' || mode === 'deep') {
             setGeneratedContents(cc => ({ ...cc, [mode]: mode === 'image' ? `Image generation feature coming soon! You can imagine an image of '${question}'.` : `In-depth explanation feature coming soon! We're working on providing more detailed insights for '${question}'.` }));
@@ -390,10 +391,10 @@ const App: React.FC = () => {
     };
 
     const handleAppSetInputQuestion = (value: string) => {
-        if (inputQuestion !== value && value.trim() !== '') { // Only finalize if value changes to something new
+        if (inputQuestion.trim() !== value.trim() && value.trim() !== '') {
             finalizeCurrentStreak();
             setCurrentStreak([]);
-        } else if (value.trim() === '' && inputQuestion.trim() !== '') { // Finalize if clearing a non-empty input
+        } else if (value.trim() === '' && inputQuestion.trim() !== '') {
             finalizeCurrentStreak();
             setCurrentStreak([]);
         }
@@ -435,7 +436,7 @@ const App: React.FC = () => {
     };
 
     const handleShowStreakHistory = () => {
-        setStreakHistoryModalData({ streaks: [...completedStreaks] });
+        setStreakHistoryModalData({ streaks: [...completedStreaks] }); // Pass a copy
         setShowStreakHistoryModal(true);
     };
 
@@ -458,22 +459,22 @@ const App: React.FC = () => {
                         triggerGenerateExplanation={triggerGenerateExplanation}
                         isLoadingExplanation={isLoadingExplanation}
                         aiError={aiError}
+                        setAiError={setAiError} // Pass setAiError
                         currentUser={user}
-                        setShowLoginModal={handleShowLoginModal} setShowSignupModal={handleShowSignupModal}
+                        setShowLoginModal={handleShowLoginModal}
+                        setShowSignupModal={handleShowSignupModal} // Ensure this is used if error persists
                         isExplainGeneratedForCurrentWord={isExplainGeneratedForCurrentWord}
                         onToggleFavorite={handleToggleFavoriteApp} currentWordIsFavorite={currentTutorWordIsFavorite}
                         handleHighlightedWordClick={handleHighlightedWordClick}
                         onShowStreakHistory={handleShowStreakHistory}
                         handleRefreshCurrentWord={handleRefreshCurrentWord}
-                        // Pass setAiError if TinyTutorAppContent needs to set errors directly for input validation
-                        setAiError={setAiError}
                     />
                 ) : (
                     <ProfilePage setCurrentPage={setCurrentPage} getAuthHeaders={getAuthHeaders} user={user} onWordClick={handleWordClickFromProfile} handleToggleFavoriteApp={handleToggleFavoriteApp} profileDataHook={[profileData, setProfileData]} />
                 )}
             </main>
             {showAuthModal && (<AuthModal onClose={() => { setShowAuthModal(false); }}
-                onLoginSuccess={async (loggedInUserFromModal, questionAfterLogin) => { // renamed param to avoid conflict
+                onLoginSuccess={async (loggedInUserFromModal, questionAfterLogin) => {
                     setShowAuthModal(false); setAiError(null);
                     if (questionAfterLogin.trim() !== '') {
                         setInputQuestion(questionAfterLogin);

@@ -27,7 +27,7 @@ interface CompletedStreak {
     words: string[];
     score: number;
 }
-interface WordMapModalData {
+interface WordMapModalData { // For displaying completed streaks
     streaks: CompletedStreak[];
 }
 
@@ -179,10 +179,10 @@ interface TinyTutorAppContentProps {
     triggerGenerateExplanation: (question: string, mode: ContentMode, isNewRootWord: boolean, isRefresh: boolean) => Promise<void>;
     isLoadingExplanation: boolean;
     aiError: string | null;
-    setAiError: React.Dispatch<React.SetStateAction<string | null>>; // Added this prop
+    setAiError: React.Dispatch<React.SetStateAction<string | null>>; // FIX: Added this prop
     currentUser: User | null;
     setShowLoginModal: (question: string) => void;
-    setShowSignupModal: (question: string) => void; // This prop is used
+    setShowSignupModal: (question: string) => void;
     isExplainGeneratedForCurrentWord: boolean;
     onToggleFavorite: (currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
     currentWordIsFavorite: boolean | null;
@@ -192,14 +192,14 @@ interface TinyTutorAppContentProps {
 }
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     inputQuestion, onInputChange, onClearInput, generatedContents, activeMode, setActiveMode,
-    triggerGenerateExplanation, isLoadingExplanation, aiError, setAiError, // Destructure setAiError
+    triggerGenerateExplanation, isLoadingExplanation, aiError, setAiError, // FIX: Destructure setAiError
     currentUser, setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord,
     onToggleFavorite, currentWordIsFavorite, handleHighlightedWordClick, onShowStreakHistory, handleRefreshCurrentWord
 }) => {
     const loggedIn = currentUser !== null;
     const mainGenerateClick = () => {
         if (inputQuestion.trim() === '') {
-            setAiError('Please enter a concept.'); // Use setAiError prop
+            setAiError('Please enter a concept.'); // FIX: Use setAiError prop
             return;
         }
         triggerGenerateExplanation(inputQuestion, 'explain', true, false);
@@ -436,7 +436,7 @@ const App: React.FC = () => {
     };
 
     const handleShowStreakHistory = () => {
-        setStreakHistoryModalData({ streaks: [...completedStreaks] }); // Pass a copy
+        setStreakHistoryModalData({ streaks: [...completedStreaks] });
         setShowStreakHistoryModal(true);
     };
 
@@ -462,7 +462,7 @@ const App: React.FC = () => {
                         setAiError={setAiError} // Pass setAiError
                         currentUser={user}
                         setShowLoginModal={handleShowLoginModal}
-                        setShowSignupModal={handleShowSignupModal} // Ensure this is used if error persists
+                        setShowSignupModal={setShowSignupModal}
                         isExplainGeneratedForCurrentWord={isExplainGeneratedForCurrentWord}
                         onToggleFavorite={handleToggleFavoriteApp} currentWordIsFavorite={currentTutorWordIsFavorite}
                         handleHighlightedWordClick={handleHighlightedWordClick}

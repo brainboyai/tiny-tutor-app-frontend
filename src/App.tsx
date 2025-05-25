@@ -15,7 +15,7 @@ interface User {
     id: string;
     username: string;
     tier: string;
-    exp?: number; // Expiration time from JWT
+    exp?: number;
 }
 
 interface AuthContextType {
@@ -30,10 +30,10 @@ type Page = 'tutor' | 'profile';
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
 
 interface ExploredWord {
-    id: string; // Sanitized word ID
-    word: string; // Original word
+    id: string;
+    word: string;
     is_favorite: boolean;
-    last_explored_at?: string; // ISO string date
+    last_explored_at?: string;
     generated_content_cache?: Partial<Record<ContentMode, string>>;
     modes_generated?: string[];
 }
@@ -61,7 +61,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Login function
     const login = async (username: string, password: string): Promise<User | null> => {
         setLoading(true);
         try {
@@ -88,7 +87,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    // Signup function
     const signup = async (username: string, email: string, password: string): Promise<boolean> => {
         setLoading(true);
         try {
@@ -110,13 +108,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    // Logout function
     const logout = async (): Promise<void> => {
         localStorage.removeItem('access_token');
         setUser(null);
     };
 
-    // Effect to check auth status on mount and on storage change
     useEffect(() => {
         const checkAuthStatus = () => {
             setLoading(true);
@@ -124,9 +120,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const token = localStorage.getItem('access_token');
                 if (token) {
                     const decodedUser: CustomJwtPayload = jwtDecode(token);
-                    // Check if token is expired
                     if (decodedUser.exp && decodedUser.exp * 1000 < Date.now()) {
-                        localStorage.removeItem('access_token'); // Token expired
+                        localStorage.removeItem('access_token');
                         setUser(null);
                     } else {
                         setUser({ id: decodedUser.user_id, username: decodedUser.username, tier: decodedUser.tier, exp: decodedUser.exp });
@@ -135,20 +130,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setUser(null);
                 }
             } catch (error) {
-                // Invalid token or other error
                 localStorage.removeItem('access_token');
                 setUser(null);
             } finally {
                 setLoading(false);
             }
         };
-
         checkAuthStatus();
-
-        // Listen for storage changes (e.g., logout in another tab)
         const handleStorageChange = (event: StorageEvent) => {
             if (event.key === 'access_token' && !event.newValue) {
-                setUser(null); // Token removed from another tab
+                setUser(null);
             }
         };
         window.addEventListener('storage', handleStorageChange);
@@ -162,7 +153,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 };
 
-
 // --- Auth Modal Component ---
 interface AuthModalProps {
     onClose: () => void;
@@ -170,7 +160,6 @@ interface AuthModalProps {
     initialQuestion: string;
     initialMode: 'login' | 'signup';
 }
-
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQuestion, initialMode }) => {
     const { login, signup, loading: authHookLoading } = useAuth();
     const [isLoginMode, setIsLoginMode] = useState(initialMode === 'login');
@@ -178,7 +167,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false); // Local loading for form submission
+    const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -196,7 +185,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
             if (signedUp) {
                 setError('Signup successful! Please log in.');
                 setIsLoginMode(true);
-                setPassword(''); // Clear password for login
+                setPassword('');
             } else {
                 setError('Signup failed. User might already exist or data is invalid.');
             }
@@ -241,6 +230,46 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onLoginSuccess, initialQ
     );
 };
 
+// --- Highlighted Content Renderer Component ---
+interface HighlightedContentRendererProps {
+    content: string;
+    onWordClick: (word: string) => void;
+}
+const HighlightedContentRenderer: React.FC<HighlightedContentRendererProps> = ({ content, onWordClick }) => {
+    if (!content) return null;
+
+    // Regex to split by <click> and </click> tags, keeping the delimiters for checking parity
+    // This simple split assumes non-nested and correctly formed tags
+    const parts = content.split(/<\/?click>/g);
+
+    return (
+        <>
+            {parts.map((part, index) => {
+                // If index is odd, it's a word that was inside <click>...</click>
+                if (index % 2 === 1) {
+                    // Sanitize part to prevent issues if it's empty or just whitespace
+                    const trimmedPart = part.trim();
+                    if (!trimmedPart) return null; // Don't render empty clickable parts
+
+                    return (
+                        <button
+                            key={`${index}-${trimmedPart}`} // More robust key
+                            onClick={() => onWordClick(trimmedPart)}
+                            className="text-blue-600 font-semibold hover:underline focus:outline-none p-0 m-0 bg-transparent border-none cursor-pointer"
+                        // Add accessibility attributes if needed, e.g., aria-label
+                        >
+                            {trimmedPart}
+                        </button>
+                    );
+                }
+                // Otherwise, it's regular text
+                return <span key={index}>{part}</span>;
+            })}
+        </>
+    );
+};
+
+
 // --- Tiny Tutor App Content Component (Main Tutor View) ---
 interface TinyTutorAppContentProps {
     inputQuestion: string;
@@ -260,21 +289,20 @@ interface TinyTutorAppContentProps {
     setIsExplainGeneratedForCurrentWord: React.Dispatch<React.SetStateAction<boolean>>;
     onToggleFavorite: (currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
     currentWordIsFavorite: boolean | null;
+    handleHighlightedWordClick: (word: string) => void; // New prop
 }
 
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     inputQuestion, setInputQuestion, generatedContents, setGeneratedContents, activeMode, setActiveMode,
     generateExplanation, isLoadingExplanation, aiError, setAiError, currentUser,
     setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord, setIsExplainGeneratedForCurrentWord,
-    onToggleFavorite, currentWordIsFavorite
+    onToggleFavorite, currentWordIsFavorite, handleHighlightedWordClick // Destructure new prop
 }) => {
     const loggedIn = currentUser !== null;
-    // const questionBeforeModalRef = useRef(''); // This ref is in App component now
 
     const handleGenerateExplanationClick = () => {
         setAiError(null);
         if (!loggedIn) {
-            // questionBeforeModalRef.current = inputQuestion; // Managed by App component
             setShowLoginModal(inputQuestion);
             return;
         }
@@ -282,10 +310,9 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             setAiError('Please enter a concept.');
             return;
         }
-        // Reset contents for a new word, always fetch 'explain' first
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
         setActiveMode('explain');
-        setIsExplainGeneratedForCurrentWord(false); // Mark that explain needs to be generated for this new word
+        setIsExplainGeneratedForCurrentWord(false);
         generateExplanation(inputQuestion, 'explain');
     };
 
@@ -300,22 +327,18 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setInputQuestion(e.target.value);
         setAiError(null);
-        // If user types a new word, reset the 'explain generated' flag and content
         if (isExplainGeneratedForCurrentWord) {
             setIsExplainGeneratedForCurrentWord(false);
         }
-        // Optionally, clear all generated content when input changes significantly or reset to initial state
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
-        setActiveMode('explain'); // Default to explain mode for new input
+        setActiveMode('explain');
     };
 
     const currentExplanationContent = generatedContents[activeMode];
     const showContentBoxStructure = loggedIn || aiError || (!loggedIn && inputQuestion.trim() !== '');
 
-
     return (
         <div className="bg-white p-4 md:p-5 rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto flex flex-col min-h-[600px] max-h-[85vh] sm:max-h-[700px] overflow-hidden">
-            {/* Header Section */}
             <div className="flex-shrink-0">
                 <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-center text-gray-800 mb-1 sm:mb-2">
                     Tiny Tutor {loggedIn && currentUser?.username && <span className="text-indigo-600">({currentUser.username})</span>}
@@ -326,8 +349,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     </p>
                 )}
             </div>
-
-            {/* Input Section */}
             <div className="mb-2 sm:mb-3 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0">
                 <label htmlFor="question-input-main" className="block text-gray-700 text-sm sm:text-base md:text-lg font-bold mb-1 sm:mb-2">
                     Enter a word or concept:
@@ -357,7 +378,7 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     className="mt-2.5 sm:mt-3 w-full sm:w-auto sm:mx-auto sm:px-6 md:px-8 bg-indigo-600 text-white py-2 sm:py-2.5 px-4 rounded-lg font-bold text-sm sm:text-base hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center"
                     disabled={isLoadingExplanation || inputQuestion.trim() === ''}
                 >
-                    {isLoadingExplanation && activeMode === 'explain' ? ( // Show loading only if 'explain' is being generated by this button
+                    {isLoadingExplanation && activeMode === 'explain' ? (
                         <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</>
                     ) : 'Generate Explanation'}
                 </button>
@@ -371,8 +392,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     </p>
                 )}
             </div>
-
-            {/* Toggle Buttons, Refresh, and Favorite Section */}
             <div className={`flex-shrink-0 flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' && isExplainGeneratedForCurrentWord ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0 pointer-events-none'}`}>
                 {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
                     <button
@@ -381,11 +400,9 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             if (!loggedIn || !isExplainGeneratedForCurrentWord || inputQuestion.trim() === '') return;
                             setAiError(null);
                             setActiveMode(mode);
-                            // ** FIX APPLIED HERE for "Explain" toggle **
-                            // Fetch only if content for this mode is not already loaded, or if it's a placeholder for image/deep
                             if (!generatedContents[mode] ||
-                                (mode === 'image' && generatedContents.image === 'Image generation feature coming soon!') ||
-                                (mode === 'deep' && generatedContents.deep === 'In-depth explanation feature coming soon!')) {
+                                (mode === 'image' && generatedContents.image === 'Image generation feature coming soon!') || // Simplified placeholder check
+                                (mode === 'deep' && generatedContents.deep === 'In-depth explanation feature coming soon!')) { // Simplified placeholder check
                                 await generateExplanation(inputQuestion, mode);
                             }
                         }}
@@ -398,8 +415,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                         {isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-1.5 -mr-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
                     </button>
                 ))}
-
-                {/* REFRESH BUTTON - ADDED HERE */}
                 {loggedIn && isExplainGeneratedForCurrentWord && inputQuestion.trim() !== '' && generatedContents[activeMode] && (
                     <button
                         onClick={() => {
@@ -407,17 +422,15 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                             setAiError(null);
                             generateExplanation(inputQuestion, activeMode);
                         }}
-                        className="ml-2 p-2 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-60 transition-colors duration-150" // Applied new styles
+                        className="ml-2 p-2 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-60 transition-colors duration-150"
                         title={`Refresh ${activeMode} content`}
                         disabled={isLoadingExplanation}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"> {/* Standard icon size */}
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                             <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.493-4.269A5.502 5.502 0 0 1 9.5 2.5a5.5 5.5 0 0 1 5.005 3.873A.75.75 0 0 1 15.312 11.424ZM18 10a8 8 0 1 1-14.638-4.597A.75.75 0 0 1 4.583 6.27A6.5 6.5 0 1 0 10 3.5V2a.75.75 0 0 1 1.5 0v1.75A.75.75 0 0 1 10.75 4.5V6a.75.75 0 0 1-1.5 0V4.84A8.001 8.001 0 0 1 18 10Z" clipRule="evenodd" />
                         </svg>
                     </button>
                 )}
-
-                {/* Favorite Button */}
                 {loggedIn && isExplainGeneratedForCurrentWord && inputQuestion.trim() !== '' && currentWordIsFavorite !== null && (
                     <button
                         onClick={() => onToggleFavorite(inputQuestion, !!currentWordIsFavorite)}
@@ -430,19 +443,18 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     </button>
                 )}
             </div>
-
-
-            {/* Content Display Box */}
             <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto overflow-x-hidden relative min-h-[250px] sm:min-h-[300px] md:min-h-[320px]">
                 {showContentBoxStructure ? (
                     <div className="prose prose-sm sm:prose-base md:prose-lg max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap break-words pt-1">
-                        {isLoadingExplanation && !currentExplanationContent ? ( // Show general loading if no content yet for active mode
+                        {isLoadingExplanation && !currentExplanationContent ? (
                             <div className="flex items-center justify-center text-gray-500">
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                                 Generating {activeMode} content...
                             </div>
                         ) : (
-                            currentExplanationContent || (loggedIn && aiError ? <p className="text-red-600">{aiError}</p> : <p className="text-gray-500">{loggedIn ? "Enter a concept or select a mode." : "Login to see explanations."}</p>)
+                            activeMode === 'explain' && currentExplanationContent ? // Only use HighlightedContentRenderer for 'explain' mode
+                                <HighlightedContentRenderer content={currentExplanationContent} onWordClick={handleHighlightedWordClick} />
+                                : (currentExplanationContent || (loggedIn && aiError ? <p className="text-red-600">{aiError}</p> : <p className="text-gray-500">{loggedIn ? "Enter a concept or select a mode." : "Login to see explanations."}</p>))
                         )}
                     </div>
                 ) : (
@@ -457,7 +469,6 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     );
 };
 
-
 // --- Profile Page Component ---
 interface ProfilePageProps {
     setCurrentPage: (page: Page) => void;
@@ -467,7 +478,6 @@ interface ProfilePageProps {
     handleToggleFavoriteApp: (currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
     profileDataHook: [ProfileData | null, React.Dispatch<React.SetStateAction<ProfileData | null>>];
 }
-
 const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeaders, user, onWordClick, handleToggleFavoriteApp, profileDataHook }) => {
     const [profileData, setProfileData] = profileDataHook;
     const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -475,10 +485,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeader
 
     useEffect(() => {
         if (!user) {
-            setCurrentPage('tutor'); // Redirect if user logs out while on profile
+            setCurrentPage('tutor');
             return;
         }
-        // Fetch profile data if it's not already loaded or if forced by nulling profileData
         if (profileData === null && !isLoadingProfile) {
             const fetchProfileData = async () => {
                 setIsLoadingProfile(true);
@@ -504,7 +513,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeader
         }
     }, [user, getAuthHeaders, setCurrentPage, profileData, setProfileData, isLoadingProfile]);
 
-
     const WordListItem: React.FC<{ item: ExploredWord, onToggleFavorite: () => void, onWordItemClick: () => void }> = ({ item, onToggleFavorite, onWordItemClick }) => (
         <li className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex justify-between items-center hover:bg-gray-100 transition-colors duration-150 group">
             <div className="flex-1 min-w-0 mr-2 cursor-pointer group-hover:text-indigo-600" onClick={onWordItemClick} title={`View details for "${item.word}"`}>
@@ -525,7 +533,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeader
     if (profileError) return <div className="text-center p-10 text-red-300 bg-red-800 bg-opacity-30 rounded-lg">Error: {profileError} <button onClick={() => setCurrentPage('tutor')} className="text-blue-300 hover:underline ml-2">Go Back</button></div>;
     if (!profileData) return <div className="text-center p-10 text-white">No profile data found yet. Explore some words! <button onClick={() => setCurrentPage('tutor')} className="text-blue-300 hover:underline ml-2">Go Back</button></div>;
 
-
     return (
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-2xl w-full max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto min-h-[600px] max-h-[85vh] sm:max-h-[700px] flex flex-col overflow-hidden">
             <div className="flex justify-between items-center mb-3 sm:mb-4 flex-shrink-0">
@@ -534,8 +541,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeader
             </div>
             <p className="text-gray-600 mb-0.5 text-xs sm:text-sm">Tier: <span className="font-semibold">{profileData.tier}</span></p>
             <p className="text-gray-600 mb-3 sm:mb-4 text-xs sm:text-sm">Words Explored: <span className="font-semibold">{profileData.explored_words_count}</span></p>
-
-            <div className="flex-grow overflow-y-auto space-y-4 sm:space-y-6 pr-1"> {/* Added pr-1 for scrollbar space */}
+            <div className="flex-grow overflow-y-auto space-y-4 sm:space-y-6 pr-1">
                 <div>
                     <h3 className="text-lg sm:text-xl font-semibold text-gray-700 mb-1.5 sm:mb-2 sticky top-0 bg-white py-1 z-10 border-b">Favorite Words ({profileData.favorite_words_list.length})</h3>
                     {profileData.favorite_words_list.length > 0 ? (
@@ -567,10 +573,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ setCurrentPage, getAuthHeader
     );
 };
 
-
 // --- Main App Component ---
 const App: React.FC = () => {
-    const { user, loading: authLoadingGlobal, logout: authLogout } = useAuth(); // Get user and global auth loading state
+    const { user, loading: authLoadingGlobal, logout: authLogout } = useAuth();
     const [currentPage, setCurrentPage] = useState<Page>('tutor');
     const [inputQuestion, setInputQuestion] = useState('');
     const [generatedContents, setGeneratedContents] = useState<Record<ContentMode, string>>({
@@ -579,21 +584,13 @@ const App: React.FC = () => {
     const [activeMode, setActiveMode] = useState<ContentMode>('explain');
     const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
     const [aiError, setAiError] = useState<string | null>(null);
-
-    // Auth Modal State
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
-    const questionBeforeModalRef = useRef(''); // Store question if user needs to login/signup first
-
-    // Tutor Page Specific State
+    const questionBeforeModalRef = useRef('');
     const [isExplainGeneratedForCurrentWord, setIsExplainGeneratedForCurrentWord] = useState(false);
     const [currentTutorWordIsFavorite, setCurrentTutorWordIsFavorite] = useState<boolean | null>(null);
-
-    // Profile Page Specific State
     const [profileData, setProfileData] = useState<ProfileData | null>(null);
 
-
-    // Helper to get auth headers
     const getAuthHeaders = () => {
         const token = localStorage.getItem('access_token');
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -603,11 +600,10 @@ const App: React.FC = () => {
         return headers;
     };
 
-    // Function to refresh profile data (used after actions like favoriting or generating content)
     const refreshProfileData = async () => {
         if (!user) {
             setProfileData(null);
-            setCurrentTutorWordIsFavorite(null); // Clear favorite status if no user
+            setCurrentTutorWordIsFavorite(null);
             return;
         }
         try {
@@ -615,90 +611,79 @@ const App: React.FC = () => {
             if (response.ok) {
                 const data: ProfileData = await response.json();
                 setProfileData(data);
-                // Update favorite status for the current word on the tutor page
                 if (inputQuestion && data.explored_words_list) {
                     const currentWordSanitizedId = inputQuestion.trim().toLowerCase().replace(/[/*\[\]]/g, '_').substring(0, 100);
                     const foundWord = data.explored_words_list.find(w => w.id === currentWordSanitizedId);
                     setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
                 } else {
-                    setCurrentTutorWordIsFavorite(null); // No input question or no words
+                    setCurrentTutorWordIsFavorite(null);
                 }
             } else {
                 console.error("Failed to refresh profile data during general refresh");
-                // Optionally set an error state or keep stale data
             }
         } catch (error) {
             console.error("Error refreshing profile data:", error);
         }
     };
 
-    // Effect to fetch/refresh profile data when user changes or page loads
     useEffect(() => {
         if (user) {
             refreshProfileData();
         } else {
-            setProfileData(null); // Clear profile data if no user
+            setProfileData(null);
             setCurrentTutorWordIsFavorite(null);
         }
-    }, [user]); // Runs when user object changes (login/logout)
+    }, [user]);
 
-    // Effect to update favorite status on tutor page when inputQuestion or profileData changes
     useEffect(() => {
         if (inputQuestion && profileData?.explored_words_list) {
             const currentWordSanitizedId = inputQuestion.trim().toLowerCase().replace(/[/*\[\]]/g, '_').substring(0, 100);
             const foundWord = profileData.explored_words_list.find(w => w.id === currentWordSanitizedId);
             setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
         } else if (!inputQuestion) {
-            setCurrentTutorWordIsFavorite(null); // Clear if no input question
+            setCurrentTutorWordIsFavorite(null);
         }
     }, [inputQuestion, profileData]);
 
-
-    // Main function to generate AI content
     const generateExplanation = async (questionToGenerate: string, mode: ContentMode, forceCheckUser?: User | null) => {
-        const currentUserToCheck = forceCheckUser !== undefined ? forceCheckUser : user; // Use provided user or current auth user
-
+        const currentUserToCheck = forceCheckUser !== undefined ? forceCheckUser : user;
         if (!currentUserToCheck) {
             setAiError("Please login to generate explanations.");
-            if (forceCheckUser === undefined) handleShowLoginModal(questionToGenerate); // Show login modal only if not forced by login success
+            if (forceCheckUser === undefined) handleShowLoginModal(questionToGenerate);
             return;
         }
         setAiError(null);
         setIsLoadingExplanation(true);
 
-        // Handle placeholders for image and deep modes
         if (mode === 'image' || mode === 'deep') {
             setGeneratedContents(cc => ({
                 ...cc,
                 [mode]: mode === 'image' ? `Image generation feature coming soon! You can imagine an image of '${questionToGenerate}'.` : `In-depth explanation feature coming soon! We're working on providing more detailed insights for '${questionToGenerate}'.`
             }));
             setIsLoadingExplanation(false);
-            // Still log the interaction with the backend for these modes
             fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
                 headers: getAuthHeaders(),
                 body: JSON.stringify({ question: questionToGenerate, content_type: mode })
-            }).then(() => refreshProfileData()) // Refresh profile to update explored words
+            }).then(() => refreshProfileData())
                 .catch(console.error);
             return;
         }
 
-        // Fetch actual content for other modes
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
                 headers: getAuthHeaders(),
                 body: JSON.stringify({ question: questionToGenerate, content_type: mode }),
-                signal: AbortSignal.timeout(30000) // 30-second timeout
+                signal: AbortSignal.timeout(30000)
             });
-
             if (response.ok) {
                 const data = await response.json();
                 setGeneratedContents(cc => ({ ...cc, [mode]: data.explanation }));
                 if (mode === 'explain' && data.explanation && data.explanation.trim() !== '') {
                     setIsExplainGeneratedForCurrentWord(true);
                 }
-                await refreshProfileData(); // Refresh profile to update explored words and cache
+                await refreshProfileData();
             } else {
                 const errorData = await response.json().catch(() => ({ error: "Error parsing server response" }));
                 let errorMessage = errorData.error || `Failed to generate content: ${response.status}`;
@@ -715,14 +700,12 @@ const App: React.FC = () => {
         }
     };
 
-    // Function to toggle favorite status (used by both Tutor and Profile pages)
     const handleToggleFavoriteApp = async (currentWordDisplay: string, currentFavStatus: boolean) => {
         if (!user) {
             setAiError("Please login to favorite words.");
-            handleShowLoginModal(currentWordDisplay); // Prompt login
+            handleShowLoginModal(currentWordDisplay);
             return;
         }
-        // Optimistic UI update for the Tutor page's heart icon
         if (inputQuestion === currentWordDisplay) {
             setCurrentTutorWordIsFavorite(!currentFavStatus);
         }
@@ -733,30 +716,45 @@ const App: React.FC = () => {
                 body: JSON.stringify({ word: currentWordDisplay })
             });
             if (response.ok) {
-                await refreshProfileData(); // Refresh to get updated lists and favorite status
+                await refreshProfileData();
             } else {
-                // Revert optimistic update on failure
                 if (inputQuestion === currentWordDisplay) {
                     setCurrentTutorWordIsFavorite(currentFavStatus);
                 }
                 const errData = await response.json().catch(() => ({ error: "Failed to toggle favorite on server" }));
                 setAiError(errData.error || "Could not update favorite status.");
-                await refreshProfileData(); // Refresh even on error to sync state
+                await refreshProfileData();
             }
         } catch (err) {
-            // Revert optimistic update on network error
             if (inputQuestion === currentWordDisplay) {
                 setCurrentTutorWordIsFavorite(currentFavStatus);
             }
             setAiError("Network error toggling favorite.");
-            await refreshProfileData(); // Refresh to try and sync state
+            await refreshProfileData();
         }
     };
 
+    // NEW: Handler for clicking a highlighted word
+    const handleHighlightedWordClick = (word: string) => {
+        if (!user) {
+            handleShowLoginModal(word); // Prompt login if not logged in
+            return;
+        }
+        // Set the clicked word as the new input question
+        setInputQuestion(word);
+        // Reset states for the new word exploration
+        setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
+        setActiveMode('explain');
+        setIsExplainGeneratedForCurrentWord(false); // New 'explain' needs to be generated
+        setAiError(null);
+        setCurrentTutorWordIsFavorite(null); // Reset favorite status for the new word
+        // Automatically trigger explanation generation for the new word
+        generateExplanation(word, 'explain');
+    };
 
-    // --- Modal Handlers ---
+
     const handleShowLoginModal = (question: string) => {
-        questionBeforeModalRef.current = question; // Save current question
+        questionBeforeModalRef.current = question;
         setAuthModalMode('login');
         setShowAuthModal(true);
     };
@@ -766,11 +764,9 @@ const App: React.FC = () => {
         setShowAuthModal(true);
     };
 
-    // --- Logout Handler ---
     const handleLogout = () => {
         authLogout();
-        setCurrentPage('tutor'); // Go back to tutor page
-        // Reset all relevant states
+        setCurrentPage('tutor');
         setInputQuestion('');
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
         setActiveMode('explain');
@@ -780,7 +776,6 @@ const App: React.FC = () => {
         setCurrentTutorWordIsFavorite(null);
     };
 
-    // --- Navigation from Profile to Tutor ---
     const handleWordClickFromProfile = (word: string, cachedContent?: Partial<Record<ContentMode, string>>) => {
         setInputQuestion(word);
         const initialContent = {
@@ -791,29 +786,22 @@ const App: React.FC = () => {
             deep: cachedContent?.deep || 'In-depth explanation feature coming soon!',
         };
         setGeneratedContents(initialContent);
-
         if (initialContent.explain && initialContent.explain.trim() !== '') {
             setActiveMode('explain');
             setIsExplainGeneratedForCurrentWord(true);
         } else {
-            // If no cached 'explain', set it to be generated, or rely on main button
             setActiveMode('explain');
-            setIsExplainGeneratedForCurrentWord(false); // This will disable other toggles until 'explain' is there
-            // Optionally, you could auto-fetch 'explain' here if it's missing:
-            // if (!initialContent.explain) generateExplanation(word, 'explain');
+            setIsExplainGeneratedForCurrentWord(false);
         }
         setCurrentPage('tutor');
     };
 
-    // Effect to redirect to tutor page if user logs out while on profile page
     useEffect(() => {
         if (!user && currentPage === 'profile') {
             setCurrentPage('tutor');
         }
     }, [user, currentPage]);
 
-
-    // Global loading state (e.g., while checking auth token)
     if (authLoadingGlobal) {
         return <div className="flex items-center justify-center min-h-screen bg-gray-100 text-2xl">Loading Application...</div>;
     }
@@ -826,7 +814,7 @@ const App: React.FC = () => {
                         {currentPage === 'tutor' && (
                             <button
                                 onClick={() => {
-                                    setProfileData(null); // Force refresh of profile data when navigating
+                                    setProfileData(null);
                                     setCurrentPage('profile');
                                 }}
                                 className="py-1 px-3 sm:py-2 sm:px-4 bg-white/20 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-white/30 shadow"
@@ -834,7 +822,6 @@ const App: React.FC = () => {
                                 View Profile
                             </button>
                         )}
-                        {/* The "Back to Tutor" button is on the ProfilePage component itself */}
                         <button
                             onClick={handleLogout}
                             className="py-1 px-3 sm:py-2 sm:px-4 bg-red-500 text-white rounded-lg text-xs sm:text-sm font-semibold hover:bg-red-600 shadow"
@@ -844,7 +831,6 @@ const App: React.FC = () => {
                     </div>
                 )}
             </header>
-
             <main className="w-full flex justify-center items-center flex-grow mt-2 mb-auto">
                 {currentPage === 'tutor' ? (
                     <TinyTutorAppContent
@@ -865,6 +851,7 @@ const App: React.FC = () => {
                         setIsExplainGeneratedForCurrentWord={setIsExplainGeneratedForCurrentWord}
                         onToggleFavorite={handleToggleFavoriteApp}
                         currentWordIsFavorite={currentTutorWordIsFavorite}
+                        handleHighlightedWordClick={handleHighlightedWordClick} // Pass new handler
                     />
                 ) : (
                     <ProfilePage
@@ -873,29 +860,26 @@ const App: React.FC = () => {
                         user={user}
                         onWordClick={handleWordClickFromProfile}
                         handleToggleFavoriteApp={handleToggleFavoriteApp}
-                        profileDataHook={[profileData, setProfileData]} // Pass state and setter
+                        profileDataHook={[profileData, setProfileData]}
                     />
                 )}
             </main>
-
             {showAuthModal && (
                 <AuthModal
                     onClose={() => { setShowAuthModal(false); }}
                     onLoginSuccess={async (loggedInUser, questionAfterLogin) => {
                         setShowAuthModal(false);
-                        setAiError(null); // Clear any previous errors
+                        setAiError(null);
                         if (questionAfterLogin.trim() !== '') {
-                            setInputQuestion(questionAfterLogin); // Set the question that was pending
-                            // Automatically generate 'explain' for the pending question after successful login
+                            setInputQuestion(questionAfterLogin);
                             await generateExplanation(questionAfterLogin, 'explain', loggedInUser);
                         } else {
-                            // If no specific question was pending, just show a welcome or clear state
                             setGeneratedContents(prev => ({ ...prev, explain: "Welcome! Enter a concept to get started." }));
                             setIsExplainGeneratedForCurrentWord(false);
                         }
-                        questionBeforeModalRef.current = ''; // Clear the ref
+                        questionBeforeModalRef.current = '';
                     }}
-                    initialQuestion={questionBeforeModalRef.current} // Pass the question that triggered the modal
+                    initialQuestion={questionBeforeModalRef.current}
                     initialMode={authModalMode}
                 />
             )}
@@ -906,7 +890,6 @@ const App: React.FC = () => {
     );
 };
 
-// Wrap App with AuthProvider for export
 const AppWithAuthProvider: React.FC = () => (
     <AuthProvider>
         <App />

@@ -27,7 +27,7 @@ interface CompletedStreak {
     words: string[];
     score: number;
 }
-interface WordMapModalData { // For displaying completed streaks
+interface WordMapModalData {
     streaks: CompletedStreak[];
 }
 
@@ -205,7 +205,8 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
         triggerGenerateExplanation(inputQuestion, 'explain', true, false);
     };
     const currentExplanationContent = generatedContents[activeMode];
-    const canShowStreakHistoryButton = loggedIn;
+    // Condition for showing the toggle bar: user is logged in and there's an input question.
+    const showToggleBar = loggedIn && inputQuestion.trim() !== '';
 
     return (
         <div className="bg-white p-4 md:p-5 rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto flex flex-col min-h-[600px] max-h-[85vh] sm:max-h-[700px] overflow-hidden">
@@ -223,14 +224,43 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                 {aiError && <p className="text-red-600 text-center text-xs font-medium mt-1 sm:mt-1.5">{aiError}</p>}
                 {!loggedIn && !aiError && (<p className="text-gray-600 text-center text-xs mt-1 sm:mt-1.5"><button onClick={() => setShowSignupModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>{' '}or{' '}<button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>{' '}to generate explanations.</p>)}
             </div>
-            <div className={`flex-shrink-0 flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' && isExplainGeneratedForCurrentWord ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0 pointer-events-none'}`}>
-                {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (<button key={mode} onClick={async () => { if (!loggedIn || !isExplainGeneratedForCurrentWord || inputQuestion.trim() === '') return; setActiveMode(mode); if (!generatedContents[mode] || (mode === 'image' && generatedContents.image.startsWith('Image generation feature coming soon!')) || (mode === 'deep' && generatedContents.deep.startsWith('In-depth explanation feature coming soon!'))) { await triggerGenerateExplanation(inputQuestion, mode, false, false); } }} className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${mode !== 'explain' && !isExplainGeneratedForCurrentWord ? 'opacity-50 cursor-not-allowed' : ''} `} disabled={(isLoadingExplanation && activeMode !== mode) || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)}>{mode.charAt(0).toUpperCase() + mode.slice(1)}{isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-1.5 -mr-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}</button>))}
-                {loggedIn && isExplainGeneratedForCurrentWord && inputQuestion.trim() !== '' && generatedContents[activeMode] && (<button onClick={handleRefreshCurrentWord} className="ml-2 p-2 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-60 transition-colors duration-150" title={`Refresh ${activeMode} content`} disabled={isLoadingExplanation}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.493-4.269A5.502 5.502 0 0 1 9.5 2.5a5.5 5.5 0 0 1 5.005 3.873A.75.75 0 0 1 15.312 11.424ZM18 10a8 8 0 1 1-14.638-4.597A.75.75 0 0 1 4.583 6.27A6.5 6.5 0 1 0 10 3.5V2a.75.75 0 0 1 1.5 0v1.75A.75.75 0 0 1 10.75 4.5V6a.75.75 0 0 1-1.5 0V4.84A8.001 8.001 0 0 1 18 10Z" clipRule="evenodd" /></svg></button>)}
-                {loggedIn && isExplainGeneratedForCurrentWord && inputQuestion.trim() !== '' && currentWordIsFavorite !== null && (<button onClick={() => onToggleFavorite(inputQuestion, !!currentWordIsFavorite)} className={`p-1.5 rounded-full text-xl ml-2 transition-colors duration-150 ${currentWordIsFavorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-500'} focus:outline-none focus:ring-1 focus:ring-red-400`} title={currentWordIsFavorite ? "Remove from favorites" : "Add to favorites"}>{currentWordIsFavorite ? '♥' : '♡'}</button>)}
-                {canShowStreakHistoryButton && (<button onClick={onShowStreakHistory} className="ml-2 py-1.5 px-3 bg-purple-500 text-white rounded-full text-xs sm:text-sm font-semibold hover:bg-purple-600 transition-colors duration-150 shadow" title="View Streak History" disabled={isLoadingExplanation}>Streak History</button>)}
+
+            {/* Toggle Bar: Now its visibility is simpler, relying on internal button disabling */}
+            <div className={`flex-shrink-0 flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-opacity duration-300 min-h-[36px] sm:min-h-[44px] ${showToggleBar ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                {showToggleBar && (<>
+                    {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (
+                        <button
+                            key={mode}
+                            onClick={async () => {
+                                if (!isExplainGeneratedForCurrentWord && mode !== 'explain') return; // Prevent click if explain not generated for secondary modes
+                                setActiveMode(mode);
+                                if (!generatedContents[mode] ||
+                                    (mode === 'image' && generatedContents.image.startsWith('Image generation feature coming soon!')) ||
+                                    (mode === 'deep' && generatedContents.deep.startsWith('In-depth explanation feature coming soon!')) ||
+                                    (mode === 'explain' && !generatedContents.explain) // Always fetch explain if it's empty
+                                ) {
+                                    await triggerGenerateExplanation(inputQuestion, mode, false, false);
+                                }
+                            }}
+                            className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 
+                                        ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} 
+                                        ${(mode !== 'explain' && !isExplainGeneratedForCurrentWord) ? 'opacity-50 cursor-not-allowed' : ''} `}
+                            disabled={isLoadingExplanation || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)}
+                        >
+                            {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                            {isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-1.5 -mr-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                        </button>
+                    ))}
+                    {isExplainGeneratedForCurrentWord && (<>
+                        <button onClick={handleRefreshCurrentWord} className="ml-2 p-2 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-60 transition-colors duration-150" title={`Refresh ${activeMode} content`} disabled={isLoadingExplanation}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.493-4.269A5.502 5.502 0 0 1 9.5 2.5a5.5 5.5 0 0 1 5.005 3.873A.75.75 0 0 1 15.312 11.424ZM18 10a8 8 0 1 1-14.638-4.597A.75.75 0 0 1 4.583 6.27A6.5 6.5 0 1 0 10 3.5V2a.75.75 0 0 1 1.5 0v1.75A.75.75 0 0 1 10.75 4.5V6a.75.75 0 0 1-1.5 0V4.84A8.001 8.001 0 0 1 18 10Z" clipRule="evenodd" /></svg></button>
+                        {currentWordIsFavorite !== null && (<button onClick={() => onToggleFavorite(inputQuestion, !!currentWordIsFavorite)} className={`p-1.5 rounded-full text-xl ml-2 transition-colors duration-150 ${currentWordIsFavorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-500'} focus:outline-none focus:ring-1 focus:ring-red-400`} title={currentWordIsFavorite ? "Remove from favorites" : "Add to favorites"}>{currentWordIsFavorite ? '♥' : '♡'}</button>)}
+                        <button onClick={onShowStreakHistory} className="ml-2 py-1.5 px-3 bg-purple-500 text-white rounded-full text-xs sm:text-sm font-semibold hover:bg-purple-600 transition-colors duration-150 shadow" title="View Streak History" disabled={isLoadingExplanation}>Streak History</button>
+                    </>)}
+                </>)}
             </div>
+
             <div className="flex-grow p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200 shadow-inner overflow-y-auto overflow-x-hidden relative min-h-[250px] sm:min-h-[300px] md:min-h-[320px]">
-                {currentExplanationContent ? (<div className="prose prose-sm sm:prose-base md:prose-lg max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap break-words pt-1">{isLoadingExplanation ? (<div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode} content...</div>) : (activeMode === 'explain' ? <HighlightedContentRenderer content={currentExplanationContent} onWordClick={handleHighlightedWordClick} /> : currentExplanationContent)}</div>) : (<div className="flex items-center justify-center h-full"><p className="text-gray-400 text-center text-sm sm:text-base">{loggedIn ? (aiError || "Enter a concept or select a mode.") : (aiError || "Login to see explanations.")}</p></div>)}
+                {currentExplanationContent || (loggedIn && inputQuestion.trim() !== '' && !aiError) ? (<div className="prose prose-sm sm:prose-base md:prose-lg max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap break-words pt-1">{isLoadingExplanation ? (<div className="flex items-center justify-center text-gray-500"><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating {activeMode} content...</div>) : (activeMode === 'explain' && currentExplanationContent ? <HighlightedContentRenderer content={currentExplanationContent} onWordClick={handleHighlightedWordClick} /> : currentExplanationContent)}</div>) : (<div className="flex items-center justify-center h-full"><p className="text-gray-400 text-center text-sm sm:text-base">{loggedIn ? (aiError || "Enter a concept to get started.") : (aiError || "Login to see explanations.")}</p></div>)}
             </div>
         </div>
     );
@@ -335,10 +365,12 @@ const App: React.FC = () => {
 
         setAiError(null); setIsLoadingExplanation(true);
         setActiveMode(mode);
-        setGeneratedContents(prev => ({ ...prev, [mode]: '' }));
-
+        // Only clear the specific mode's content, or all if it's a new root/refresh for explain
         if (mode === 'explain' && (isNewRootWord || isRefresh)) {
+            setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
             setIsExplainGeneratedForCurrentWord(false);
+        } else {
+            setGeneratedContents(prev => ({ ...prev, [mode]: '' }));
         }
 
         if (mode === 'image' || mode === 'deep') {
@@ -384,35 +416,44 @@ const App: React.FC = () => {
     const handleHighlightedWordClick = (word: string) => {
         if (!user) { handleShowLoginModal(word); return; }
         setCurrentStreak(prevStreak => [...prevStreak, word]);
-        setInputQuestion(word);
-        setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
-        setActiveMode('explain'); setIsExplainGeneratedForCurrentWord(false); setAiError(null); setCurrentTutorWordIsFavorite(null);
+        setInputQuestion(word); // This will trigger the App's useEffect for inputQuestion if needed
+        // triggerGenerateExplanation will handle content and state resets
         triggerGenerateExplanation(word, 'explain', false, false, undefined);
     };
 
     const handleAppSetInputQuestion = (value: string) => {
-        if (inputQuestion.trim() !== value.trim() && value.trim() !== '') {
+        const oldQuestion = inputQuestion;
+        setInputQuestion(value); // Update inputQuestion first
+
+        if (oldQuestion.trim() !== value.trim() && value.trim() !== '') {
+            finalizeCurrentStreak(); // Finalize old streak
+            setCurrentStreak([]);    // Reset current streak as user is typing a new word
+            setIsExplainGeneratedForCurrentWord(false);
+            setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
+            setActiveMode('explain');
+        } else if (value.trim() === '' && oldQuestion.trim() !== '') {
             finalizeCurrentStreak();
             setCurrentStreak([]);
-        } else if (value.trim() === '' && inputQuestion.trim() !== '') {
-            finalizeCurrentStreak();
-            setCurrentStreak([]);
+            setIsExplainGeneratedForCurrentWord(false);
+            setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
+            setActiveMode('explain');
         }
-        setInputQuestion(value);
-        setAiError(null); setIsExplainGeneratedForCurrentWord(false);
-        setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
-        setActiveMode('explain');
+        setAiError(null);
     };
 
     const handleAppClearInput = () => {
         finalizeCurrentStreak();
-        setInputQuestion(''); setCurrentStreak([]);
+        setInputQuestion('');
+        setCurrentStreak([]);
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
-        setActiveMode('explain'); setAiError(null); setIsExplainGeneratedForCurrentWord(false);
+        setActiveMode('explain');
+        setAiError(null);
+        setIsExplainGeneratedForCurrentWord(false);
     };
 
     const handleRefreshCurrentWord = () => {
         if (!inputQuestion.trim()) return;
+        // isNewRootWord is false, isRefresh is true
         triggerGenerateExplanation(inputQuestion, activeMode, false, true, undefined);
     };
 

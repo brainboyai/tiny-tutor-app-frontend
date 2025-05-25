@@ -179,7 +179,7 @@ interface TinyTutorAppContentProps {
     triggerGenerateExplanation: (question: string, mode: ContentMode, isNewRootWord: boolean, isRefresh: boolean) => Promise<void>;
     isLoadingExplanation: boolean;
     aiError: string | null;
-    setAiError: React.Dispatch<React.SetStateAction<string | null>>; // FIX: Added this prop
+    setAiError: React.Dispatch<React.SetStateAction<string | null>>;
     currentUser: User | null;
     setShowLoginModal: (question: string) => void;
     setShowSignupModal: (question: string) => void;
@@ -192,14 +192,14 @@ interface TinyTutorAppContentProps {
 }
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     inputQuestion, onInputChange, onClearInput, generatedContents, activeMode, setActiveMode,
-    triggerGenerateExplanation, isLoadingExplanation, aiError, setAiError, // FIX: Destructure setAiError
+    triggerGenerateExplanation, isLoadingExplanation, aiError, setAiError,
     currentUser, setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord,
     onToggleFavorite, currentWordIsFavorite, handleHighlightedWordClick, onShowStreakHistory, handleRefreshCurrentWord
 }) => {
     const loggedIn = currentUser !== null;
     const mainGenerateClick = () => {
         if (inputQuestion.trim() === '') {
-            setAiError('Please enter a concept.'); // FIX: Use setAiError prop
+            setAiError('Please enter a concept.');
             return;
         }
         triggerGenerateExplanation(inputQuestion, 'explain', true, false);
@@ -459,10 +459,10 @@ const App: React.FC = () => {
                         triggerGenerateExplanation={triggerGenerateExplanation}
                         isLoadingExplanation={isLoadingExplanation}
                         aiError={aiError}
-                        setAiError={setAiError} // Pass setAiError
+                        setAiError={setAiError}
                         currentUser={user}
                         setShowLoginModal={handleShowLoginModal}
-                        setShowSignupModal={setShowSignupModal}
+                        setShowSignupModal={handleShowSignupModal}
                         isExplainGeneratedForCurrentWord={isExplainGeneratedForCurrentWord}
                         onToggleFavorite={handleToggleFavoriteApp} currentWordIsFavorite={currentTutorWordIsFavorite}
                         handleHighlightedWordClick={handleHighlightedWordClick}

@@ -23,11 +23,11 @@ interface ProfileData {
 
 // --- Streak Types ---
 interface CompletedStreak {
-    id: string; // Unique ID for the streak (e.g., timestamp)
-    words: string[]; // Words in the streak, in order
-    score: number; // Length of the words array
+    id: string;
+    words: string[];
+    score: number;
 }
-interface WordMapModalData { // For displaying completed streaks
+interface WordMapModalData {
     streaks: CompletedStreak[];
 }
 
@@ -119,166 +119,90 @@ const HighlightedContentRenderer: React.FC<HighlightedContentRendererProps> = ({
 };
 
 // --- Word Streak History Modal Component ---
-interface WordStreakHistoryModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    modalData: WordMapModalData | null; // Contains array of completed streaks
-}
+interface WordStreakHistoryModalProps { isOpen: boolean; onClose: () => void; modalData: WordMapModalData | null; }
 const WordStreakHistoryModal: React.FC<WordStreakHistoryModalProps> = ({ isOpen, onClose, modalData }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const modalContentRef = useRef<HTMLDivElement>(null);
-
     useEffect(() => {
         if (!isOpen || !modalData || !modalData.streaks.length || !canvasRef.current || !modalContentRef.current) return;
-
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // Calculate total height needed for all streaks
-        const nodeRadius = 20;
-        const verticalSpacingBetweenNodes = 50; // Space between nodes in a single streak
-        const verticalSpacingBetweenStreaks = 40; // Space between different streaks
-        const textOffsetY = 30; // Offset for streak title
-        const nodePaddingX = 10; // Padding around text in node
-
-        let totalCanvasHeight = 20; // Initial padding
-
-        modalData.streaks.forEach(streak => {
-            totalCanvasHeight += textOffsetY; // For "Streak N (Score: X)"
-            totalCanvasHeight += streak.words.length * verticalSpacingBetweenNodes;
-            totalCanvasHeight += verticalSpacingBetweenStreaks;
-        });
-        totalCanvasHeight = Math.max(300, totalCanvasHeight); // Minimum height
-
+        const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); if (!ctx) return;
+        const nodeRadius = 20; const verticalSpacingBetweenNodes = 50; const verticalSpacingBetweenStreaks = 40;
+        const textOffsetY = 30; const nodePaddingX = 10; let totalCanvasHeight = 20;
+        modalData.streaks.forEach(streak => { totalCanvasHeight += textOffsetY; totalCanvasHeight += streak.words.length * verticalSpacingBetweenNodes; totalCanvasHeight += verticalSpacingBetweenStreaks; });
+        totalCanvasHeight = Math.max(300, totalCanvasHeight);
         const containerWidth = modalContentRef.current.clientWidth - 48;
-        canvas.width = Math.max(400, containerWidth);
-        canvas.height = totalCanvasHeight;
-
+        canvas.width = Math.max(400, containerWidth); canvas.height = totalCanvasHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const nodeColor = '#A5B4FC'; // indigo-300
-        const lineColor = '#6B7280'; // gray-500
-        const textColor = '#111827'; // gray-900
-        const titleColor = '#374151'; // gray-700
-
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        let currentY = 20; // Start drawing from top
-
+        const nodeColor = '#A5B4FC'; const lineColor = '#6B7280'; const textColor = '#111827'; const titleColor = '#374151';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; let currentY = 20;
         modalData.streaks.forEach((streak, streakIndex) => {
-            currentY += textOffsetY;
-            ctx.font = 'bold 14px Arial';
-            ctx.fillStyle = titleColor;
+            currentY += textOffsetY; ctx.font = 'bold 14px Arial'; ctx.fillStyle = titleColor;
             ctx.fillText(`Streak ${streakIndex + 1} (Score: ${streak.score})`, canvas.width / 2, currentY);
-            currentY += 20; // Space after title
-
+            currentY += 20;
             streak.words.forEach((word, wordIndex) => {
-                const nodeX = canvas.width / 2;
-                const nodeY = currentY + wordIndex * verticalSpacingBetweenNodes;
-
-                // Draw node (simple rectangle for now)
-                ctx.font = '12px Arial';
-                const textMetrics = ctx.measureText(word);
-                const nodeWidth = textMetrics.width + 2 * nodePaddingX;
-                const nodeRectHeight = nodeRadius * 2;
-
-                ctx.fillStyle = nodeColor;
-                ctx.strokeStyle = '#6B7280'; // gray-500 border
-                ctx.lineWidth = 1;
-                // Rounded rectangle
-                ctx.beginPath();
-                ctx.moveTo(nodeX - nodeWidth / 2 + nodeRadius, nodeY - nodeRectHeight / 2);
+                const nodeX = canvas.width / 2; const nodeY = currentY + wordIndex * verticalSpacingBetweenNodes;
+                ctx.font = '12px Arial'; const textMetrics = ctx.measureText(word);
+                const nodeWidth = textMetrics.width + 2 * nodePaddingX; const nodeRectHeight = nodeRadius * 2;
+                ctx.fillStyle = nodeColor; ctx.strokeStyle = '#6B7280'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(nodeX - nodeWidth / 2 + nodeRadius, nodeY - nodeRectHeight / 2);
                 ctx.arcTo(nodeX + nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeX + nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeRadius);
                 ctx.arcTo(nodeX + nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeX - nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeRadius);
                 ctx.arcTo(nodeX - nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeX - nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeRadius);
                 ctx.arcTo(nodeX - nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeX + nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeRadius);
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-
-                ctx.fillStyle = textColor;
-                ctx.fillText(word, nodeX, nodeY);
-
-                // Draw line to next node in the same streak
+                ctx.closePath(); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = textColor; ctx.fillText(word, nodeX, nodeY);
                 if (wordIndex < streak.words.length - 1) {
                     const nextNodeY = currentY + (wordIndex + 1) * verticalSpacingBetweenNodes;
-                    ctx.beginPath();
-                    ctx.moveTo(nodeX, nodeY + nodeRectHeight / 2);
-                    ctx.lineTo(nodeX, nextNodeY - nodeRectHeight / 2);
-                    ctx.strokeStyle = lineColor;
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-
-                    // Arrowhead
-                    const headlen = 8;
-                    const angle = Math.PI / 2; // Pointing straight down
-                    ctx.beginPath();
-                    ctx.moveTo(nodeX, nextNodeY - nodeRectHeight / 2);
+                    ctx.beginPath(); ctx.moveTo(nodeX, nodeY + nodeRectHeight / 2); ctx.lineTo(nodeX, nextNodeY - nodeRectHeight / 2);
+                    ctx.strokeStyle = lineColor; ctx.lineWidth = 2; ctx.stroke();
+                    const headlen = 8; const angle = Math.PI / 2;
+                    ctx.beginPath(); ctx.moveTo(nodeX, nextNodeY - nodeRectHeight / 2);
                     ctx.lineTo(nodeX - headlen * Math.cos(angle - Math.PI / 6), (nextNodeY - nodeRectHeight / 2) - headlen * Math.sin(angle - Math.PI / 6));
                     ctx.lineTo(nodeX - headlen * Math.cos(angle + Math.PI / 6), (nextNodeY - nodeRectHeight / 2) - headlen * Math.sin(angle + Math.PI / 6));
-                    ctx.closePath();
-                    ctx.fillStyle = lineColor;
-                    ctx.fill();
+                    ctx.closePath(); ctx.fillStyle = lineColor; ctx.fill();
                 }
             });
-            currentY += streak.words.length * verticalSpacingBetweenNodes + verticalSpacingBetweenStreaks - verticalSpacingBetweenNodes; // Adjust for next streak
+            currentY += streak.words.length * verticalSpacingBetweenNodes + verticalSpacingBetweenStreaks - verticalSpacingBetweenNodes;
         });
-
     }, [isOpen, modalData]);
-
-
     if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[60] p-4"> {/* Increased z-index */}
-            <div ref={modalContentRef} className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg md:max-w-xl relative flex flex-col max-h-[90vh]">
-                <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                    <h3 className="text-xl font-semibold text-gray-800">Word Exploration Streak History</h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl" aria-label="Close modal">&times;</button>
-                </div>
-                <div className="flex-grow overflow-auto"> {/* Scroll for canvas */}
-                    {modalData && modalData.streaks.length > 0 ? (
-                        <canvas ref={canvasRef} className="rounded"></canvas>
-                    ) : (
-                        <p className="text-gray-500 text-center py-10">No completed streaks to display yet. Start exploring!</p>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
+    return (<div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[60] p-4"><div ref={modalContentRef} className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg md:max-w-xl relative flex flex-col max-h-[90vh]"><div className="flex justify-between items-center mb-4 flex-shrink-0"><h3 className="text-xl font-semibold text-gray-800">Word Exploration Streak History</h3><button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl" aria-label="Close modal">&times;</button></div><div className="flex-grow overflow-auto">{modalData && modalData.streaks.length > 0 ? (<canvas ref={canvasRef} className="rounded"></canvas>) : (<p className="text-gray-500 text-center py-10">No completed streaks to display yet. Start exploring!</p>)}</div></div></div>);
 };
-
 
 // --- Tiny Tutor App Content Component ---
 interface TinyTutorAppContentProps {
-    inputQuestion: string; setInputQuestion: (value: string) => void; // Changed to simple setter
-    generatedContents: Record<ContentMode, string>; setGeneratedContents: React.Dispatch<React.SetStateAction<Record<ContentMode, string>>>;
+    inputQuestion: string;
+    onInputChange: (value: string) => void; // Changed prop name for clarity
+    onClearInput: () => void; // New prop for clearing input
+    generatedContents: Record<ContentMode, string>;
     activeMode: ContentMode; setActiveMode: React.Dispatch<React.SetStateAction<ContentMode>>;
     triggerGenerateExplanation: (question: string, mode: ContentMode, isNewRootWord: boolean, isRefresh: boolean) => Promise<void>;
-    isLoadingExplanation: boolean; aiError: string | null; setAiError: React.Dispatch<React.SetStateAction<string | null>>;
+    isLoadingExplanation: boolean; aiError: string | null;
     currentUser: User | null; setShowLoginModal: (question: string) => void; setShowSignupModal: (question: string) => void;
     isExplainGeneratedForCurrentWord: boolean;
     onToggleFavorite: (currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
     currentWordIsFavorite: boolean | null;
     handleHighlightedWordClick: (word: string) => void;
     onShowStreakHistory: () => void;
-    handleRefreshCurrentWord: () => void; // New prop for refresh
+    handleRefreshCurrentWord: () => void;
 }
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
-    inputQuestion, setInputQuestion, generatedContents, activeMode, setActiveMode,
-    triggerGenerateExplanation, isLoadingExplanation, aiError, setAiError, currentUser,
+    inputQuestion, onInputChange, onClearInput, generatedContents, activeMode, setActiveMode,
+    triggerGenerateExplanation, isLoadingExplanation, aiError, currentUser,
     setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord,
     onToggleFavorite, currentWordIsFavorite, handleHighlightedWordClick, onShowStreakHistory, handleRefreshCurrentWord
 }) => {
     const loggedIn = currentUser !== null;
-    const mainGenerateClick = () => { // User typed and clicked main button
-        if (inputQuestion.trim() === '') { setAiError('Please enter a concept.'); return; }
+    const mainGenerateClick = () => {
+        if (inputQuestion.trim() === '') {
+            // setAiError directly in App component if needed, or pass setAiError prop
+            alert('Please enter a concept.'); // Simple alert for now
+            return;
+        }
         triggerGenerateExplanation(inputQuestion, 'explain', true, false);
     };
     const currentExplanationContent = generatedContents[activeMode];
-    const canShowStreakHistoryButton = loggedIn; // Always show if logged in, modal will say if no streaks
+    const canShowStreakHistoryButton = loggedIn;
 
     return (
         <div className="bg-white p-4 md:p-5 rounded-xl shadow-2xl w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-3xl mx-auto flex flex-col min-h-[600px] max-h-[85vh] sm:max-h-[700px] overflow-hidden">
@@ -289,12 +213,12 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
             <div className="mb-2 sm:mb-3 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0">
                 <label htmlFor="question-input-main" className="block text-gray-700 text-sm sm:text-base md:text-lg font-bold mb-1 sm:mb-2">Enter a word or concept:</label>
                 <div className="relative">
-                    <input type="text" id="question-input-main" className="w-full px-3 py-2 sm:py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 text-xs sm:text-sm md:text-base" placeholder="e.g., Photosynthesis" value={inputQuestion} onChange={(e) => setInputQuestion(e.target.value)} disabled={isLoadingExplanation} />
-                    {inputQuestion && (<button onClick={() => setInputQuestion('')} className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-base sm:text-lg md:text-xl" aria-label="Clear input">&times;</button>)}
+                    <input type="text" id="question-input-main" className="w-full px-3 py-2 sm:py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-400 text-xs sm:text-sm md:text-base" placeholder="e.g., Photosynthesis" value={inputQuestion} onChange={(e) => onInputChange(e.target.value)} disabled={isLoadingExplanation} />
+                    {inputQuestion && (<button onClick={onClearInput} className="absolute right-2 sm:right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-base sm:text-lg md:text-xl" aria-label="Clear input">&times;</button>)}
                 </div>
                 <button onClick={mainGenerateClick} className="mt-2.5 sm:mt-3 w-full sm:w-auto sm:mx-auto sm:px-6 md:px-8 bg-indigo-600 text-white py-2 sm:py-2.5 px-4 rounded-lg font-bold text-sm sm:text-base hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition active:scale-95 shadow-lg flex items-center justify-center" disabled={isLoadingExplanation || inputQuestion.trim() === ''}>{isLoadingExplanation && activeMode === 'explain' ? <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Generating...</> : 'Generate Explanation'}</button>
                 {aiError && <p className="text-red-600 text-center text-xs font-medium mt-1 sm:mt-1.5">{aiError}</p>}
-                {!loggedIn && !aiError && (<p className="text-gray-600 text-center text-xs mt-1 sm:mt-1.5"><button onClick={() => setShowSignupModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>{' '}or{' '}<button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>{' '}to generate explanations.</p>)}
+                {!loggedIn && !aiError && (<p className="text-gray-600 text-center text-xs mt-1 sm:mt-1.5"><button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Sign up</button>{' '}or{' '}<button onClick={() => setShowLoginModal(inputQuestion)} className="font-semibold text-blue-600 hover:underline">Login</button>{' '}to generate explanations.</p>)}
             </div>
             <div className={`flex-shrink-0 flex flex-wrap justify-center items-center gap-1 sm:gap-1.5 mb-2 sm:mb-3 transition-all duration-300 ${loggedIn && inputQuestion.trim() !== '' && isExplainGeneratedForCurrentWord ? 'opacity-100 h-auto mt-1 sm:mt-2' : 'opacity-0 h-0 mt-0 pointer-events-none'}`}>
                 {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map(mode => (<button key={mode} onClick={async () => { if (!loggedIn || !isExplainGeneratedForCurrentWord || inputQuestion.trim() === '') return; setActiveMode(mode); if (!generatedContents[mode] || (mode === 'image' && generatedContents.image.startsWith('Image generation feature coming soon!')) || (mode === 'deep' && generatedContents.deep.startsWith('In-depth explanation feature coming soon!'))) { await triggerGenerateExplanation(inputQuestion, mode, false, false); } }} className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full font-semibold text-xs sm:text-sm transition-all duration-200 ${activeMode === mode ? 'bg-blue-600 text-white shadow-md scale-105' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${mode !== 'explain' && !isExplainGeneratedForCurrentWord ? 'opacity-50 cursor-not-allowed' : ''} `} disabled={(isLoadingExplanation && activeMode !== mode) || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)}>{mode.charAt(0).toUpperCase() + mode.slice(1)}{isLoadingExplanation && activeMode === mode && <svg className="animate-spin ml-1 sm:ml-1.5 -mr-0.5 h-3 w-3 sm:h-3.5 sm:w-3.5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle opacity="25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path opacity="75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}</button>))}
@@ -349,21 +273,19 @@ const App: React.FC = () => {
     const [currentTutorWordIsFavorite, setCurrentTutorWordIsFavorite] = useState<boolean | null>(null);
     const [profileData, setProfileData] = useState<ProfileData | null>(null);
 
-    // Streak State
     const [currentStreak, setCurrentStreak] = useState<string[]>([]);
     const [completedStreaks, setCompletedStreaks] = useState<CompletedStreak[]>([]);
     const [showStreakHistoryModal, setShowStreakHistoryModal] = useState(false);
     const [streakHistoryModalData, setStreakHistoryModalData] = useState<WordMapModalData | null>(null);
 
-    // Helper to finalize current streak
     const finalizeCurrentStreak = () => {
         if (currentStreak.length > 0) {
             setCompletedStreaks(prev => [...prev, {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 7), // More unique ID
+                id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
                 words: [...currentStreak],
                 score: currentStreak.length
             }]);
-            setCurrentStreak([]); // Clear current streak after finalizing
+            // setCurrentStreak([]); // Clearing is handled by the action that triggers finalization
         }
     };
 
@@ -394,29 +316,30 @@ const App: React.FC = () => {
         } else if (!inputQuestion) setCurrentTutorWordIsFavorite(null);
     }, [inputQuestion, profileData]);
 
-    // Centralized function to trigger explanation generation and manage streaks
-    const triggerGenerateExplanation = async (question: string, mode: ContentMode, isNewRootWord: boolean, isRefresh: boolean) => {
-        if (!user) { handleShowLoginModal(question); return; }
-
-        if (isNewRootWord || isRefresh) { // Any action that breaks or starts a new streak
-            finalizeCurrentStreak();
-            setCurrentStreak([question]); // Start new streak with the current question
+    const triggerGenerateExplanation = async (question: string, mode: ContentMode, isNewRootWord: boolean, isRefresh: boolean, forceCheckUser?: User | null) => {
+        const currentUserToCheck = forceCheckUser !== undefined ? forceCheckUser : user;
+        if (!currentUserToCheck) {
+            setAiError("Please login to generate explanations.");
+            if (forceCheckUser === undefined) handleShowLoginModal(question);
+            setIsLoadingExplanation(false); // Stop loading if user not logged in
+            return;
         }
-        // For other modes (fact, quiz etc.) or non-explain refreshes, the streak doesn't extend but might be reset if it's a new root.
-        // If it's just a mode switch for an existing word in a streak, streak continues.
 
-        setAiError(null);
-        setIsLoadingExplanation(true);
-        setGeneratedContents(prev => ({ ...prev, [mode]: '' })); // Clear previous content for this mode
-        setActiveMode(mode); // Set active mode before fetching
+        if (isNewRootWord || isRefresh) {
+            finalizeCurrentStreak();
+            setCurrentStreak([question]);
+        }
 
-        // Reset explain generated flag only if we are fetching 'explain' for a new root/refresh
+        setAiError(null); setIsLoadingExplanation(true);
+        // Optimistically set active mode and clear content for this mode
+        setActiveMode(mode);
+        setGeneratedContents(prev => ({ ...prev, [mode]: '' }));
+
         if (mode === 'explain' && (isNewRootWord || isRefresh)) {
             setIsExplainGeneratedForCurrentWord(false);
         }
 
 
-        // --- Actual API Call Logic ---
         if (mode === 'image' || mode === 'deep') {
             setGeneratedContents(cc => ({ ...cc, [mode]: mode === 'image' ? `Image generation feature coming soon! You can imagine an image of '${question}'.` : `In-depth explanation feature coming soon! We're working on providing more detailed insights for '${question}'.` }));
             setIsLoadingExplanation(false);
@@ -457,62 +380,53 @@ const App: React.FC = () => {
         } catch (err) { if (inputQuestion === currentWordDisplay) setCurrentTutorWordIsFavorite(currentFavStatus); setAiError("Network error toggling favorite."); await refreshProfileData(); }
     };
 
-    const handleHighlightedWordClick = (word: string) => { // Continues a streak
+    const handleHighlightedWordClick = (word: string) => {
         if (!user) { handleShowLoginModal(word); return; }
         setCurrentStreak(prevStreak => [...prevStreak, word]);
-        setInputQuestion(word); // Update input to the new word
-        // Reset content for the new word, but it's part of the same streak flow
+        setInputQuestion(word);
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
-        setActiveMode('explain');
-        setIsExplainGeneratedForCurrentWord(false);
-        setAiError(null);
-        setCurrentTutorWordIsFavorite(null);
-        triggerGenerateExplanation(word, 'explain', false, false); // isNewRootWord = false, isRefresh = false
+        setActiveMode('explain'); setIsExplainGeneratedForCurrentWord(false); setAiError(null); setCurrentTutorWordIsFavorite(null);
+        triggerGenerateExplanation(word, 'explain', false, false, undefined);
     };
 
-    // Wrapper for setInputQuestion to manage streak state
     const handleAppSetInputQuestion = (value: string) => {
-        // If user types something different from current question, it implies breaking the streak
-        if (inputQuestion !== value) {
+        if (inputQuestion !== value && value.trim() !== '') { // Only finalize if value changes to something new
             finalizeCurrentStreak();
-            setCurrentStreak([]); // Typing a new word always resets the current active streak
+            setCurrentStreak([]);
+        } else if (value.trim() === '' && inputQuestion.trim() !== '') { // Finalize if clearing a non-empty input
+            finalizeCurrentStreak();
+            setCurrentStreak([]);
         }
         setInputQuestion(value);
-        // Reset other states as before
-        setAiError(null);
-        setIsExplainGeneratedForCurrentWord(false);
+        setAiError(null); setIsExplainGeneratedForCurrentWord(false);
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
         setActiveMode('explain');
     };
 
     const handleAppClearInput = () => {
         finalizeCurrentStreak();
-        setInputQuestion('');
-        setCurrentStreak([]);
+        setInputQuestion(''); setCurrentStreak([]);
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
         setActiveMode('explain'); setAiError(null); setIsExplainGeneratedForCurrentWord(false);
-    }
-
-    const handleRefreshCurrentWord = () => { // This ends current streak and starts new one with same word
-        if (!inputQuestion.trim()) return;
-        // Finalize current streak is handled by triggerGenerateExplanation when isRefresh is true
-        triggerGenerateExplanation(inputQuestion, activeMode, false, true); // isNewRootWord = false, isRefresh = true
     };
 
+    const handleRefreshCurrentWord = () => {
+        if (!inputQuestion.trim()) return;
+        triggerGenerateExplanation(inputQuestion, activeMode, false, true, undefined);
+    };
 
     const handleShowLoginModal = (question: string) => { questionBeforeModalRef.current = question; setAuthModalMode('login'); setShowAuthModal(true); };
     const handleShowSignupModal = (question: string) => { questionBeforeModalRef.current = question; setAuthModalMode('signup'); setShowAuthModal(true); };
     const handleLogout = () => {
-        finalizeCurrentStreak(); // Finalize before logging out
+        finalizeCurrentStreak();
         authLogout(); setCurrentPage('tutor'); setInputQuestion('');
         setGeneratedContents({ explain: '', image: 'Image generation feature coming soon!', fact: '', quiz: '', deep: 'In-depth explanation feature coming soon!' });
         setActiveMode('explain'); setAiError(null); setIsExplainGeneratedForCurrentWord(false); setProfileData(null); setCurrentTutorWordIsFavorite(null);
-        setShowStreakHistoryModal(false); setStreakHistoryModalData(null); setCompletedStreaks([]); // Clear completed streaks on logout
+        setShowStreakHistoryModal(false); setStreakHistoryModalData(null); setCompletedStreaks([]);
     };
     const handleWordClickFromProfile = (word: string, cachedContent?: Partial<Record<ContentMode, string>>) => {
-        finalizeCurrentStreak(); // End any active streak
-        setInputQuestion(word);
-        setCurrentStreak([word]); // Start new streak from profile click
+        finalizeCurrentStreak();
+        setInputQuestion(word); setCurrentStreak([word]);
         const initialContent = { explain: cachedContent?.explain || '', image: cachedContent?.image || 'Image generation feature coming soon!', fact: cachedContent?.fact || '', quiz: cachedContent?.quiz || '', deep: cachedContent?.deep || 'In-depth explanation feature coming soon!', };
         setGeneratedContents(initialContent);
         if (initialContent.explain && initialContent.explain.trim() !== '') { setActiveMode('explain'); setIsExplainGeneratedForCurrentWord(true); }
@@ -521,8 +435,6 @@ const App: React.FC = () => {
     };
 
     const handleShowStreakHistory = () => {
-        // It's possible a streak is active but user wants to see history.
-        // The modal will show `completedStreaks`.
         setStreakHistoryModalData({ streaks: [...completedStreaks] });
         setShowStreakHistoryModal(true);
     };
@@ -539,24 +451,44 @@ const App: React.FC = () => {
                 {currentPage === 'tutor' ? (
                     <TinyTutorAppContent
                         inputQuestion={inputQuestion}
-                        setInputQuestion={handleAppSetInputQuestion} // Use wrapped setter
-                        generatedContents={generatedContents} setGeneratedContents={setGeneratedContents}
+                        onInputChange={handleAppSetInputQuestion}
+                        onClearInput={handleAppClearInput}
+                        generatedContents={generatedContents}
                         activeMode={activeMode} setActiveMode={setActiveMode}
                         triggerGenerateExplanation={triggerGenerateExplanation}
                         isLoadingExplanation={isLoadingExplanation}
-                        aiError={aiError} setAiError={setAiError} currentUser={user}
+                        aiError={aiError}
+                        currentUser={user}
                         setShowLoginModal={handleShowLoginModal} setShowSignupModal={handleShowSignupModal}
                         isExplainGeneratedForCurrentWord={isExplainGeneratedForCurrentWord}
                         onToggleFavorite={handleToggleFavoriteApp} currentWordIsFavorite={currentTutorWordIsFavorite}
                         handleHighlightedWordClick={handleHighlightedWordClick}
                         onShowStreakHistory={handleShowStreakHistory}
                         handleRefreshCurrentWord={handleRefreshCurrentWord}
+                        // Pass setAiError if TinyTutorAppContent needs to set errors directly for input validation
+                        setAiError={setAiError}
                     />
                 ) : (
                     <ProfilePage setCurrentPage={setCurrentPage} getAuthHeaders={getAuthHeaders} user={user} onWordClick={handleWordClickFromProfile} handleToggleFavoriteApp={handleToggleFavoriteApp} profileDataHook={[profileData, setProfileData]} />
                 )}
             </main>
-            {showAuthModal && (<AuthModal onClose={() => { setShowAuthModal(false); }} onLoginSuccess={async (loggedInUser, questionAfterLogin) => { setShowAuthModal(false); setAiError(null); if (questionAfterLogin.trim() !== '') { setInputQuestion(questionAfterLogin); finalizeCurrentStreak(); setCurrentStreak([questionAfterLogin]); await triggerGenerateExplanation(questionAfterLogin, 'explain', true, false); } else { setGeneratedContents(prev => ({ ...prev, explain: "Welcome! Enter a concept to get started." })); setIsExplainGeneratedForCurrentWord(false); finalizeCurrentStreak(); setCurrentStreak([]); } questionBeforeModalRef.current = ''; }} initialQuestion={questionBeforeModalRef.current} initialMode={authModalMode} />)}
+            {showAuthModal && (<AuthModal onClose={() => { setShowAuthModal(false); }}
+                onLoginSuccess={async (loggedInUserFromModal, questionAfterLogin) => { // renamed param to avoid conflict
+                    setShowAuthModal(false); setAiError(null);
+                    if (questionAfterLogin.trim() !== '') {
+                        setInputQuestion(questionAfterLogin);
+                        finalizeCurrentStreak();
+                        setCurrentStreak([questionAfterLogin]);
+                        await triggerGenerateExplanation(questionAfterLogin, 'explain', true, false, loggedInUserFromModal);
+                    } else {
+                        setGeneratedContents(prev => ({ ...prev, explain: "Welcome! Enter a concept to get started." }));
+                        setIsExplainGeneratedForCurrentWord(false);
+                        finalizeCurrentStreak();
+                        setCurrentStreak([]);
+                    }
+                    questionBeforeModalRef.current = '';
+                }}
+                initialQuestion={questionBeforeModalRef.current} initialMode={authModalMode} />)}
             <WordStreakHistoryModal isOpen={showStreakHistoryModal} onClose={() => { setShowStreakHistoryModal(false); }} modalData={streakHistoryModalData} />
             <footer className="text-center py-2 text-xs text-blue-200 flex-shrink-0">Tiny Tutor App &copy; {new Date().getFullYear()}</footer>
         </div>

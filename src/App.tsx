@@ -400,8 +400,8 @@ interface ProfileModalProps {
 const CompactWordListItem: React.FC<{
   item: ExploredWord;
   onWordClick: () => void;
-  onToggleFavorite: ()_=> Promise<void>;
-  isFavoriteList?: boolean; // To slightly change style or behavior if needed
+  onToggleFavorite: (event?: React.MouseEvent) => Promise<void>; // CORRECTED LINE
+  isFavoriteList?: boolean;
 }> = ({ item, onWordClick, onToggleFavorite, isFavoriteList }) => {
   const [isFavoritedOptimistic, setIsFavoritedOptimistic] = useState(item.is_favorite);
   const [isToggling, setIsToggling] = useState(false);
@@ -415,7 +415,7 @@ const CompactWordListItem: React.FC<{
     setIsToggling(true);
     setIsFavoritedOptimistic(!isFavoritedOptimistic); // Optimistic update
     try {
-      await onToggleFavorite();
+      await onToggleFavorite(e); // Pass the event if needed by the handler
       // Actual state will be updated by parent re-fetching or prop update
     } catch (error) {
       console.error("Failed to toggle favorite from item:", error);
@@ -590,7 +590,7 @@ const WordStreakHistoryModal: React.FC<WordStreakHistoryModalProps> = ({ isOpen,
     const wordSpacing = 50; // Horizontal spacing between word centers
     const scoreBoxWidth = 40;
     const scoreBoxHeight = 25;
-    const lineHeight = 20; // For text within streak display
+    // const lineHeight = 20; // For text within streak display (not used directly here, but good to keep in mind)
 
     // Calculate canvas dimensions
     let maxStreakWidth = 0;
@@ -645,10 +645,6 @@ const WordStreakHistoryModal: React.FC<WordStreakHistoryModalProps> = ({ isOpen,
         ctx.font = '10px Arial';
         ctx.textAlign = 'center';
         ctx.fillText(word.substring(0, 5) + (word.length > 5 ? '...' : ''), currentX, startY + streakHeight / 2); // Truncate word if too long
-
-        // Store clickable area (example, not fully implemented for click handling here)
-        // You'd need to add event listeners to the canvas and check coordinates
-        // For simplicity, this example just draws. Making it clickable requires more logic.
 
         currentX += wordSpacing;
       });

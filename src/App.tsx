@@ -342,9 +342,9 @@ const AccordionSection: React.FC<{title: string; count: number; isActive: boolea
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
       </span>
     </button>
-    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActive ? 'opacity-100' : 'max-h-0 opacity-0'} ${isActive ? 'max-h-[20rem]' : 'max-h-0'}`}> {/* Adjusted max-h for content */}
-      <div className="p-4 pt-2 bg-white dark:bg-gray-800 h-full"> {/* Ensure children div takes height for scroll */}
-        {children} {/* Children (ul) will have their own overflow and height */}
+    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActive ? 'opacity-100' : 'max-h-0 opacity-0'} ${isActive ? 'max-h-[20rem]' : 'max-h-0'}`}>
+      <div className="p-4 pt-2 bg-white dark:bg-gray-800 h-full">
+        {children}
       </div>
     </div>
   </div>
@@ -398,19 +398,19 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
 
             <div className="rounded-lg overflow-hidden shadow-lg border border-gray-200 dark:border-gray-700">
                 <AccordionSection title="All Explored Words" count={profileData.explored_words_list.length} isActive={activeSection === 'explored'} onClick={() => setActiveSection(activeSection === 'explored' ? null : 'explored')}>
-                  <ul className="space-y-1 h-[18rem] overflow-y-auto custom-scrollbar pr-1"> {/* Fixed height for scrolling */}
+                  <ul className="space-y-1 h-[18rem] overflow-y-auto custom-scrollbar pr-1">
                     {profileData.explored_words_list.length > 0 ? profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} />)) : (<p className="text-gray-500 dark:text-gray-400 py-3">No words explored yet.</p>)}
                   </ul>
                 </AccordionSection>
 
                 <AccordionSection title="Favorite Words" count={profileData.favorite_words_list.length} isActive={activeSection === 'favorites'} onClick={() => setActiveSection(activeSection === 'favorites' ? null : 'favorites')}>
-                  <ul className="space-y-1 h-[18rem] overflow-y-auto custom-scrollbar pr-1"> {/* Fixed height for scrolling */}
+                  <ul className="space-y-1 h-[18rem] overflow-y-auto custom-scrollbar pr-1">
                     {profileData.favorite_words_list.length > 0 ? profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} isFavoriteList={true} />)) : (<p className="text-gray-500 dark:text-gray-400 py-3">No favorite words yet.</p>)}
                   </ul>
                 </AccordionSection>
 
                 <AccordionSection title="Streak History" count={profileData.streak_history.length} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
-                  <ul className="space-y-3 h-[18rem] overflow-y-auto custom-scrollbar pr-1"> {/* Fixed height for scrolling */}
+                  <ul className="space-y-3 h-[18rem] overflow-y-auto custom-scrollbar pr-1">
                     {profileData.streak_history.length > 0 ? profileData.streak_history.map((streak, index) => (<li key={streak.id || `streak-${index}`} className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md shadow"><p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p><p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">Words: {streak.words.join(' → ')}</p>{streak.completed_at && (<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Completed: {new Date(streak.completed_at).toLocaleString()}</p>)}</li>)) : (<p className="text-gray-500 dark:text-gray-400 py-3">No completed streaks yet.</p>)}
                   </ul>
                 </AccordionSection>
@@ -521,12 +521,9 @@ const TinyTutorAppContent: React.FC = () => {
         setCurrentStreak({ words: [question], score: 1 });
     }
 
-    if (generatedContents[mode] && question === lastSubmittedQuestionRef.current && !isExplicitNewWord && !isReview) {
-        setActiveMode(mode);
-        setIsLoadingExplanation(false);
-        return;
-    }
-    if (isReview && generatedContents[mode] && question === lastSubmittedQuestionRef.current) {
+    // If content for this mode and question is ALREADY in generatedContents (e.g., loaded by review or previous toggle), just set active.
+    // This check is crucial for preventing re-fetch when toggling modes for a reviewed word whose content is already loaded.
+    if (generatedContents[mode] && question === lastSubmittedQuestionRef.current) {
         setActiveMode(mode);
         setIsLoadingExplanation(false);
         return;
@@ -546,6 +543,7 @@ const TinyTutorAppContent: React.FC = () => {
 
       if (mode === 'explain') {
         setIsExplainGeneratedForCurrentWord(true);
+        // Update lastSubmittedQuestionRef only if it's a new explanation context, not just a mode toggle within a review.
         if (!isReview || (isReview && question !== lastSubmittedQuestionRef.current)) {
              lastSubmittedQuestionRef.current = question;
         }
@@ -589,13 +587,12 @@ const TinyTutorAppContent: React.FC = () => {
     const questionForMode = lastSubmittedQuestionRef.current || inputQuestion.trim();
     if (!questionForMode) return;
 
-    if (activeMode === newMode && generatedContents[newMode] && questionForMode === lastSubmittedQuestionRef.current) {
-        return;
-    }
-    
+    // If content for this newMode and current questionForMode is already in generatedContents, just switch.
     if (generatedContents[newMode] && questionForMode === lastSubmittedQuestionRef.current) {
       setActiveMode(newMode);
     } else if (isExplainGeneratedForCurrentWord || newMode === 'explain') {
+      // Otherwise, if 'explain' has been generated for the current word, or we are trying to get 'explain', fetch it.
+      // Pass isReviewingStreakWordRef.current to maintain review context if applicable.
       generateContent(questionForMode, newMode, false, isReviewingStreakWordRef.current);
     }
   };
@@ -628,28 +625,30 @@ const TinyTutorAppContent: React.FC = () => {
   const handleReviewStreakWordClick = (wordFromStreak: string) => {
     setInputQuestion(wordFromStreak); 
     isReviewingStreakWordRef.current = true; 
-    lastSubmittedQuestionRef.current = wordFromStreak; 
+    lastSubmittedQuestionRef.current = wordFromStreak; // Set context for mode toggles
 
     const wordDataFromProfile = profileData?.explored_words_list.find(w => w.word.toLowerCase() === wordFromStreak.toLowerCase());
 
     let contentToLoad: Partial<GeneratedContent> = {};
-    let explainAvailable = false;
+    let explainAvailableInCache = false;
 
-    if (wordDataFromProfile?.generated_content_cache) {
+    if (wordDataFromProfile?.generated_content_cache && Object.keys(wordDataFromProfile.generated_content_cache).length > 0) {
         contentToLoad = wordDataFromProfile.generated_content_cache;
-        explainAvailable = !!contentToLoad.explain;
+        explainAvailableInCache = !!contentToLoad.explain;
     } else if (wordDataFromProfile?.cached_explain_content) { 
         contentToLoad.explain = wordDataFromProfile.cached_explain_content;
-        explainAvailable = true;
+        explainAvailableInCache = true;
     }
     
     if (Object.keys(contentToLoad).length > 0) {
-        setGeneratedContents(contentToLoad);
-        setActiveMode(explainAvailable ? 'explain' : (Object.keys(contentToLoad)[0] as ContentMode || 'explain'));
-        setIsExplainGeneratedForCurrentWord(explainAvailable);
+        setGeneratedContents(contentToLoad); // Load ALL cached modes for this word
+        setActiveMode(explainAvailableInCache ? 'explain' : (Object.keys(contentToLoad)[0] as ContentMode || 'explain'));
+        setIsExplainGeneratedForCurrentWord(explainAvailableInCache); // If 'explain' is part of the loaded cache
         setCurrentTutorWordIsFavorite(wordDataFromProfile?.is_favorite || false);
         setIsLoadingExplanation(false); 
     } else {
+        // If no cached content at all for this word, fetch 'explain' for review
+        // This will also set lastSubmittedQuestionRef correctly inside generateContent
         generateContent(wordFromStreak, 'explain', false, true);
     }
   };

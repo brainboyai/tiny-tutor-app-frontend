@@ -563,10 +563,10 @@ const TinyTutorAppContent: React.FC = () => {
       if (!isReviewingStreakWordRef.current) handleEndStreak("Input cleared");
       lastSubmittedQuestionRef.current = null;
     } else {
-        if (isReviewingStreakWordRef.current && newQuestion !== lastSubmittedQuestionRef.current) { // If typing a different word during review
+        if (isReviewingStreakWordRef.current && newQuestion.toLowerCase() !== (lastSubmittedQuestionRef.current || '').toLowerCase()) { 
             handleEndStreak("New input typed during review");
+             isReviewingStreakWordRef.current = false; // Typing new word ends review mode
         }
-        // isReviewingStreakWordRef.current = false; // Typing new word ends review mode
     }
   };
 
@@ -624,23 +624,20 @@ const TinyTutorAppContent: React.FC = () => {
 
     if (wordDataFromProfile?.generated_content_cache && Object.keys(wordDataFromProfile.generated_content_cache).length > 0) {
         setGeneratedContents(wordDataFromProfile.generated_content_cache);
-        // Determine if 'explain' is available, otherwise default to first available mode or 'explain'
         const defaultModeToActivate = wordDataFromProfile.generated_content_cache.explain ? 'explain' : (Object.keys(wordDataFromProfile.generated_content_cache)[0] as ContentMode | undefined) || 'explain';
         setActiveMode(defaultModeToActivate);
         setIsExplainGeneratedForCurrentWord(!!wordDataFromProfile.generated_content_cache.explain);
         setCurrentTutorWordIsFavorite(wordDataFromProfile.is_favorite);
-        lastSubmittedQuestionRef.current = wordFromStreak; // Critical for mode toggles on reviewed word
+        lastSubmittedQuestionRef.current = wordFromStreak; 
     } else {
-        // Fallback: if no comprehensive cache, try the specific cached_explain_content
         const cachedExplain = wordDataFromProfile?.cached_explain_content;
         if (cachedExplain) {
-            setGeneratedContents({ explain: cachedExplain }); // Only explain is known
+            setGeneratedContents({ explain: cachedExplain }); 
             setActiveMode('explain');
             setIsExplainGeneratedForCurrentWord(true);
             setCurrentTutorWordIsFavorite(wordDataFromProfile?.is_favorite || false);
             lastSubmittedQuestionRef.current = wordFromStreak;
         } else {
-             // If no cached content at all for this word, fetch 'explain' for review
             generateContent(wordFromStreak, 'explain', false, true);
         }
     }

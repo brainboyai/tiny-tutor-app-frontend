@@ -446,8 +446,8 @@ const TinyTutorAppContent: React.FC = () => {
 
   const [currentStreak, setCurrentStreak] = useState<Streak>({ words: [], score: 0 });
   
-  const lastSubmittedQuestionRef = useRef<string | null>(null);
-  const isReviewingStreakWordRef = useRef<boolean>(false);
+  const lastSubmittedQuestionRef = useRef<string | null>(null); // Tracks the word whose content is currently displayed or being fetched
+  const isReviewingStreakWordRef = useRef<boolean>(false); // True if user clicked a word in live streak display
 
 
   useEffect(() => {
@@ -492,10 +492,10 @@ const TinyTutorAppContent: React.FC = () => {
       console.log("Streak not saved (score < 2 or no words).");
     }
     setCurrentStreak({ words: [], score: 0 });
-    isReviewingStreakWordRef.current = false;
+    isReviewingStreakWordRef.current = false; // Always reset review state when a streak ends
   }, [currentStreak, getAuthHeaders, profileData]);
 
-  const generateContent = async (question: string, mode: ContentMode, isExplicitNewWord: boolean = false, isReview: boolean = false) => {
+  const generateContent = async (question: string, mode: ContentMode, isExplicitNewWord: boolean = false, isReviewFromStreak: boolean = false) => {
     if (!user) {
       setAuthModalMode('login'); setShowAuthModal(true); setAiError("Please login to generate content."); return;
     }
@@ -505,31 +505,43 @@ const TinyTutorAppContent: React.FC = () => {
 
     setIsLoadingExplanation(true); setAiError(null);
     
-    if (!isReview) {
+    // If this call is not for reviewing a streak word, then we are not in review mode.
+    if (!isReviewFromStreak) {
         isReviewingStreakWordRef.current = false;
     }
 
-    if (isExplicitNewWord && !isReview && question !== lastSubmittedQuestionRef.current) {
-      setGeneratedContents({}); 
-      setIsExplainGeneratedForCurrentWord(false);
-      await handleEndStreak("New root word submitted");
+    // Case 1: New word submission (not a review, not a refresh of the same word for 'explain')
+    // or refreshing 'explain' for the current word.
+    if (isExplicitNewWord && !isReviewFromStreak) {
+      if (question !== lastSubmittedQuestionRef.current || mode === 'explain') { // Only clear all if word changes OR if refreshing explain
+        setGeneratedContents({}); 
+        setIsExplainGeneratedForCurrentWord(false);
+      }
+      await handleEndStreak(question !== lastSubmittedQuestionRef.current ? "New root word submitted" : "Refreshing current word's explain");
       if (mode === 'explain') { 
         setCurrentStreak({ words: [question], score: 1 });
       }
-    } else if (isExplicitNewWord && !isReview && question === lastSubmittedQuestionRef.current && mode === 'explain'){ 
-        await handleEndStreak("Refreshing current word's explain");
-        setCurrentStreak({ words: [question], score: 1 });
+      lastSubmittedQuestionRef.current = question; // Set the new primary word context
     }
-
-    // If content for this mode and question is ALREADY in generatedContents (e.g., loaded by review or previous toggle), just set active.
-    // This check is crucial for preventing re-fetch when toggling modes for a reviewed word whose content is already loaded.
-    if (generatedContents[mode] && question === lastSubmittedQuestionRef.current) {
+    
+    // Case 2: Mode toggle for the current primary word (lastSubmittedQuestionRef)
+    // If content for this mode is already in generatedContents, just display it.
+    if (!isExplicitNewWord && generatedContents[mode] && question === lastSubmittedQuestionRef.current) {
         setActiveMode(mode);
         setIsLoadingExplanation(false);
         return;
     }
 
+    // Case 3: Reviewing a streak word, and its content for this mode is already loaded by handleReviewStreakWordClick
+    if (isReviewFromStreak && generatedContents[mode] && question === lastSubmittedQuestionRef.current) {
+        setActiveMode(mode);
+        setIsLoadingExplanation(false);
+        return;
+    }
+
+    // If none of the above (i.e., content needs to be fetched)
     try {
+      console.log(`Fetching content for: ${question}, mode: ${mode}, isReview: ${isReviewFromStreak}, isExplicitNew: ${isExplicitNewWord}`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -543,15 +555,17 @@ const TinyTutorAppContent: React.FC = () => {
 
       if (mode === 'explain') {
         setIsExplainGeneratedForCurrentWord(true);
-        // Update lastSubmittedQuestionRef only if it's a new explanation context, not just a mode toggle within a review.
-        if (!isReview || (isReview && question !== lastSubmittedQuestionRef.current)) {
+        // Update lastSubmittedQuestionRef if it's a new context (not just a mode toggle during review for the same word)
+        if (!isReviewFromStreak || question !== lastSubmittedQuestionRef.current) {
              lastSubmittedQuestionRef.current = question;
         }
-        if (profileData) {
-          const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === question.toLowerCase().trim());
-          setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
-        }
       }
+      // Update favorite status based on the question for which content was just generated
+      if (profileData) {
+        const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === question.toLowerCase().trim());
+        setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
+      }
+
     } catch (error: any) {
       console.error(`Error generating ${mode}:`, error);
       setAiError(error.message || `Failed to generate ${mode}.`);
@@ -569,17 +583,18 @@ const TinyTutorAppContent: React.FC = () => {
       if (!isReviewingStreakWordRef.current) handleEndStreak("Input cleared");
       lastSubmittedQuestionRef.current = null;
     } else {
+        // If user starts typing a new word while in review mode for a different word, end the review and streak.
         if (isReviewingStreakWordRef.current && newQuestion.toLowerCase() !== (lastSubmittedQuestionRef.current || '').toLowerCase()) { 
             handleEndStreak("New input typed during review");
-            isReviewingStreakWordRef.current = false; 
+            // isReviewingStreakWordRef is reset in handleEndStreak
         }
     }
   };
 
-  const handleGenerateClick = () => {
+  const handleGenerateClick = () => { // Main "Generate Explanation" button
     if (inputQuestion.trim()) {
-      isReviewingStreakWordRef.current = false;
-      generateContent(inputQuestion.trim(), 'explain', true);
+      // This is always an explicit new word generation or refresh of current input
+      generateContent(inputQuestion.trim(), 'explain', true, false);
     }
   };
 
@@ -588,11 +603,13 @@ const TinyTutorAppContent: React.FC = () => {
     if (!questionForMode) return;
 
     // If content for this newMode and current questionForMode is already in generatedContents, just switch.
-    if (generatedContents[newMode] && questionForMode === lastSubmittedQuestionRef.current) {
+    if (generatedContents[newMode] && questionForMode.toLowerCase().trim() === (lastSubmittedQuestionRef.current || '').toLowerCase().trim()) {
       setActiveMode(newMode);
+      setIsLoadingExplanation(false); // Ensure spinner is off
     } else if (isExplainGeneratedForCurrentWord || newMode === 'explain') {
       // Otherwise, if 'explain' has been generated for the current word, or we are trying to get 'explain', fetch it.
-      // Pass isReviewingStreakWordRef.current to maintain review context if applicable.
+      // isExplicitNewWord is false because this is a mode toggle, not a new submission.
+      // isReviewingStreakWordRef.current correctly passes the review context.
       generateContent(questionForMode, newMode, false, isReviewingStreakWordRef.current);
     }
   };
@@ -600,56 +617,65 @@ const TinyTutorAppContent: React.FC = () => {
   const handleRefreshContent = () => {
     const questionToRefresh = lastSubmittedQuestionRef.current || inputQuestion.trim();
     if (questionToRefresh && activeMode) {
-      isReviewingStreakWordRef.current = false;
-      generateContent(questionToRefresh, activeMode, true); 
+      // Refreshing is like an explicit new generation for the current word and active mode.
+      // It should end review mode.
+      generateContent(questionToRefresh, activeMode, true, false); 
     }
   };
 
-  const handleWordClickFromExplanation = (word: string) => {
+  const handleWordClickFromExplanation = (word: string) => { // Click on <click>word</click>
     if (isReviewingStreakWordRef.current) {
-        handleEndStreak("Explored from reviewed word");
+        handleEndStreak("Explored from reviewed word"); 
+        // isReviewingStreakWordRef is reset in handleEndStreak
     }
-    isReviewingStreakWordRef.current = false;
+    // isReviewingStreakWordRef.current = false; // Already handled by handleEndStreak
 
     setInputQuestion(word);
     if (currentStreak.words.length > 0 && !currentStreak.words.includes(word)) {
       setCurrentStreak(prev => ({ words: [...prev.words, word], score: prev.score + 1 }));
-    } else if (currentStreak.words.length === 0 && lastSubmittedQuestionRef.current) {
+    } else if (currentStreak.words.length === 0 && lastSubmittedQuestionRef.current) { // Starting new streak from a base word
       setCurrentStreak({ words: [lastSubmittedQuestionRef.current, word], score: 2 });
-    } else if (currentStreak.words.length === 0 && !lastSubmittedQuestionRef.current) {
+    } else if (currentStreak.words.length === 0 && !lastSubmittedQuestionRef.current) { // Edge case
         setCurrentStreak({ words: [inputQuestion, word], score: 2});
     }
-    generateContent(word, 'explain', false);
+    // This is a new exploration, not a review, and not an explicit new word from input field.
+    generateContent(word, 'explain', false, false); 
   };
 
   const handleReviewStreakWordClick = (wordFromStreak: string) => {
+    console.log("Reviewing streak word:", wordFromStreak);
     setInputQuestion(wordFromStreak); 
     isReviewingStreakWordRef.current = true; 
-    lastSubmittedQuestionRef.current = wordFromStreak; // Set context for mode toggles
+    lastSubmittedQuestionRef.current = wordFromStreak; // Set this as the current context word
 
     const wordDataFromProfile = profileData?.explored_words_list.find(w => w.word.toLowerCase() === wordFromStreak.toLowerCase());
+    console.log("Found word data in profile for review:", wordDataFromProfile);
 
     let contentToLoad: Partial<GeneratedContent> = {};
     let explainAvailableInCache = false;
 
     if (wordDataFromProfile?.generated_content_cache && Object.keys(wordDataFromProfile.generated_content_cache).length > 0) {
+        console.log("Loading full cache for reviewed word:", wordDataFromProfile.generated_content_cache);
         contentToLoad = wordDataFromProfile.generated_content_cache;
         explainAvailableInCache = !!contentToLoad.explain;
     } else if (wordDataFromProfile?.cached_explain_content) { 
+        console.log("Loading only cached_explain_content for reviewed word:", wordDataFromProfile.cached_explain_content);
         contentToLoad.explain = wordDataFromProfile.cached_explain_content;
         explainAvailableInCache = true;
     }
     
     if (Object.keys(contentToLoad).length > 0) {
-        setGeneratedContents(contentToLoad); // Load ALL cached modes for this word
-        setActiveMode(explainAvailableInCache ? 'explain' : (Object.keys(contentToLoad)[0] as ContentMode || 'explain'));
-        setIsExplainGeneratedForCurrentWord(explainAvailableInCache); // If 'explain' is part of the loaded cache
+        setGeneratedContents(contentToLoad); 
+        const newActiveMode = explainAvailableInCache ? 'explain' : (Object.keys(contentToLoad)[0] as ContentMode | undefined) || 'explain';
+        setActiveMode(newActiveMode);
+        setIsExplainGeneratedForCurrentWord(explainAvailableInCache); 
         setCurrentTutorWordIsFavorite(wordDataFromProfile?.is_favorite || false);
         setIsLoadingExplanation(false); 
+        console.log("Loaded from cache for review. New activeMode:", newActiveMode, "GeneratedContents:", contentToLoad);
     } else {
-        // If no cached content at all for this word, fetch 'explain' for review
-        // This will also set lastSubmittedQuestionRef correctly inside generateContent
-        generateContent(wordFromStreak, 'explain', false, true);
+        console.log("No cache found for reviewed word, fetching 'explain'.");
+        setGeneratedContents({}); // Clear previous content before fetching new
+        generateContent(wordFromStreak, 'explain', false, true); // isExplicitNewWord = false, isReview = true
     }
   };
 

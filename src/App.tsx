@@ -38,10 +38,10 @@ interface AuthContextType {
 
 interface GeneratedContent {
   explain?: string;
-  image?: string;
+  image?: string; // Will be removed from UI but type can remain for now
   fact?: string;
   quiz?: string;
-  deep?: string;
+  deep?: string;  // Will be removed from UI but type can remain for now
 }
 
 interface ExploredWord {
@@ -49,7 +49,7 @@ interface ExploredWord {
   word: string;
   is_favorite: boolean;
   last_explored_at: string;
-  cached_explain_content?: string;
+  cached_explain_content?: string; // Main explain content
   explicit_connections?: string[];
   modes_generated?: string[];
   generated_content_cache?: Partial<GeneratedContent>; // Cache for all modes
@@ -64,7 +64,7 @@ interface ProfileData {
   streak_history: Streak[];
 }
 
-type ContentMode = 'explain' | 'fact' | 'quiz';
+type ContentMode = 'explain' | 'fact' | 'quiz'; // Updated modes
 const AVAILABLE_MODES: ContentMode[] = ['explain', 'fact', 'quiz'];
 
 
@@ -342,9 +342,9 @@ const AccordionSection: React.FC<{title: string; count: number; isActive: boolea
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
       </span>
     </button>
-    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActive ? 'opacity-100' : 'max-h-0 opacity-0'} ${isActive ? 'max-h-[20rem]' : 'max-h-0'}`}> {/* Adjusted max-h for content */}
-      <div className="p-4 pt-2 bg-white dark:bg-gray-800 h-full"> {/* Ensure children div takes height for scroll */}
-        {children} {/* Children (ul) will have their own overflow and height */}
+    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActive ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+      <div className="p-4 pt-0 bg-white dark:bg-gray-800"> {/* Changed bg to match modal; removed gray-50 */}
+        {children}
       </div>
     </div>
   </div>
@@ -352,11 +352,11 @@ const AccordionSection: React.FC<{title: string; count: number; isActive: boolea
 
 
 const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileData, isLoading, error, onWordClick, onToggleFavorite }) => {
-  const [activeSection, setActiveSection] = useState<ProfileAccordionSection>('explored');
+  const [activeSection, setActiveSection] = useState<ProfileAccordionSection>('explored'); // Default open 'explored'
 
   useEffect(() => {
-    if (!isOpen) setActiveSection(null);
-    else if (isOpen && !activeSection && profileData) setActiveSection('explored');
+    if (!isOpen) setActiveSection(null); // Reset when modal closes
+    else if (isOpen && !activeSection && profileData) setActiveSection('explored'); // Default open on new data
   }, [isOpen, profileData, activeSection]);
 
   if (!isOpen) return null;
@@ -370,9 +370,11 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-40 transition-opacity duration-300">
       <div className="bg-white dark:bg-gray-850 p-6 rounded-xl shadow-2xl w-full max-w-2xl md:max-w-3xl lg:max-w-4xl max-h-[90vh] flex flex-col transform transition-all duration-300 scale-95 opacity-0 animate-modalFadeIn">
         <style>{`
-          @keyframes modalFadeIn { to { opacity: 1; transform: scale(1); } }
+          @keyframes modalFadeIn {
+            to { opacity: 1; transform: scale(1); }
+          }
           .animate-modalFadeIn { animation: modalFadeIn 0.3s forwards; }
-          .dark .dark\\:bg-gray-850 { background-color: #182130; }
+          .dark .dark\\:bg-gray-850 { background-color: #182130; } /* Custom dark for modal */
         `}</style>
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-300 dark:border-gray-700">
           <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100">User Profile</h2>
@@ -383,7 +385,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
         {error && <p className="text-center text-red-600 dark:text-red-400 py-8 text-lg">Error: {error}</p>}
 
         {profileData && (
-          <div className="flex-grow overflow-y-auto custom-scrollbar pr-2">
+          <div className="flex-grow overflow-y-auto custom-scrollbar pr-2"> {/* Added custom-scrollbar class and pr-2 */}
              <style>{`
               .custom-scrollbar::-webkit-scrollbar { width: 8px; }
               .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -398,21 +400,15 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
 
             <div className="rounded-lg overflow-hidden shadow-lg border border-gray-200 dark:border-gray-700">
                 <AccordionSection title="All Explored Words" count={profileData.explored_words_list.length} isActive={activeSection === 'explored'} onClick={() => setActiveSection(activeSection === 'explored' ? null : 'explored')}>
-                  <ul className="space-y-1 h-[18rem] overflow-y-auto custom-scrollbar pr-1"> {/* Fixed height for scrolling */}
-                    {profileData.explored_words_list.length > 0 ? profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} />)) : (<p className="text-gray-500 dark:text-gray-400 py-3">No words explored yet.</p>)}
-                  </ul>
+                {profileData.explored_words_list.length > 0 ? (<ul className="space-y-1">{profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} />))}</ul>) : (<p className="text-gray-500 dark:text-gray-400 py-3">No words explored yet.</p>)}
                 </AccordionSection>
 
                 <AccordionSection title="Favorite Words" count={profileData.favorite_words_list.length} isActive={activeSection === 'favorites'} onClick={() => setActiveSection(activeSection === 'favorites' ? null : 'favorites')}>
-                  <ul className="space-y-1 h-[18rem] overflow-y-auto custom-scrollbar pr-1"> {/* Fixed height for scrolling */}
-                    {profileData.favorite_words_list.length > 0 ? profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} isFavoriteList={true} />)) : (<p className="text-gray-500 dark:text-gray-400 py-3">No favorite words yet.</p>)}
-                  </ul>
+                {profileData.favorite_words_list.length > 0 ? (<ul className="space-y-1">{profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} isFavoriteList={true} />))}</ul>) : (<p className="text-gray-500 dark:text-gray-400 py-3">No favorite words yet.</p>)}
                 </AccordionSection>
 
                 <AccordionSection title="Streak History" count={profileData.streak_history.length} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
-                  <ul className="space-y-3 h-[18rem] overflow-y-auto custom-scrollbar pr-1"> {/* Fixed height for scrolling */}
-                    {profileData.streak_history.length > 0 ? profileData.streak_history.map((streak, index) => (<li key={streak.id || `streak-${index}`} className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md shadow"><p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p><p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">Words: {streak.words.join(' → ')}</p>{streak.completed_at && (<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Completed: {new Date(streak.completed_at).toLocaleString()}</p>)}</li>)) : (<p className="text-gray-500 dark:text-gray-400 py-3">No completed streaks yet.</p>)}
-                  </ul>
+                {profileData.streak_history.length > 0 ? (<ul className="space-y-3">{profileData.streak_history.map((streak, index) => (<li key={streak.id || `streak-${index}`} className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md shadow"><p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p><p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">Words: {streak.words.join(' → ')}</p>{streak.completed_at && (<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Completed: {new Date(streak.completed_at).toLocaleString()}</p>)}</li>))}</ul>) : (<p className="text-gray-500 dark:text-gray-400 py-3">No completed streaks yet.</p>)}
                 </AccordionSection>
             </div>
           </div>
@@ -482,7 +478,7 @@ const TinyTutorAppContent: React.FC = () => {
                 streak_history: [
                     { words: currentStreak.words, score: currentStreak.score, completed_at: new Date().toISOString(), id: result.streak_id || `temp-${Date.now()}` },
                      ...(prev.streak_history || [])
-                    ].sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime())
+                    ].sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()) // Keep sorted
             }) : null);
         }
       } catch (error) {
@@ -504,33 +500,29 @@ const TinyTutorAppContent: React.FC = () => {
     }
 
     setIsLoadingExplanation(true); setAiError(null);
-    
-    if (!isReview) {
-        isReviewingStreakWordRef.current = false;
-    }
+    isReviewingStreakWordRef.current = isReview;
 
+    // If it's a new word (not a review or mode toggle for current word)
     if (isExplicitNewWord && !isReview && question !== lastSubmittedQuestionRef.current) {
-      setGeneratedContents({}); 
+      setGeneratedContents({}); // Clear all previous modes' content
       setIsExplainGeneratedForCurrentWord(false);
       await handleEndStreak("New root word submitted");
-      if (mode === 'explain') { 
+      if (mode === 'explain') { // Start new streak only if the initial generation is 'explain'
         setCurrentStreak({ words: [question], score: 1 });
       }
-    } else if (isExplicitNewWord && !isReview && question === lastSubmittedQuestionRef.current && mode === 'explain'){ 
+    } else if (isExplicitNewWord && !isReview && question === lastSubmittedQuestionRef.current && mode === 'explain'){ // Refreshing 'explain' of current word
         await handleEndStreak("Refreshing current word's explain");
         setCurrentStreak({ words: [question], score: 1 });
     }
 
-    if (generatedContents[mode] && question === lastSubmittedQuestionRef.current && !isExplicitNewWord && !isReview) {
+
+    // Check cache for the specific mode before fetching (relevant for mode toggles on a reviewed word)
+    if (generatedContents[mode] && question === lastSubmittedQuestionRef.current && !isExplicitNewWord) {
         setActiveMode(mode);
         setIsLoadingExplanation(false);
         return;
     }
-    if (isReview && generatedContents[mode] && question === lastSubmittedQuestionRef.current) {
-        setActiveMode(mode);
-        setIsLoadingExplanation(false);
-        return;
-    }
+
 
     try {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -546,7 +538,7 @@ const TinyTutorAppContent: React.FC = () => {
 
       if (mode === 'explain') {
         setIsExplainGeneratedForCurrentWord(true);
-        if (!isReview || (isReview && question !== lastSubmittedQuestionRef.current)) {
+        if (!isReview) {
              lastSubmittedQuestionRef.current = question;
         }
         if (profileData) {
@@ -573,7 +565,7 @@ const TinyTutorAppContent: React.FC = () => {
     } else {
         if (isReviewingStreakWordRef.current && newQuestion.toLowerCase() !== (lastSubmittedQuestionRef.current || '').toLowerCase()) { 
             handleEndStreak("New input typed during review");
-            isReviewingStreakWordRef.current = false; 
+             isReviewingStreakWordRef.current = false; // Typing new word ends review mode
         }
     }
   };
@@ -589,10 +581,8 @@ const TinyTutorAppContent: React.FC = () => {
     const questionForMode = lastSubmittedQuestionRef.current || inputQuestion.trim();
     if (!questionForMode) return;
 
-    if (activeMode === newMode && generatedContents[newMode] && questionForMode === lastSubmittedQuestionRef.current) {
-        return;
-    }
-    
+    if (activeMode === newMode && generatedContents[newMode]) return;
+
     if (generatedContents[newMode] && questionForMode === lastSubmittedQuestionRef.current) {
       setActiveMode(newMode);
     } else if (isExplainGeneratedForCurrentWord || newMode === 'explain') {
@@ -604,6 +594,7 @@ const TinyTutorAppContent: React.FC = () => {
     const questionToRefresh = lastSubmittedQuestionRef.current || inputQuestion.trim();
     if (questionToRefresh && activeMode) {
       isReviewingStreakWordRef.current = false;
+      // Pass true for isExplicitNewWord to ensure it re-fetches and resets streak logic for current word
       generateContent(questionToRefresh, activeMode, true); 
     }
   };
@@ -626,31 +617,29 @@ const TinyTutorAppContent: React.FC = () => {
   };
 
   const handleReviewStreakWordClick = (wordFromStreak: string) => {
-    setInputQuestion(wordFromStreak); 
-    isReviewingStreakWordRef.current = true; 
-    lastSubmittedQuestionRef.current = wordFromStreak; 
+    setInputQuestion(wordFromStreak);
+    isReviewingStreakWordRef.current = true;
 
     const wordDataFromProfile = profileData?.explored_words_list.find(w => w.word.toLowerCase() === wordFromStreak.toLowerCase());
 
-    let contentToLoad: Partial<GeneratedContent> = {};
-    let explainAvailable = false;
-
-    if (wordDataFromProfile?.generated_content_cache) {
-        contentToLoad = wordDataFromProfile.generated_content_cache;
-        explainAvailable = !!contentToLoad.explain;
-    } else if (wordDataFromProfile?.cached_explain_content) { 
-        contentToLoad.explain = wordDataFromProfile.cached_explain_content;
-        explainAvailable = true;
-    }
-    
-    if (Object.keys(contentToLoad).length > 0) {
-        setGeneratedContents(contentToLoad);
-        setActiveMode(explainAvailable ? 'explain' : (Object.keys(contentToLoad)[0] as ContentMode || 'explain'));
-        setIsExplainGeneratedForCurrentWord(explainAvailable);
-        setCurrentTutorWordIsFavorite(wordDataFromProfile?.is_favorite || false);
-        setIsLoadingExplanation(false); 
+    if (wordDataFromProfile?.generated_content_cache && Object.keys(wordDataFromProfile.generated_content_cache).length > 0) {
+        setGeneratedContents(wordDataFromProfile.generated_content_cache);
+        const defaultModeToActivate = wordDataFromProfile.generated_content_cache.explain ? 'explain' : (Object.keys(wordDataFromProfile.generated_content_cache)[0] as ContentMode | undefined) || 'explain';
+        setActiveMode(defaultModeToActivate);
+        setIsExplainGeneratedForCurrentWord(!!wordDataFromProfile.generated_content_cache.explain);
+        setCurrentTutorWordIsFavorite(wordDataFromProfile.is_favorite);
+        lastSubmittedQuestionRef.current = wordFromStreak; 
     } else {
-        generateContent(wordFromStreak, 'explain', false, true);
+        const cachedExplain = wordDataFromProfile?.cached_explain_content;
+        if (cachedExplain) {
+            setGeneratedContents({ explain: cachedExplain }); 
+            setActiveMode('explain');
+            setIsExplainGeneratedForCurrentWord(true);
+            setCurrentTutorWordIsFavorite(wordDataFromProfile?.is_favorite || false);
+            lastSubmittedQuestionRef.current = wordFromStreak;
+        } else {
+            generateContent(wordFromStreak, 'explain', false, true);
+        }
     }
   };
 
@@ -784,7 +773,7 @@ const TinyTutorAppContent: React.FC = () => {
         </div>
 
         <button onClick={handleGenerateClick} disabled={isLoadingExplanation || !inputQuestion.trim() || !user} className="w-full sm:w-auto bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-md focus:outline-none focus:shadow-outline disabled:opacity-50 transition duration-150 ease-in-out mb-4 text-lg">
-          {isLoadingExplanation && generatedContents.explain && lastSubmittedQuestionRef.current === inputQuestion ? 'Refreshing...' : (isLoadingExplanation ? 'Generating...' : 'Generate Explanation')}
+          {isLoadingExplanation && generatedContents.explain ? 'Refreshing...' : (isLoadingExplanation ? 'Generating...' : 'Generate Explanation')}
         </button>
 
         {user && inputQuestion.trim() && (

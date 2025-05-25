@@ -21,7 +21,22 @@ interface ProfileData {
 }
 
 interface CompletedStreak { id: string; words: string[]; score: number; }
-interface WordMapModalData { streaks: CompletedStreak[]; }
+
+// For Canvas Click Detection & Drawing in Streak History
+interface CanvasNode {
+    id: string; // Unique ID for the node (e.g., streakIndex-wordIndex-word)
+    word: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    isClickable: true; // Mark that this node represents a clickable word
+}
+interface WordMapModalData {
+    streaks: CompletedStreak[];
+    // We might not need to pass canvasNodes directly if modal calculates them
+}
+
 
 // --- Auth Context ---
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -110,56 +125,172 @@ const HighlightedContentRenderer: React.FC<HighlightedContentRendererProps> = ({
     })}</>);
 };
 
-// --- Word Streak History Modal Component --- (Styling and clickability will be updated later)
-interface WordStreakHistoryModalProps { isOpen: boolean; onClose: () => void; modalData: WordMapModalData | null; }
-const WordStreakHistoryModal: React.FC<WordStreakHistoryModalProps> = ({ isOpen, onClose, modalData }) => {
+// --- Word Streak History Modal Component (Updated for Horizontal, Clickable, Gamified) ---
+interface WordStreakHistoryModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    modalData: WordMapModalData | null;
+    onStreakWordClick: (word: string) => void; // New prop for handling clicks on canvas words
+}
+const WordStreakHistoryModal: React.FC<WordStreakHistoryModalProps> = ({ isOpen, onClose, modalData, onStreakWordClick }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const modalContentRef = useRef<HTMLDivElement>(null);
+    const [clickableCanvasNodes, setClickableCanvasNodes] = useState<CanvasNode[]>([]);
+
     useEffect(() => {
-        if (!isOpen || !modalData || !modalData.streaks.length || !canvasRef.current || !modalContentRef.current) return;
+        if (!isOpen || !modalData || !modalData.streaks.length || !canvasRef.current || !modalContentRef.current) {
+            setClickableCanvasNodes([]); // Clear nodes if modal not ready
+            return;
+        }
         const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); if (!ctx) return;
-        const nodeRadius = 20; const verticalSpacingBetweenNodes = 50; const verticalSpacingBetweenStreaks = 40;
-        const textOffsetY = 30; const nodePaddingX = 10; let totalCanvasHeight = 20;
-        modalData.streaks.forEach(streak => { totalCanvasHeight += textOffsetY; totalCanvasHeight += streak.words.length * verticalSpacingBetweenNodes; totalCanvasHeight += verticalSpacingBetweenStreaks; });
-        totalCanvasHeight = Math.max(300, totalCanvasHeight);
-        const containerWidth = modalContentRef.current.clientWidth - 48;
-        canvas.width = Math.max(400, containerWidth); canvas.height = totalCanvasHeight;
+
+        const localClickableNodes: CanvasNode[] = [];
+        const nodeHeight = 40; // Height of each node
+        const nodePaddingX = 15; // Horizontal padding inside node
+        const nodePaddingY = 10; // Vertical padding (effectively part of nodeHeight)
+        const horizontalSpacing = 15; // Space between nodes in a streak
+        const verticalSpacingBetweenStreaks = 60; // Space between different streak rows
+        const titleOffsetY = 25; // Space for streak title
+        const arrowSize = 8;
+
+        let requiredCanvasWidth = 0;
+        modalData.streaks.forEach(streak => {
+            let currentStreakWidth = 0;
+            ctx.font = '12px Arial'; // For measuring text
+            streak.words.forEach(word => {
+                const textMetrics = ctx.measureText(word);
+                currentStreakWidth += textMetrics.width + 2 * nodePaddingX + horizontalSpacing;
+            });
+            requiredCanvasWidth = Math.max(requiredCanvasWidth, currentStreakWidth - horizontalSpacing); // Subtract last spacing
+        });
+        requiredCanvasWidth = Math.max(300, requiredCanvasWidth); // Min width
+
+        let totalCanvasHeight = 20; // Initial padding
+        modalData.streaks.forEach(() => {
+            totalCanvasHeight += titleOffsetY + nodeHeight + verticalSpacingBetweenStreaks;
+        });
+        totalCanvasHeight = Math.max(250, totalCanvasHeight - verticalSpacingBetweenStreaks); // Min height, remove last spacing
+
+        const containerWidth = modalContentRef.current.clientWidth - 48; // Modal padding
+        canvas.width = Math.max(requiredCanvasWidth, containerWidth); // Use larger of calculated or container
+        canvas.height = totalCanvasHeight;
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const nodeColor = '#A5B4FC'; const lineColor = '#6B7280'; const textColor = '#111827'; const titleColor = '#374151';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; let currentY = 20;
+
+        const nodeColor = '#818CF8'; // indigo-400
+        const nodeHoverColor = '#6366F1'; // indigo-500 (will need mousemove for hover)
+        const lineColor = '#6B7280'; // gray-500
+        const textColor = '#FFFFFF'; // White text on nodes
+        const titleColor = '#374151'; // gray-700
+
+        ctx.textBaseline = 'middle';
+        let currentY = 10; // Start drawing from top
+
         modalData.streaks.forEach((streak, streakIndex) => {
-            currentY += textOffsetY; ctx.font = 'bold 14px Arial'; ctx.fillStyle = titleColor;
-            ctx.fillText(`Streak ${streakIndex + 1} (Score: ${streak.score})`, canvas.width / 2, currentY);
-            currentY += 20;
+            currentY += titleOffsetY;
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = titleColor;
+            ctx.textAlign = 'left';
+            ctx.fillText(`Streak ${streakIndex + 1} (Score: ${streak.score})`, 20, currentY);
+            currentY += nodeHeight / 2 + 10; // Space after title, align to center of nodes
+
+            let currentX = 30; // Starting X for nodes in this streak
+            ctx.font = '12px Arial';
+
             streak.words.forEach((word, wordIndex) => {
-                const nodeX = canvas.width / 2; const nodeY = currentY + wordIndex * verticalSpacingBetweenNodes;
-                ctx.font = '12px Arial'; const textMetrics = ctx.measureText(word);
-                const nodeWidth = textMetrics.width + 2 * nodePaddingX; const nodeRectHeight = nodeRadius * 2;
-                ctx.fillStyle = nodeColor; ctx.strokeStyle = '#6B7280'; ctx.lineWidth = 1;
-                ctx.beginPath(); ctx.moveTo(nodeX - nodeWidth / 2 + nodeRadius, nodeY - nodeRectHeight / 2);
-                ctx.arcTo(nodeX + nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeX + nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeRadius);
-                ctx.arcTo(nodeX + nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeX - nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeRadius);
-                ctx.arcTo(nodeX - nodeWidth / 2, nodeY + nodeRectHeight / 2, nodeX - nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeRadius);
-                ctx.arcTo(nodeX - nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeX + nodeWidth / 2, nodeY - nodeRectHeight / 2, nodeRadius);
-                ctx.closePath(); ctx.fill(); ctx.stroke();
-                ctx.fillStyle = textColor; ctx.fillText(word, nodeX, nodeY);
+                const textMetrics = ctx.measureText(word);
+                const nodeActualWidth = textMetrics.width + 2 * nodePaddingX;
+
+                // Store node info for click detection
+                const canvasNode: CanvasNode = {
+                    id: `streak-${streakIndex}-word-${wordIndex}-${word}`,
+                    word: word,
+                    x: currentX,
+                    y: currentY - nodeHeight / 2,
+                    width: nodeActualWidth,
+                    height: nodeHeight,
+                    isClickable: true
+                };
+                localClickableNodes.push(canvasNode);
+
+                // Draw node (rounded rectangle)
+                ctx.fillStyle = nodeColor; // Placeholder for hover: check if mouse is over this node
+                ctx.beginPath();
+                ctx.roundRect(canvasNode.x, canvasNode.y, canvasNode.width, canvasNode.height, 8);
+                ctx.fill();
+
+                // Draw text
+                ctx.fillStyle = textColor;
+                ctx.textAlign = 'center';
+                ctx.fillText(word, canvasNode.x + canvasNode.width / 2, currentY);
+
+                // Draw line to next node
                 if (wordIndex < streak.words.length - 1) {
-                    const nextNodeY = currentY + (wordIndex + 1) * verticalSpacingBetweenNodes;
-                    ctx.beginPath(); ctx.moveTo(nodeX, nodeY + nodeRectHeight / 2); ctx.lineTo(nodeX, nextNodeY - nodeRectHeight / 2);
-                    ctx.strokeStyle = lineColor; ctx.lineWidth = 2; ctx.stroke();
-                    const headlen = 8; const angle = Math.PI / 2;
-                    ctx.beginPath(); ctx.moveTo(nodeX, nextNodeY - nodeRectHeight / 2);
-                    ctx.lineTo(nodeX - headlen * Math.cos(angle - Math.PI / 6), (nextNodeY - nodeRectHeight / 2) - headlen * Math.sin(angle - Math.PI / 6));
-                    ctx.lineTo(nodeX - headlen * Math.cos(angle + Math.PI / 6), (nextNodeY - nodeRectHeight / 2) - headlen * Math.sin(angle + Math.PI / 6));
-                    ctx.closePath(); ctx.fillStyle = lineColor; ctx.fill();
+                    const startLineX = currentX + nodeActualWidth;
+                    const endLineX = startLineX + horizontalSpacing;
+                    ctx.beginPath();
+                    ctx.moveTo(startLineX, currentY);
+                    ctx.lineTo(endLineX, currentY);
+                    ctx.strokeStyle = lineColor;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Arrowhead
+                    ctx.beginPath();
+                    ctx.moveTo(endLineX, currentY);
+                    ctx.lineTo(endLineX - arrowSize, currentY - arrowSize / 2);
+                    ctx.lineTo(endLineX - arrowSize, currentY + arrowSize / 2);
+                    ctx.closePath();
+                    ctx.fillStyle = lineColor;
+                    ctx.fill();
+                    currentX = endLineX + arrowSize + 5; // Move X for next node
+                } else {
+                    currentX += nodeActualWidth + horizontalSpacing;
                 }
             });
-            currentY += streak.words.length * verticalSpacingBetweenNodes + verticalSpacingBetweenStreaks - verticalSpacingBetweenNodes;
+            currentY += nodeHeight + verticalSpacingBetweenStreaks - nodeHeight / 2 - 10; // Adjust for next streak row
         });
+        setClickableCanvasNodes(localClickableNodes);
+
     }, [isOpen, modalData]);
+
+    const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+        if (!canvasRef.current) return;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        for (const node of clickableCanvasNodes) {
+            if (x >= node.x && x <= node.x + node.width && y >= node.y && y <= node.y + node.height) {
+                onStreakWordClick(node.word); // Call the handler passed from App
+                onClose(); // Close modal after click
+                break;
+            }
+        }
+    };
+
     if (!isOpen) return null;
-    return (<div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[60] p-4"><div ref={modalContentRef} className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg md:max-w-xl relative flex flex-col max-h-[90vh]"><div className="flex justify-between items-center mb-4 flex-shrink-0"><h3 className="text-xl font-semibold text-gray-800">Word Exploration Streak History</h3><button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl" aria-label="Close modal">&times;</button></div><div className="flex-grow overflow-auto">{modalData && modalData.streaks.length > 0 ? (<canvas ref={canvasRef} className="rounded"></canvas>) : (<p className="text-gray-500 text-center py-10">No completed streaks (min. 2 words) to display yet.</p>)}</div></div></div>);
+
+    return (
+        <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[60] p-4">
+            <div ref={modalContentRef} className="bg-white p-6 rounded-lg shadow-xl w-full max-w-2xl lg:max-w-4xl relative flex flex-col max-h-[90vh]">
+                <div className="flex justify-between items-center mb-4 flex-shrink-0">
+                    <h3 className="text-xl font-semibold text-gray-800">Word Exploration Streak History</h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl p-1 rounded-full" aria-label="Close modal">&times;</button>
+                </div>
+                <div className="flex-grow overflow-auto"> {/* Scroll for canvas */}
+                    {modalData && modalData.streaks.length > 0 ? (
+                        <canvas ref={canvasRef} onClick={handleCanvasClick} className="rounded border border-gray-200 cursor-pointer"></canvas>
+                    ) : (
+                        <p className="text-gray-500 text-center py-10">No completed streaks (min. 2 words) to display yet.</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 };
+
 
 // --- Profile Modal Component (Updated Layout) ---
 interface ProfileModalProps {
@@ -176,7 +307,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, getAuthHea
 
     useEffect(() => {
         if (!isOpen || !user) { if (isOpen && !user) setProfileError("User not logged in."); return; }
-        if (profileData === null && !isLoadingProfile) { // Fetch only if modal is open, user exists, data is null, and not already loading
+        if (profileData === null && !isLoadingProfile) {
             const fetchProfileData = async () => {
                 setIsLoadingProfile(true); setProfileError(null);
                 try {
@@ -190,7 +321,6 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, getAuthHea
         }
     }, [isOpen, user, getAuthHeaders, profileData, setProfileData, isLoadingProfile]);
 
-    // Compact Word List Item for Profile Modal
     const CompactWordListItem: React.FC<{ item: ExploredWord, onToggleFavorite: () => void, onWordItemClick: () => void }> = ({ item, onToggleFavorite, onWordItemClick }) => (
         <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-lg flex justify-between items-center hover:bg-slate-200/70 transition-colors duration-150 group shadow-sm mb-2">
             <div className="flex-1 min-w-0 mr-2 cursor-pointer group-hover:text-indigo-700" onClick={onWordItemClick} title={`Explore "${item.word}"`}>
@@ -206,7 +336,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, getAuthHea
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[70] p-4"> {/* Ensure high z-index */}
+        <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[70] p-4"> {/* Increased z-index */}
             <div className="bg-white p-5 md:p-6 rounded-xl shadow-2xl w-full max-w-2xl lg:max-w-3xl relative flex flex-col max-h-[90vh]">
                 <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200 flex-shrink-0">
                     <h2 className="text-xl sm:text-2xl font-bold text-gray-800">
@@ -225,18 +355,16 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, getAuthHea
                             <p className="text-gray-700 text-sm">Words Explored: <span className="font-semibold text-indigo-600">{profileData.explored_words_count}</span></p>
                         </div>
                         <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-x-6 overflow-hidden">
-                            {/* Left Column: All Explored Words */}
-                            <div className="flex flex-col overflow-hidden">
-                                <h3 className="text-lg font-semibold text-gray-700 mb-2 sticky top-0 bg-white py-2 z-10 border-b border-gray-200">All Explored ({profileData.explored_words_list.length})</h3>
-                                <div className="overflow-y-auto pr-2 flex-grow custom-scrollbar"> {/* Added custom-scrollbar if needed */}
+                            <div className="flex flex-col overflow-hidden h-[calc(80vh-200px)] md:h-auto"> {/* Constrain height for scrolling */}
+                                <h3 className="text-lg font-semibold text-gray-700 mb-2 sticky top-0 bg-white py-2 z-10 border-b border-gray-200 flex-shrink-0">All Explored ({profileData.explored_words_list.length})</h3>
+                                <div className="overflow-y-auto pr-2 flex-grow custom-scrollbar">
                                     {profileData.explored_words_list.length > 0 ?
                                         profileData.explored_words_list.map(item => (<CompactWordListItem key={`exp-modal-${item.id}`} item={item} onToggleFavorite={() => handleToggleFavoriteApp(item.word, item.is_favorite)} onWordItemClick={() => onWordClickAndClose(item.word, item.generated_content_cache)} />))
                                         : <p className="text-gray-500 text-sm px-1 py-2">No words explored yet.</p>}
                                 </div>
                             </div>
-                            {/* Right Column: Favorite Words */}
-                            <div className="flex flex-col overflow-hidden mt-4 md:mt-0">
-                                <h3 className="text-lg font-semibold text-gray-700 mb-2 sticky top-0 bg-white py-2 z-10 border-b border-gray-200">Favorites ({profileData.favorite_words_list.length})</h3>
+                            <div className="flex flex-col overflow-hidden mt-4 md:mt-0 h-[calc(80vh-200px)] md:h-auto"> {/* Constrain height for scrolling */}
+                                <h3 className="text-lg font-semibold text-gray-700 mb-2 sticky top-0 bg-white py-2 z-10 border-b border-gray-200 flex-shrink-0">Favorites ({profileData.favorite_words_list.length})</h3>
                                 <div className="overflow-y-auto pr-2 flex-grow custom-scrollbar">
                                     {profileData.favorite_words_list.length > 0 ?
                                         profileData.favorite_words_list.map(item => (<CompactWordListItem key={`fav-modal-${item.id}`} item={item} onToggleFavorite={() => handleToggleFavoriteApp(item.word, item.is_favorite)} onWordItemClick={() => onWordClickAndClose(item.word, item.generated_content_cache)} />))
@@ -271,14 +399,15 @@ interface TinyTutorAppContentProps {
     onToggleFavorite: (currentWordDisplay: string, currentFavStatus: boolean) => Promise<void>;
     currentWordIsFavorite: boolean | null;
     handleHighlightedWordClick: (word: string) => void;
-    // onShowStreakHistory: () => void; // Button moved to header
     handleRefreshCurrentWord: () => void;
+    currentStreakScore: number; // New prop for live streak score
 }
 const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
     inputQuestion, onInputChange, onClearInput, generatedContents, activeMode, setActiveMode,
     triggerGenerateExplanation, isLoadingExplanation, aiError, setAiError,
     currentUser, setShowLoginModal, setShowSignupModal, isExplainGeneratedForCurrentWord,
-    onToggleFavorite, currentWordIsFavorite, handleHighlightedWordClick, /*onShowStreakHistory,*/ handleRefreshCurrentWord
+    onToggleFavorite, currentWordIsFavorite, handleHighlightedWordClick, handleRefreshCurrentWord,
+    currentStreakScore // Destructure new prop
 }) => {
     const loggedIn = currentUser !== null;
     const mainGenerateClick = () => {
@@ -336,6 +465,15 @@ const TinyTutorAppContent: React.FC<TinyTutorAppContentProps> = ({
                     {isExplainGeneratedForCurrentWord && (<>
                         <button onClick={handleRefreshCurrentWord} className="ml-2 p-2 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-60 transition-colors duration-150" title={`Refresh ${activeMode} content`} disabled={isLoadingExplanation}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.493-4.269A5.502 5.502 0 0 1 9.5 2.5a5.5 5.5 0 0 1 5.005 3.873A.75.75 0 0 1 15.312 11.424ZM18 10a8 8 0 1 1-14.638-4.597A.75.75 0 0 1 4.583 6.27A6.5 6.5 0 1 0 10 3.5V2a.75.75 0 0 1 1.5 0v1.75A.75.75 0 0 1 10.75 4.5V6a.75.75 0 0 1-1.5 0V4.84A8.001 8.001 0 0 1 18 10Z" clipRule="evenodd" /></svg></button>
                         {currentWordIsFavorite !== null && (<button onClick={() => onToggleFavorite(inputQuestion, !!currentWordIsFavorite)} className={`p-1.5 rounded-full text-xl ml-2 transition-colors duration-150 ${currentWordIsFavorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-500'} focus:outline-none focus:ring-1 focus:ring-red-400`} title={currentWordIsFavorite ? "Remove from favorites" : "Add to favorites"}>{currentWordIsFavorite ? '♥' : '♡'}</button>)}
+                        {/* Live Streak Score Display */}
+                        {currentStreakScore >= 2 && (
+                            <div className="ml-3 flex items-center px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mr-1 text-amber-500">
+                                    <path fillRule="evenodd" d="M11.64 2.202a.75.75 0 00-1.28 0L7.11 6.538a.75.75 0 00.44 1.285l4.349.632.632 4.35a.75.75 0 001.286.44l4.338-3.253a.75.75 0 000-1.28L11.64 2.202zM10 12.5a.75.75 0 000 1.5 2.5 2.5 0 010 5 .75.75 0 000 1.5 4 4 0 100-8z" clipRule="evenodd" />
+                                </svg>
+                                Streak: {currentStreakScore}
+                            </div>
+                        )}
                     </>)}
                 </>)}
             </div>
@@ -369,7 +507,6 @@ const App: React.FC = () => {
     const [streakHistoryModalData, setStreakHistoryModalData] = useState<WordMapModalData | null>(null);
 
     const finalizeCurrentStreak = () => {
-        // Streak is only valid if it has more than one word (score >= 2)
         if (currentStreak.length >= 2) {
             setCompletedStreaks(prev => [...prev, {
                 id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
@@ -377,7 +514,6 @@ const App: React.FC = () => {
                 score: currentStreak.length
             }]);
         }
-        // Always clear current streak after attempting to finalize
         setCurrentStreak([]);
     };
 
@@ -385,14 +521,13 @@ const App: React.FC = () => {
         const token = localStorage.getItem('access_token'); const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`; return headers;
     };
-    const refreshProfileDataOnly = async () => { // Renamed to avoid confusion with the useEffect one
+    const refreshProfileDataOnly = async () => {
         if (!user) { setProfileData(null); return; }
         try {
             const response = await fetch(`${API_BASE_URL}/profile`, { headers: getAuthHeaders() });
             if (response.ok) {
                 const data: ProfileData = await response.json();
                 setProfileData(data);
-                // Update favorite icon on tutor page if the current inputQuestion matches a word in the fresh profile data
                 if (inputQuestion && data.explored_words_list) {
                     const currentWordSanitizedId = inputQuestion.trim().toLowerCase().replace(/[/*\[\]]/g, '_').substring(0, 100);
                     const foundWord = data.explored_words_list.find((w: ExploredWord) => w.id === currentWordSanitizedId);
@@ -400,8 +535,7 @@ const App: React.FC = () => {
                 }
             } else {
                 console.error("Failed to refresh profile data for modal/action");
-                // Optionally set an error for profile modal if it's open
-                if (showProfileModal) setProfileData(prev => prev); // Keep stale data or set error
+                if (showProfileModal) setProfileData(prev => prev);
             }
         } catch (error) {
             console.error("Error refreshing profile data for modal/action:", error);
@@ -409,7 +543,7 @@ const App: React.FC = () => {
         }
     };
 
-    useEffect(() => { // For initial load and user changes
+    useEffect(() => {
         if (user) {
             const loadInitialProfile = async () => {
                 try {
@@ -426,7 +560,7 @@ const App: React.FC = () => {
         }
     }, [user]);
 
-    useEffect(() => { // To update favorite icon on tutor page when inputQuestion or the fetched profileData changes
+    useEffect(() => {
         if (inputQuestion && profileData?.explored_words_list) {
             const currentWordSanitizedId = inputQuestion.trim().toLowerCase().replace(/[/*\[\]]/g, '_').substring(0, 100);
             const foundWord = profileData.explored_words_list.find(w => w.id === currentWordSanitizedId);
@@ -435,7 +569,6 @@ const App: React.FC = () => {
             setCurrentTutorWordIsFavorite(null);
         }
     }, [inputQuestion, profileData]);
-
 
     const triggerGenerateExplanation = async (question: string, mode: ContentMode, isNewRootWord: boolean, isRefresh: boolean, forceCheckUser?: User | null) => {
         const currentUserToCheck = forceCheckUser !== undefined ? forceCheckUser : user;
@@ -447,7 +580,7 @@ const App: React.FC = () => {
         }
 
         if (isNewRootWord || isRefresh) {
-            finalizeCurrentStreak(); // Finalize previous before starting new
+            finalizeCurrentStreak();
             setCurrentStreak([question]);
         }
 
@@ -493,16 +626,11 @@ const App: React.FC = () => {
 
     const handleToggleFavoriteApp = async (currentWordDisplay: string, currentFavStatus: boolean) => {
         if (!user) { setAiError("Please login to favorite words."); handleShowLoginModal(currentWordDisplay); return; }
-
-        const originalProfileData = profileData ? JSON.parse(JSON.stringify(profileData)) : null; // Deep copy for revert
-
+        const originalProfileData = profileData ? JSON.parse(JSON.stringify(profileData)) : null;
         if (inputQuestion === currentWordDisplay) setCurrentTutorWordIsFavorite(!currentFavStatus);
-
         if (showProfileModal && profileData) {
             const newFavoriteStatus = !currentFavStatus;
-            const updatedExploredList = profileData.explored_words_list.map(w =>
-                w.word === currentWordDisplay ? { ...w, is_favorite: newFavoriteStatus } : w
-            );
+            const updatedExploredList = profileData.explored_words_list.map(w => w.word === currentWordDisplay ? { ...w, is_favorite: newFavoriteStatus } : w);
             let updatedFavoriteList;
             if (newFavoriteStatus) {
                 const wordToAdd = updatedExploredList.find(w => w.word === currentWordDisplay);
@@ -511,27 +639,21 @@ const App: React.FC = () => {
             } else {
                 updatedFavoriteList = profileData.favorite_words_list.filter(w => w.word !== currentWordDisplay);
             }
-            setProfileData({
-                ...profileData,
-                explored_words_list: updatedExploredList,
-                favorite_words_list: updatedFavoriteList,
-            });
+            setProfileData({ ...profileData, explored_words_list: updatedExploredList, favorite_words_list: updatedFavoriteList, });
         }
-
         try {
             const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ word: currentWordDisplay }) });
-            if (response.ok) {
-                await refreshProfileDataOnly(); // Fetch fresh data to confirm
-            } else {
+            if (response.ok) { await refreshProfileDataOnly(); }
+            else {
                 if (inputQuestion === currentWordDisplay) setCurrentTutorWordIsFavorite(currentFavStatus);
-                if (showProfileModal && originalProfileData) setProfileData(originalProfileData); // Revert profile modal
+                if (showProfileModal && originalProfileData) setProfileData(originalProfileData);
                 const errData = await response.json().catch(() => ({ error: "Failed to toggle favorite on server" }));
                 setAiError(errData.error || "Could not update favorite status.");
                 await refreshProfileDataOnly();
             }
         } catch (err) {
             if (inputQuestion === currentWordDisplay) setCurrentTutorWordIsFavorite(currentFavStatus);
-            if (showProfileModal && originalProfileData) setProfileData(originalProfileData); // Revert profile modal
+            if (showProfileModal && originalProfileData) setProfileData(originalProfileData);
             setAiError("Network error toggling favorite.");
             await refreshProfileDataOnly();
         }
@@ -547,7 +669,6 @@ const App: React.FC = () => {
     const handleAppSetInputQuestion = (value: string) => {
         const oldQuestion = inputQuestion;
         setInputQuestion(value);
-
         if (oldQuestion.trim().toLowerCase() !== value.trim().toLowerCase() && value.trim() !== '') {
             finalizeCurrentStreak();
             setCurrentStreak([]);
@@ -600,7 +721,6 @@ const App: React.FC = () => {
     };
 
     const handleShowStreakHistory = () => {
-        // Filter out streaks with score < 2 before displaying
         const validStreaks = completedStreaks.filter(s => s.score >= 2);
         setStreakHistoryModalData({ streaks: [...validStreaks] });
         setShowStreakHistoryModal(true);
@@ -609,10 +729,23 @@ const App: React.FC = () => {
     const handleOpenProfileModal = () => {
         finalizeCurrentStreak();
         if (user && profileData === null) {
-            refreshProfileDataOnly(); // Fetch if not loaded
+            refreshProfileDataOnly();
         }
         setShowProfileModal(true);
     };
+
+    // Handler for clicking a word node on the streak history canvas
+    const handleStreakWordClick = (word: string) => {
+        if (!user) {
+            handleShowLoginModal(word);
+            return;
+        }
+        finalizeCurrentStreak(); // End any active streak
+        setInputQuestion(word);
+        setCurrentStreak([word]); // Start a new streak with this word
+        triggerGenerateExplanation(word, 'explain', true, false, undefined); // isNewRootWord = true
+    };
+
 
     if (authLoadingGlobal) return <div className="flex items-center justify-center min-h-screen bg-gray-100 text-2xl">Loading Application...</div>;
 
@@ -651,6 +784,7 @@ const App: React.FC = () => {
                     onToggleFavorite={handleToggleFavoriteApp} currentWordIsFavorite={currentTutorWordIsFavorite}
                     handleHighlightedWordClick={handleHighlightedWordClick}
                     handleRefreshCurrentWord={handleRefreshCurrentWord}
+                    currentStreakScore={currentStreak.length} // Pass current streak length
                 />
             </main>
             {showAuthModal && (<AuthModal onClose={() => { setShowAuthModal(false); }}
@@ -675,6 +809,7 @@ const App: React.FC = () => {
                 isOpen={showStreakHistoryModal}
                 onClose={() => { setShowStreakHistoryModal(false); }}
                 modalData={streakHistoryModalData}
+                onStreakWordClick={handleStreakWordClick} // Pass the click handler
             />
             <ProfileModal
                 isOpen={showProfileModal}

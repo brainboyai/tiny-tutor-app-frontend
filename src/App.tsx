@@ -9,6 +9,7 @@ import React, {
   useCallback,
 } from 'react';
 import { jwtDecode } from 'jwt-decode';
+import { HelpCircle, Lightbulb, CheckSquare, RefreshCw, Heart, X } from 'lucide-react'; // Icons
 
 // --- Constants ---
 // const API_BASE_URL = 'http://127.0.0.1:5001'; // Local Flask dev
@@ -37,10 +38,10 @@ interface AuthContextType {
 
 interface GeneratedContent {
   explain?: string;
-  image?: string;
+  image?: string; // Will be removed from UI but type can remain for now
   fact?: string;
   quiz?: string;
-  deep?: string;
+  deep?: string;  // Will be removed from UI but type can remain for now
 }
 
 interface ExploredWord {
@@ -48,11 +49,10 @@ interface ExploredWord {
   word: string;
   is_favorite: boolean;
   last_explored_at: string;
-  cached_explain_content?: string;
+  cached_explain_content?: string; // Main explain content
   explicit_connections?: string[];
   modes_generated?: string[];
-  // Add other cached modes if backend provides them directly in profile
-  generated_content_cache?: Partial<GeneratedContent>; // For loading all cached modes
+  generated_content_cache?: Partial<GeneratedContent>; // Cache for all modes
 }
 
 interface ProfileData {
@@ -64,7 +64,9 @@ interface ProfileData {
   streak_history: Streak[];
 }
 
-type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
+type ContentMode = 'explain' | 'fact' | 'quiz'; // Updated modes
+const AVAILABLE_MODES: ContentMode[] = ['explain', 'fact', 'quiz'];
+
 
 interface Streak {
   id?: string;
@@ -259,7 +261,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-lg shadow-xl w-full max-w-md relative">
-        <button onClick={onClose} className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl" aria-label="Close">&times;</button>
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl" aria-label="Close"><X size={28}/></button>
         <h2 className="text-2xl font-bold mb-6 text-center text-gray-800 dark:text-gray-100">{mode === 'login' ? 'Login' : 'Sign Up'}</h2>
         {authError && <p className="bg-red-100 dark:bg-red-700 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-100 px-4 py-3 rounded relative mb-4 text-sm" role="alert">{authError}</p>}
         <form onSubmit={handleSubmit}>
@@ -319,37 +321,43 @@ const CompactWordListItem: React.FC<{
   };
 
   return (
-    <li className={`p-3 mb-2 rounded-lg shadow hover:shadow-md transition-all duration-200 cursor-pointer flex justify-between items-center ${isFavoriteList ? 'bg-yellow-50 dark:bg-yellow-900 border-l-4 border-yellow-400' : 'bg-gray-50 dark:bg-gray-700'}`} onClick={onWordClick}>
+    <li className={`p-3 mb-2 rounded-lg shadow hover:shadow-md transition-all duration-200 cursor-pointer flex justify-between items-center ${isFavoriteList ? 'bg-yellow-100 dark:bg-yellow-800 border-l-4 border-yellow-500 dark:border-yellow-600' : 'bg-gray-100 dark:bg-gray-700'}`} onClick={onWordClick}>
       <div>
-        <span className="font-semibold text-indigo-600 dark:text-indigo-400 block text-md">{item.word}</span>
-        <span className="text-xs text-gray-500 dark:text-gray-400">Last seen: {new Date(item.last_explored_at).toLocaleDateString()}</span>
+        <span className="font-semibold text-indigo-700 dark:text-indigo-400 block text-md">{item.word}</span>
+        <span className="text-xs text-gray-600 dark:text-gray-400">Last seen: {new Date(item.last_explored_at).toLocaleDateString()}</span>
       </div>
-      <button onClick={handleToggleFavorite} disabled={isToggling} className={`p-1 rounded-full transition-colors duration-150 focus:outline-none ${isFavoritedOptimistic ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-400'} ${isToggling ? 'opacity-50 cursor-not-allowed' : ''}`} aria-label={isFavoritedOptimistic ? 'Unfavorite' : 'Favorite'}>{isFavoritedOptimistic ? '♥' : '♡'}</button>
+      <button onClick={handleToggleFavorite} disabled={isToggling} className={`p-1 rounded-full transition-colors duration-150 focus:outline-none ${isFavoritedOptimistic ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-400'} ${isToggling ? 'opacity-50 cursor-not-allowed' : ''}`} aria-label={isFavoritedOptimistic ? 'Unfavorite' : 'Favorite'}><Heart fill={isFavoritedOptimistic ? 'currentColor' : 'none'} size={20}/></button>
     </li>
   );
 };
 
 const AccordionSection: React.FC<{title: string; count: number; isActive: boolean; onClick: () => void; children: React.ReactNode;}> = ({ title, count, isActive, onClick, children }) => (
-  <div className="border-b border-gray-200 dark:border-gray-700">
+  <div className="border-b border-gray-300 dark:border-gray-700 last:border-b-0">
     <button
       onClick={onClick}
-      className="w-full flex justify-between items-center py-4 px-2 text-left text-lg font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none"
+      className="w-full flex justify-between items-center py-4 px-1 text-left text-lg font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none transition-colors duration-150"
     >
       <span>{title} ({count})</span>
-      <span className={`transform transition-transform duration-200 ${isActive ? 'rotate-180' : 'rotate-0'}`}>▼</span>
+      <span className={`transform transition-transform duration-300 ease-in-out ${isActive ? 'rotate-180' : 'rotate-0'}`}>
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+      </span>
     </button>
-    {isActive && <div className="p-4 bg-gray-50 dark:bg-gray-750 max-h-[40vh] overflow-y-auto">{children}</div>}
+    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActive ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+      <div className="p-4 pt-0 bg-white dark:bg-gray-800"> {/* Changed bg to match modal; removed gray-50 */}
+        {children}
+      </div>
+    </div>
   </div>
 );
 
 
 const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileData, isLoading, error, onWordClick, onToggleFavorite }) => {
-  const [activeSection, setActiveSection] = useState<ProfileAccordionSection>(null);
+  const [activeSection, setActiveSection] = useState<ProfileAccordionSection>('explored'); // Default open 'explored'
 
-  useEffect(() => { // Reset active section when modal reopens or data changes
-    if (isOpen) setActiveSection('explored'); // Default to explored or null
-    else setActiveSection(null);
-  }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) setActiveSection(null); // Reset when modal closes
+    else if (isOpen && !activeSection && profileData) setActiveSection('explored'); // Default open on new data
+  }, [isOpen, profileData, activeSection]);
 
   if (!isOpen) return null;
 
@@ -359,53 +367,50 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-40">
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Profile</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl" aria-label="Close">&times;</button>
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-40 transition-opacity duration-300">
+      <div className="bg-white dark:bg-gray-850 p-6 rounded-xl shadow-2xl w-full max-w-2xl md:max-w-3xl lg:max-w-4xl max-h-[90vh] flex flex-col transform transition-all duration-300 scale-95 opacity-0 animate-modalFadeIn">
+        <style>{`
+          @keyframes modalFadeIn {
+            to { opacity: 1; transform: scale(1); }
+          }
+          .animate-modalFadeIn { animation: modalFadeIn 0.3s forwards; }
+          .dark .dark\\:bg-gray-850 { background-color: #182130; } /* Custom dark for modal */
+        `}</style>
+        <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-300 dark:border-gray-700">
+          <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100">User Profile</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100 text-2xl p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" aria-label="Close"><X size={28}/></button>
         </div>
 
-        {isLoading && <p className="text-center text-gray-600 dark:text-gray-300 py-4">Loading profile...</p>}
-        {error && <p className="text-center text-red-500 dark:text-red-400 py-4">Error: {error}</p>}
+        {isLoading && <p className="text-center text-gray-600 dark:text-gray-300 py-8">Loading profile...</p>}
+        {error && <p className="text-center text-red-600 dark:text-red-400 py-8 text-lg">Error: {error}</p>}
 
         {profileData && (
-          <div className="flex-grow overflow-y-auto">
-            <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900 rounded-lg shadow">
-              <p className="text-lg"><span className="font-semibold text-indigo-700 dark:text-indigo-300">Username:</span> {profileData.username}</p>
-              <p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Tier:</span> {profileData.tier}</p>
-              <p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Words Explored:</span> {profileData.explored_words_count}</p>
+          <div className="flex-grow overflow-y-auto custom-scrollbar pr-2"> {/* Added custom-scrollbar class and pr-2 */}
+             <style>{`
+              .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+              .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+              .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; border: 2px solid transparent; background-clip: content-box;}
+              .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #4a5568; }
+            `}</style>
+            <div className="mb-6 p-4 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg shadow-md">
+              <p className="text-xl"><span className="font-semibold text-indigo-700 dark:text-indigo-300">Username:</span> {profileData.username}</p>
+              <p className="text-md text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Tier:</span> {profileData.tier}</p>
+              <p className="text-md text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Words Explored:</span> {profileData.explored_words_count}</p>
             </div>
 
-            <AccordionSection title="All Explored Words" count={profileData.explored_words_list.length} isActive={activeSection === 'explored'} onClick={() => setActiveSection(activeSection === 'explored' ? null : 'explored')}>
-              {profileData.explored_words_list.length > 0 ? (
-                <ul className="space-y-1 pr-1">
-                  {profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} />))}
-                </ul>
-              ) : (<p className="text-gray-500 dark:text-gray-400">No words explored yet.</p>)}
-            </AccordionSection>
+            <div className="rounded-lg overflow-hidden shadow-lg border border-gray-200 dark:border-gray-700">
+                <AccordionSection title="All Explored Words" count={profileData.explored_words_list.length} isActive={activeSection === 'explored'} onClick={() => setActiveSection(activeSection === 'explored' ? null : 'explored')}>
+                {profileData.explored_words_list.length > 0 ? (<ul className="space-y-1">{profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} />))}</ul>) : (<p className="text-gray-500 dark:text-gray-400 py-3">No words explored yet.</p>)}
+                </AccordionSection>
 
-            <AccordionSection title="Favorite Words" count={profileData.favorite_words_list.length} isActive={activeSection === 'favorites'} onClick={() => setActiveSection(activeSection === 'favorites' ? null : 'favorites')}>
-              {profileData.favorite_words_list.length > 0 ? (
-                <ul className="space-y-1 pr-1">
-                  {profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} isFavoriteList={true} />))}
-                </ul>
-              ) : (<p className="text-gray-500 dark:text-gray-400">No favorite words yet.</p>)}
-            </AccordionSection>
+                <AccordionSection title="Favorite Words" count={profileData.favorite_words_list.length} isActive={activeSection === 'favorites'} onClick={() => setActiveSection(activeSection === 'favorites' ? null : 'favorites')}>
+                {profileData.favorite_words_list.length > 0 ? (<ul className="space-y-1">{profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfile(item)} onToggleFavorite={(e?: React.MouseEvent) => { if (e) e.stopPropagation(); return onToggleFavorite(item.id, item.is_favorite); }} isFavoriteList={true} />))}</ul>) : (<p className="text-gray-500 dark:text-gray-400 py-3">No favorite words yet.</p>)}
+                </AccordionSection>
 
-            <AccordionSection title="Streak History" count={profileData.streak_history.length} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
-              {profileData.streak_history.length > 0 ? (
-                <ul className="space-y-2 pr-1">
-                  {profileData.streak_history.map((streak, index) => (
-                    <li key={streak.id || `streak-${index}`} className="p-3 bg-gray-100 dark:bg-gray-600 rounded-md shadow">
-                      <p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-300">Words: {streak.words.join(' → ')}</p>
-                      {streak.completed_at && (<p className="text-xs text-gray-500 dark:text-gray-400">Completed: {new Date(streak.completed_at).toLocaleString()}</p>)}
-                    </li>
-                  ))}
-                </ul>
-              ) : (<p className="text-gray-500 dark:text-gray-400">No completed streaks yet.</p>)}
-            </AccordionSection>
+                <AccordionSection title="Streak History" count={profileData.streak_history.length} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
+                {profileData.streak_history.length > 0 ? (<ul className="space-y-3">{profileData.streak_history.map((streak, index) => (<li key={streak.id || `streak-${index}`} className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md shadow"><p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p><p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">Words: {streak.words.join(' → ')}</p>{streak.completed_at && (<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Completed: {new Date(streak.completed_at).toLocaleString()}</p>)}</li>))}</ul>) : (<p className="text-gray-500 dark:text-gray-400 py-3">No completed streaks yet.</p>)}
+                </AccordionSection>
+            </div>
           </div>
         )}
       </div>
@@ -436,10 +441,9 @@ const TinyTutorAppContent: React.FC = () => {
   const [currentTutorWordIsFavorite, setCurrentTutorWordIsFavorite] = useState(false);
 
   const [currentStreak, setCurrentStreak] = useState<Streak>({ words: [], score: 0 });
-  // Removed completedStreaks state as it's part of profileData.streak_history
   
-  const lastSubmittedQuestionRef = useRef<string | null>(null); // Tracks the word for which 'explain' was last generated
-  const isReviewingStreakWordRef = useRef<boolean>(false); // Tracks if current view is a review from live streak
+  const lastSubmittedQuestionRef = useRef<string | null>(null);
+  const isReviewingStreakWordRef = useRef<boolean>(false);
 
 
   useEffect(() => {
@@ -468,17 +472,15 @@ const TinyTutorAppContent: React.FC = () => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to save streak');
         console.log('Streak saved successfully:', result);
-        // Optionally refresh profile data here to show new streak immediately
-        if (profileData) { // Optimistically add to profileData if it exists
+        if (profileData) {
             setProfileData(prev => prev ? ({
                 ...prev,
                 streak_history: [
                     { words: currentStreak.words, score: currentStreak.score, completed_at: new Date().toISOString(), id: result.streak_id || `temp-${Date.now()}` },
                      ...(prev.streak_history || [])
-                    ]
+                    ].sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()) // Keep sorted
             }) : null);
         }
-
       } catch (error) {
         console.error('Error saving streak:', error);
       }
@@ -486,7 +488,7 @@ const TinyTutorAppContent: React.FC = () => {
       console.log("Streak not saved (score < 2 or no words).");
     }
     setCurrentStreak({ words: [], score: 0 });
-    isReviewingStreakWordRef.current = false; // Reset review state when streak ends
+    isReviewingStreakWordRef.current = false;
   }, [currentStreak, getAuthHeaders, profileData]);
 
   const generateContent = async (question: string, mode: ContentMode, isExplicitNewWord: boolean = false, isReview: boolean = false) => {
@@ -498,20 +500,24 @@ const TinyTutorAppContent: React.FC = () => {
     }
 
     setIsLoadingExplanation(true); setAiError(null);
-    isReviewingStreakWordRef.current = isReview; // Set review state
+    isReviewingStreakWordRef.current = isReview;
 
-    if (isExplicitNewWord && !isReview) { // New word, not a review from live streak
-      setGeneratedContents({});
+    // If it's a new word (not a review or mode toggle for current word)
+    if (isExplicitNewWord && !isReview && question !== lastSubmittedQuestionRef.current) {
+      setGeneratedContents({}); // Clear all previous modes' content
       setIsExplainGeneratedForCurrentWord(false);
-      await handleEndStreak(isExplicitNewWord ? "New root word" : "Refresh current word");
-      if (mode === 'explain') {
+      await handleEndStreak("New root word submitted");
+      if (mode === 'explain') { // Start new streak only if the initial generation is 'explain'
         setCurrentStreak({ words: [question], score: 1 });
       }
+    } else if (isExplicitNewWord && !isReview && question === lastSubmittedQuestionRef.current && mode === 'explain'){ // Refreshing 'explain' of current word
+        await handleEndStreak("Refreshing current word's explain");
+        setCurrentStreak({ words: [question], score: 1 });
     }
-    
-    // If content for this mode and question is already cached, just display it (for toggles)
-    // This check is now more robust in handleModeToggle
-    if (generatedContents[mode] && question === lastSubmittedQuestionRef.current && !isExplicitNewWord && !isReview) {
+
+
+    // Check cache for the specific mode before fetching (relevant for mode toggles on a reviewed word)
+    if (generatedContents[mode] && question === lastSubmittedQuestionRef.current && !isExplicitNewWord) {
         setActiveMode(mode);
         setIsLoadingExplanation(false);
         return;
@@ -532,7 +538,7 @@ const TinyTutorAppContent: React.FC = () => {
 
       if (mode === 'explain') {
         setIsExplainGeneratedForCurrentWord(true);
-        if (!isReview) { // Only update lastSubmitted for actual new explanations, not reviews
+        if (!isReview) {
              lastSubmittedQuestionRef.current = question;
         }
         if (profileData) {
@@ -554,84 +560,90 @@ const TinyTutorAppContent: React.FC = () => {
     setInputQuestion(newQuestion);
     if (!newQuestion.trim()) {
       setGeneratedContents({}); setIsExplainGeneratedForCurrentWord(false); setAiError(null); setCurrentTutorWordIsFavorite(false);
-      if (!isReviewingStreakWordRef.current) handleEndStreak("Input cleared"); // Only end if not in review mode
+      if (!isReviewingStreakWordRef.current) handleEndStreak("Input cleared");
       lastSubmittedQuestionRef.current = null;
     } else {
-        // If user starts typing a new word, any review state should be cleared, and streak should end.
-        if (isReviewingStreakWordRef.current) {
+        if (isReviewingStreakWordRef.current && newQuestion !== lastSubmittedQuestionRef.current) { // If typing a different word during review
             handleEndStreak("New input typed during review");
         }
-        isReviewingStreakWordRef.current = false;
+        // isReviewingStreakWordRef.current = false; // Typing new word ends review mode
     }
   };
 
-  const handleGenerateClick = () => { // Main "Generate Explanation" button
+  const handleGenerateClick = () => {
     if (inputQuestion.trim()) {
-      isReviewingStreakWordRef.current = false; // Ensure not in review mode
+      isReviewingStreakWordRef.current = false;
       generateContent(inputQuestion.trim(), 'explain', true);
     }
   };
 
   const handleModeToggle = (newMode: ContentMode) => {
-    const currentQuestionForModes = lastSubmittedQuestionRef.current || inputQuestion.trim();
-    if (!currentQuestionForModes) return;
+    const questionForMode = lastSubmittedQuestionRef.current || inputQuestion.trim();
+    if (!questionForMode) return;
 
-    if (activeMode === newMode && generatedContents[newMode]) return; // Already active and content exists
+    if (activeMode === newMode && generatedContents[newMode]) return;
 
-    // If content for this mode and question is already cached in generatedContents
-    if (generatedContents[newMode] && currentQuestionForModes === (lastSubmittedQuestionRef.current || inputQuestion.trim())) {
+    if (generatedContents[newMode] && questionForMode === lastSubmittedQuestionRef.current) {
       setActiveMode(newMode);
-      // No API call needed, content already in frontend state for current word
     } else if (isExplainGeneratedForCurrentWord || newMode === 'explain') {
-      // Fetch new mode content if 'explain' was generated for the current word, or if trying to get 'explain'
-      generateContent(currentQuestionForModes, newMode, false, isReviewingStreakWordRef.current);
+      generateContent(questionForMode, newMode, false, isReviewingStreakWordRef.current);
     }
   };
   
   const handleRefreshContent = () => {
     const questionToRefresh = lastSubmittedQuestionRef.current || inputQuestion.trim();
     if (questionToRefresh && activeMode) {
-      isReviewingStreakWordRef.current = false; // Refreshing ends review mode
-      generateContent(questionToRefresh, activeMode, true); // 'true' for isExplicitNewWord to force re-fetch & new streak
+      isReviewingStreakWordRef.current = false;
+      // Pass true for isExplicitNewWord to ensure it re-fetches and resets streak logic for current word
+      generateContent(questionToRefresh, activeMode, true); 
     }
   };
 
-  const handleWordClickFromExplanation = (word: string) => { // Click on <click>word</click>
-    // If user was reviewing a streak word, and clicks a highlighted word, the review ends, and a new exploration path begins.
+  const handleWordClickFromExplanation = (word: string) => {
     if (isReviewingStreakWordRef.current) {
-        handleEndStreak("Explored from reviewed word"); // End the original streak
+        handleEndStreak("Explored from reviewed word");
     }
     isReviewingStreakWordRef.current = false;
 
     setInputQuestion(word);
     if (currentStreak.words.length > 0 && !currentStreak.words.includes(word)) {
       setCurrentStreak(prev => ({ words: [...prev.words, word], score: prev.score + 1 }));
-    } else if (currentStreak.words.length === 0 && lastSubmittedQuestionRef.current) { // Starting new streak from a base word
+    } else if (currentStreak.words.length === 0 && lastSubmittedQuestionRef.current) {
       setCurrentStreak({ words: [lastSubmittedQuestionRef.current, word], score: 2 });
-    } else if (currentStreak.words.length === 0 && !lastSubmittedQuestionRef.current) { // Edge case: no prior word, direct click
-        setCurrentStreak({ words: [inputQuestion, word], score: 2}); // Use inputQuestion as root
+    } else if (currentStreak.words.length === 0 && !lastSubmittedQuestionRef.current) {
+        setCurrentStreak({ words: [inputQuestion, word], score: 2});
     }
-    generateContent(word, 'explain', false); // isExplicitNewWord = false, isReview = false
+    generateContent(word, 'explain', false);
   };
 
   const handleReviewStreakWordClick = (wordFromStreak: string) => {
-    setInputQuestion(wordFromStreak); // Update input field to the word being reviewed
-    isReviewingStreakWordRef.current = true; // Set that we are in review mode
+    setInputQuestion(wordFromStreak);
+    isReviewingStreakWordRef.current = true;
 
-    const wordData = profileData?.explored_words_list.find(w => w.word === wordFromStreak);
-    const cachedExplain = wordData?.generated_content_cache?.explain || wordData?.cached_explain_content;
+    const wordDataFromProfile = profileData?.explored_words_list.find(w => w.word.toLowerCase() === wordFromStreak.toLowerCase());
 
-    if (cachedExplain) {
-        setGeneratedContents({ explain: cachedExplain });
-        setActiveMode('explain');
-        setIsExplainGeneratedForCurrentWord(true);
-        setCurrentTutorWordIsFavorite(wordData?.is_favorite || false);
-        lastSubmittedQuestionRef.current = wordFromStreak; // So mode toggles work for this reviewed word
+    if (wordDataFromProfile?.generated_content_cache && Object.keys(wordDataFromProfile.generated_content_cache).length > 0) {
+        setGeneratedContents(wordDataFromProfile.generated_content_cache);
+        // Determine if 'explain' is available, otherwise default to first available mode or 'explain'
+        const defaultModeToActivate = wordDataFromProfile.generated_content_cache.explain ? 'explain' : (Object.keys(wordDataFromProfile.generated_content_cache)[0] as ContentMode | undefined) || 'explain';
+        setActiveMode(defaultModeToActivate);
+        setIsExplainGeneratedForCurrentWord(!!wordDataFromProfile.generated_content_cache.explain);
+        setCurrentTutorWordIsFavorite(wordDataFromProfile.is_favorite);
+        lastSubmittedQuestionRef.current = wordFromStreak; // Critical for mode toggles on reviewed word
     } else {
-        // Fallback: if somehow not cached, generate it (but mark as review to not mess streak)
-        generateContent(wordFromStreak, 'explain', false, true);
+        // Fallback: if no comprehensive cache, try the specific cached_explain_content
+        const cachedExplain = wordDataFromProfile?.cached_explain_content;
+        if (cachedExplain) {
+            setGeneratedContents({ explain: cachedExplain }); // Only explain is known
+            setActiveMode('explain');
+            setIsExplainGeneratedForCurrentWord(true);
+            setCurrentTutorWordIsFavorite(wordDataFromProfile?.is_favorite || false);
+            lastSubmittedQuestionRef.current = wordFromStreak;
+        } else {
+             // If no cached content at all for this word, fetch 'explain' for review
+            generateContent(wordFromStreak, 'explain', false, true);
+        }
     }
-    // DO NOT modify currentStreak here. User is just reviewing.
   };
 
 
@@ -655,7 +667,7 @@ const TinyTutorAppContent: React.FC = () => {
     if (!user || !wordToToggle || !isExplainGeneratedForCurrentWord) return;
 
     const newFavoriteStatus = !currentTutorWordIsFavorite;
-    setCurrentTutorWordIsFavorite(newFavoriteStatus); // Optimistic UI update
+    setCurrentTutorWordIsFavorite(newFavoriteStatus);
 
     try {
       const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
@@ -665,10 +677,10 @@ const TinyTutorAppContent: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) {
-        setCurrentTutorWordIsFavorite(!newFavoriteStatus); // Revert on error
+        setCurrentTutorWordIsFavorite(!newFavoriteStatus);
         throw new Error(data.error || 'Failed to toggle favorite');
       }
-      if (profileData) { // Update profileData state if it exists
+      if (profileData) {
         setProfileData(prev => {
           if (!prev) return null;
           const updatedExplored = prev.explored_words_list.map(w => w.word.toLowerCase().trim() === wordToToggle.toLowerCase() ? { ...w, is_favorite: newFavoriteStatus } : w);
@@ -678,7 +690,7 @@ const TinyTutorAppContent: React.FC = () => {
     } catch (error) {
       console.error("Error toggling favorite on tutor page:", error);
       setAiError((error as Error).message || "Could not update favorite status.");
-      setCurrentTutorWordIsFavorite(!newFavoriteStatus); // Revert on error
+      setCurrentTutorWordIsFavorite(!newFavoriteStatus);
     }
   };
   
@@ -697,7 +709,7 @@ const TinyTutorAppContent: React.FC = () => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to toggle favorite in profile');
       
-      setProfileData(prev => { // Update profile data
+      setProfileData(prev => {
         if (!prev) return null;
         const updatedList = prev.explored_words_list.map(w => w.id === wordIdSanitized ? { ...w, is_favorite: newFavoriteStatus } : w);
         return { ...prev, explored_words_list: updatedList, favorite_words_list: updatedList.filter(w => w.is_favorite) };
@@ -712,37 +724,44 @@ const TinyTutorAppContent: React.FC = () => {
   };
 
   const handleWordClickFromProfile = (word: string, cachedContent?: Partial<GeneratedContent>) => {
-    isReviewingStreakWordRef.current = false; // Clicking from profile starts a new context
+    isReviewingStreakWordRef.current = false;
     setInputQuestion(word);
-    handleEndStreak("Clicked from profile"); // End any existing streak
+    handleEndStreak("Clicked from profile");
 
-    if (cachedContent?.explain) {
-      setGeneratedContents(cachedContent); // Load all cached modes if available
-      setActiveMode('explain');
-      setIsExplainGeneratedForCurrentWord(true);
+    if (cachedContent && Object.keys(cachedContent).length > 0) {
+      setGeneratedContents(cachedContent);
+      const defaultMode = cachedContent.explain ? 'explain' : (Object.keys(cachedContent)[0] as ContentMode | undefined) || 'explain';
+      setActiveMode(defaultMode);
+      setIsExplainGeneratedForCurrentWord(!!cachedContent.explain);
       lastSubmittedQuestionRef.current = word;
-      setCurrentStreak({ words: [word], score: 1 }); // Start new streak
+      setCurrentStreak({ words: [word], score: 1 });
       const foundWord = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === word.toLowerCase().trim());
       setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
     } else {
-      generateContent(word, 'explain', true); // Fetch if 'explain' not cached, starts new streak
+      generateContent(word, 'explain', true);
     }
     setShowProfileModal(false);
   };
   
+  const modeIcons: Record<ContentMode, React.ElementType> = {
+    explain: Lightbulb,
+    fact: CheckSquare,
+    quiz: HelpCircle,
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center p-4 transition-colors duration-300">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center p-4 transition-colors duration-300 font-sans">
       <header className="w-full max-w-3xl mb-6 flex justify-between items-center">
         <h1 className="text-4xl font-bold text-indigo-600 dark:text-indigo-400">Tiny Tutor</h1>
         <div className="space-x-2">
           {user ? (
             <>
-              <span className="text-sm hidden sm:inline">Welcome, {user.username}!</span>
-              <button onClick={handleOpenProfileModal} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Profile</button>
-              <button onClick={() => { handleEndStreak("Logout"); logout(); }} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800">Logout</button>
+              <span className="text-sm hidden sm:inline mr-2">Welcome, {user.username}!</span>
+              <button onClick={handleOpenProfileModal} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors">Profile</button>
+              <button onClick={() => { handleEndStreak("Logout"); logout(); }} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800 transition-colors">Logout</button>
             </>
           ) : (
-            <button onClick={() => { setAuthModalMode('login'); setShowAuthModal(true); }} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Login / Sign Up</button>
+            <button onClick={() => { setAuthModalMode('login'); setShowAuthModal(true); }} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors">Login / Sign Up</button>
           )}
         </div>
       </header>
@@ -751,8 +770,8 @@ const TinyTutorAppContent: React.FC = () => {
         <div className="mb-6">
           <label htmlFor="conceptInput" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Enter a word or concept:</label>
           <div className="relative">
-            <input type="text" id="conceptInput" value={inputQuestion} onChange={handleInputChange} placeholder="e.g., Photosynthesis" className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-gray-100" />
-            {inputQuestion && (<button onClick={() => { setInputQuestion(''); setGeneratedContents({}); setIsExplainGeneratedForCurrentWord(false); setAiError(null); setCurrentTutorWordIsFavorite(false); if(!isReviewingStreakWordRef.current) handleEndStreak("Input cleared by X"); lastSubmittedQuestionRef.current = null; }} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-xl" aria-label="Clear input">&times;</button>)}
+            <input type="text" id="conceptInput" value={inputQuestion} onChange={handleInputChange} placeholder="e.g., Photosynthesis" className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-gray-100 text-lg" />
+            {inputQuestion && (<button onClick={() => { setInputQuestion(''); setGeneratedContents({}); setIsExplainGeneratedForCurrentWord(false); setAiError(null); setCurrentTutorWordIsFavorite(false); if(!isReviewingStreakWordRef.current) handleEndStreak("Input cleared by X"); lastSubmittedQuestionRef.current = null; }} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-xl p-1" aria-label="Clear input"><X size={24}/></button>)}
           </div>
         </div>
 
@@ -761,37 +780,49 @@ const TinyTutorAppContent: React.FC = () => {
         </button>
 
         {user && inputQuestion.trim() && (
-          <div className="my-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-md shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map((mode) => (
-                <button key={mode} onClick={() => handleModeToggle(mode)} disabled={isLoadingExplanation || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${activeMode === mode ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'} ${(isLoadingExplanation || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)) ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+          <div className="my-6 p-4 bg-gray-100 dark:bg-gray-700/50 rounded-lg shadow">
+            <div className="flex flex-wrap items-center gap-3">
+              {AVAILABLE_MODES.map((mode) => {
+                const Icon = modeIcons[mode];
+                return (
+                <button 
+                    key={mode} 
+                    onClick={() => handleModeToggle(mode)} 
+                    disabled={isLoadingExplanation || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)} 
+                    className={`flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-full shadow-sm transition-all duration-200 ease-in-out transform hover:scale-105
+                        ${activeMode === mode 
+                            ? 'bg-indigo-600 text-white ring-2 ring-indigo-400 dark:ring-indigo-500' 
+                            : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600'} 
+                        ${(isLoadingExplanation || (mode !== 'explain' && !isExplainGeneratedForCurrentWord)) ? 'opacity-60 cursor-not-allowed hover:scale-100' : ''}`}
+                >
+                  <Icon size={16} className={`${activeMode === mode ? 'text-white' : 'text-indigo-500 dark:text-indigo-400'}`} />
+                  <span>{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
                 </button>
-              ))}
+              )})}
               {isExplainGeneratedForCurrentWord && (
                 <>
-                  <button onClick={handleRefreshContent} disabled={isLoadingExplanation} className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-50" title="Refresh content">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                  <button onClick={handleRefreshContent} disabled={isLoadingExplanation} className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-60 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="Refresh content">
+                    <RefreshCw size={20}/>
                   </button>
-                  <button onClick={handleToggleFavoriteOnTutorPage} disabled={isLoadingExplanation} className={`p-1.5 rounded-full transition-colors duration-150 focus:outline-none disabled:opacity-50 ${currentTutorWordIsFavorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-400'}`} title={currentTutorWordIsFavorite ? 'Unfavorite' : 'Favorite'}>
-                    {currentTutorWordIsFavorite ? '♥' : '♡'}
+                  <button onClick={handleToggleFavoriteOnTutorPage} disabled={isLoadingExplanation} className={`p-2 rounded-full transition-colors duration-150 focus:outline-none disabled:opacity-60 hover:bg-red-100 dark:hover:bg-red-900/50 ${currentTutorWordIsFavorite ? 'text-red-500' : 'text-gray-400 hover:text-red-400'}`} title={currentTutorWordIsFavorite ? 'Unfavorite' : 'Favorite'}>
+                    <Heart size={20} fill={currentTutorWordIsFavorite ? 'currentColor' : 'none'}/>
                   </button>
                 </>
               )}
             </div>
             {currentStreak.score >= 2 && (
-              <div className="mt-2 text-sm font-semibold text-purple-600 dark:text-purple-400">
-                Streak: {currentStreak.score} (
+              <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600 text-sm font-medium text-purple-600 dark:text-purple-400">
+                <span className="font-semibold">Streak: {currentStreak.score}</span> (
                 {currentStreak.words.map((word, index) => (
                   <React.Fragment key={index}>
                     <button
                       onClick={() => handleReviewStreakWordClick(word)}
-                      className="hover:underline focus:outline-none disabled:no-underline disabled:text-gray-400"
-                      disabled={isLoadingExplanation || word === inputQuestion && isReviewingStreakWordRef.current} // Disable if currently reviewing this word
+                      className="hover:underline focus:outline-none disabled:no-underline disabled:text-gray-500 dark:disabled:text-gray-400 px-1"
+                      disabled={isLoadingExplanation || (word === inputQuestion && isReviewingStreakWordRef.current)}
                     >
                       {word}
                     </button>
-                    {index < currentStreak.words.length - 1 && ' → '}
+                    {index < currentStreak.words.length - 1 && <span className="mx-0.5">→</span>}
                   </React.Fragment>
                 ))}
                 )
@@ -802,12 +833,11 @@ const TinyTutorAppContent: React.FC = () => {
 
         {aiError && (<div className="mt-4 p-3 bg-red-100 dark:bg-red-800 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-200 rounded-md text-sm"><p><strong>Error:</strong> {aiError}</p></div>)}
         {isLoadingExplanation && !generatedContents[activeMode] && (<div className="mt-6 flex justify-center items-center h-32"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>)}
-        {generatedContents[activeMode] && (<div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">{activeMode === 'explain' ? (<HighlightedContentRenderer text={generatedContents.explain!} onWordClick={handleWordClickFromExplanation} />) : (<p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>)}</div>)}
+        {generatedContents[activeMode] && (<div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-750 shadow-inner"><div className="prose dark:prose-invert max-w-none">{activeMode === 'explain' ? (<HighlightedContentRenderer text={generatedContents.explain!} onWordClick={handleWordClickFromExplanation} />) : (<p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>)}</div></div>)}
       </main>
 
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} initialMode={authModalMode} />
       <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} profileData={profileData} isLoading={isLoadingProfile} error={profileError} onWordClick={handleWordClickFromProfile} onToggleFavorite={handleToggleFavoriteInProfile} />
-      {/* WordStreakHistoryModal is removed */}
     </div>
   );
 };

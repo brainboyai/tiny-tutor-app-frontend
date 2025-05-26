@@ -40,7 +40,7 @@ interface GeneratedContent {
   explain?: string;
   image?: string;
   fact?: string;
-  quiz?: string; // This will be the raw quiz string from backend
+  quiz?: string[]; // Expecting an array of quiz strings from backend
   deep?: string;
 }
 
@@ -74,9 +74,8 @@ interface Streak {
 
 type ProfileAccordionSection = 'explored' | 'favorites' | 'streaks' | null;
 
-// --- Quiz Specific Types ---
 interface QuizOption {
-  key: string; // e.g., "A", "B"
+  key: string;
   text: string;
 }
 interface ParsedQuiz {
@@ -424,64 +423,63 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
 
 // --- InteractiveQuiz Component ---
 interface InteractiveQuizProps {
-  quizText: string; // Raw quiz string from backend
+  quizText: string;
+  onLoadNextQuestion: () => void;
+  onQuestionAnswered: (isCorrect: boolean) => void; // New prop
+  canLoadNext: boolean;
+  questionNumber: number;
+  totalQuestionsInSet: number; // Total questions available in the current set for the word
 }
 
-const InteractiveQuiz: React.FC<InteractiveQuizProps> = ({ quizText }) => {
+const InteractiveQuiz: React.FC<InteractiveQuizProps> = ({ quizText, onLoadNextQuestion, onQuestionAnswered, canLoadNext, questionNumber, totalQuestionsInSet }) => {
   const [parsedQuiz, setParsedQuiz] = useState<ParsedQuiz | null>(null);
   const [selectedOptionKey, setSelectedOptionKey] = useState<string | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string>('');
 
   useEffect(() => {
-    // Reset state when quizText changes (new quiz loaded)
     setSelectedOptionKey(null);
     setIsAnswered(false);
     setFeedbackMessage('');
 
     const parseQuiz = (text: string): ParsedQuiz | null => {
-      if (!text) return null;
-      const lines = text.split('\n').map(line => line.trim()).filter(line => line);
-      
+      if (!text || typeof text !== 'string' || text.trim().length < 10 || !text.toLowerCase().includes('question:') || !text.toLowerCase().includes('correct:')) {
+        console.error("InteractiveQuiz: Invalid or incomplete quiz text received:", text);
+        return null;
+      }
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
       let question = '';
       const options: QuizOption[] = [];
       let correctAnswerKey = '';
-
-      const questionMatch = text.match(/Question:\s*(.*)/i);
-      if (questionMatch && questionMatch[1]) {
-        question = questionMatch[1].trim();
-      }
-
-      const optionRegex = /^([A-Za-z])\)\s*(.*)/;
+      const qLine = lines.find(line => line.toLowerCase().startsWith('question:'));
+      if (qLine) question = qLine.substring(qLine.indexOf(':') + 1).trim();
+      const optionRegex = /^([A-Da-d])\)\s*(.*)/;
       lines.forEach(line => {
         const optionMatch = line.match(optionRegex);
-        if (optionMatch && optionMatch[1] && optionMatch[2]) {
-          options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
-        }
+        if (optionMatch && optionMatch[1] && optionMatch[2]) options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
       });
-      
-      const correctMatch = text.match(/Correct:\s*([A-Za-z])\.?/i); // Handle optional period
-      if (correctMatch && correctMatch[1]) {
-        correctAnswerKey = correctMatch[1].toUpperCase();
+      const correctLine = lines.find(line => line.toLowerCase().startsWith('correct:'));
+      if (correctLine) {
+        const correctMatch = correctLine.match(/Correct:\s*([A-Da-d])\.?/i);
+        if (correctMatch && correctMatch[1]) correctAnswerKey = correctMatch[1].toUpperCase();
       }
-
-      if (question && options.length > 0 && correctAnswerKey) {
+      if (question && options.length >= 2 && correctAnswerKey && options.some(opt => opt.key === correctAnswerKey)) {
         return { question, options, correctAnswerKey };
       }
-      console.error("Failed to parse quiz string:", text);
-      return null; // Or throw an error, or return a default quiz structure
+      console.error("InteractiveQuiz: Failed to parse quiz string or insufficient data after initial checks:", text, {question, options, correctAnswerKey});
+      return null;
     };
-
     setParsedQuiz(parseQuiz(quizText));
   }, [quizText]);
 
   const handleOptionSelect = (optionKey: string) => {
     if (isAnswered || !parsedQuiz) return;
-
     setSelectedOptionKey(optionKey);
     setIsAnswered(true);
+    const isCorrect = optionKey === parsedQuiz.correctAnswerKey;
+    onQuestionAnswered(isCorrect); // Notify parent about the answer
 
-    if (optionKey === parsedQuiz.correctAnswerKey) {
+    if (isCorrect) {
       setFeedbackMessage('Correct Answer!');
     } else {
       const correctOption = parsedQuiz.options.find(opt => opt.key === parsedQuiz.correctAnswerKey);
@@ -490,48 +488,47 @@ const InteractiveQuiz: React.FC<InteractiveQuizProps> = ({ quizText }) => {
   };
 
   if (!parsedQuiz) {
-    return <p className="text-red-500 dark:text-red-400">Could not load quiz. The format might be incorrect.</p>;
+    return <p className="text-red-500 dark:text-red-400">Could not load quiz. The data might be missing or in an incorrect format.</p>;
   }
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{parsedQuiz.question}</h3>
+      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+        Quiz Question {questionNumber} of {totalQuestionsInSet}: {parsedQuiz.question}
+      </h3>
       <div className="space-y-2">
         {parsedQuiz.options.map((option) => {
           const isSelected = selectedOptionKey === option.key;
           const isCorrect = option.key === parsedQuiz.correctAnswerKey;
-          
           let buttonClass = "w-full text-left p-3 border rounded-md transition-all duration-150 flex justify-between items-center ";
           if (isAnswered) {
-            if (isCorrect) {
-              buttonClass += "bg-green-100 dark:bg-green-700 border-green-500 dark:border-green-400 text-green-700 dark:text-green-200";
-            } else if (isSelected && !isCorrect) {
-              buttonClass += "bg-red-100 dark:bg-red-700 border-red-500 dark:border-red-400 text-red-700 dark:text-red-200";
-            } else {
-              buttonClass += "bg-gray-100 dark:bg-gray-600 border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-300 cursor-not-allowed";
-            }
+            if (isCorrect) buttonClass += "bg-green-100 dark:bg-green-700 border-green-500 dark:border-green-400 text-green-700 dark:text-green-200 font-semibold";
+            else if (isSelected && !isCorrect) buttonClass += "bg-red-100 dark:bg-red-700 border-red-500 dark:border-red-400 text-red-700 dark:text-red-200";
+            else buttonClass += "bg-gray-100 dark:bg-gray-600 border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-300 cursor-not-allowed opacity-70";
           } else {
             buttonClass += "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500 hover:bg-indigo-50 dark:hover:bg-indigo-900 hover:border-indigo-300 dark:hover:border-indigo-700";
           }
-
           return (
-            <button
-              key={option.key}
-              onClick={() => handleOptionSelect(option.key)}
-              disabled={isAnswered}
-              className={buttonClass}
-            >
+            <button key={option.key} onClick={() => handleOptionSelect(option.key)} disabled={isAnswered} className={buttonClass}>
               <span>{option.key}) {option.text}</span>
-              {isAnswered && isCorrect && <span className="text-green-600 dark:text-green-300 text-xl">✓</span>}
-              {isAnswered && isSelected && !isCorrect && <span className="text-red-600 dark:text-red-300 text-xl">✗</span>}
+              {isAnswered && isCorrect && <span className="text-green-600 dark:text-green-300 text-xl ml-2">✓</span>}
+              {isAnswered && isSelected && !isCorrect && <span className="text-red-600 dark:text-red-300 text-xl ml-2">✗</span>}
             </button>
           );
         })}
       </div>
       {isAnswered && (
-        <p className={`mt-3 text-sm font-semibold ${selectedOptionKey === parsedQuiz.correctAnswerKey ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-          {feedbackMessage}
-        </p>
+        <div className="mt-3 text-center">
+            <p className={`text-sm font-semibold mb-3 ${selectedOptionKey === parsedQuiz.correctAnswerKey ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+            {feedbackMessage}
+            </p>
+            {canLoadNext && (
+            <button onClick={onLoadNextQuestion} className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">
+                Next Question ({questionNumber + 1} of {totalQuestionsInSet})
+            </button>
+            )}
+            {!canLoadNext && ( <p className="text-sm text-gray-600 dark:text-gray-400">You've completed all questions for this word!</p> )}
+        </div>
       )}
     </div>
   );
@@ -546,25 +543,29 @@ const TinyTutorAppContent: React.FC = () => {
   const [activeMode, setActiveMode] = useState<ContentMode>('explain');
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
-  
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-
   const [currentTutorWordIsFavorite, setCurrentTutorWordIsFavorite] = useState(false);
   const [currentStreak, setCurrentStreak] = useState<Streak>({ words: [], score: 0 });
-  
   const lastSubmittedQuestionRef = useRef<string | null>(null);
   const isReviewingStreakWordRef = useRef<boolean>(false);
+  
+  // State for multi-quiz feature & scoring
+  const [currentQuizDisplayIndex, setCurrentQuizDisplayIndex] = useState<number>(0); // 0-indexed for the current quiz in the set
+  const [quizSessionScores, setQuizSessionScores] = useState<boolean[]>([]); // Stores true/false for each answered quiz in the current set
 
-  const fetchProfileDataSilently = useCallback(async (force: boolean = false) => {
+  const resetQuizState = () => {
+    setCurrentQuizDisplayIndex(0);
+    setQuizSessionScores([]);
+  };
+
+  const fetchProfileDataSilently = useCallback(async (force: boolean = false) => { /* ... same ... */ 
     if (!user || (isLoadingProfile && !force)) return;
     if (!force && profileData && profileData.username === user.username) return;
-    console.log("Fetching profile data silently...");
     setIsLoadingProfile(true);
     try {
       const response = await fetch(`${API_BASE_URL}/profile`, { method: 'GET', headers: getAuthHeaders() });
@@ -572,426 +573,210 @@ const TinyTutorAppContent: React.FC = () => {
       if (!response.ok) throw new Error(data.error || 'Failed to fetch profile');
       setProfileData(data);
       setProfileError(null);
-    } catch (error: any) {
-      console.error('Silent profile fetch failed:', error);
-    } finally {
-      setIsLoadingProfile(false);
-    }
+    } catch (error: any) { console.error('Silent profile fetch failed:', error); } finally { setIsLoadingProfile(false); }
   }, [user, getAuthHeaders, isLoadingProfile, profileData]);
 
-  useEffect(() => {
+  useEffect(() => { /* ... same ... */ 
     if (user && (!profileData || profileData.username !== user.username)) {
         fetchProfileDataSilently(true);
     }
   }, [user, profileData, fetchProfileDataSilently]);
-
-  useEffect(() => {
+  useEffect(() => { /* ... same ... */ 
     if (user && showAuthModal) setShowAuthModal(false);
   }, [user, showAuthModal]);
-
-  useEffect(() => {
+  useEffect(() => { /* ... same ... */ 
     const wordForFavoriteCheck = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
     if (wordForFavoriteCheck && profileData?.explored_words_list) {
       const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === wordForFavoriteCheck.toLowerCase().trim());
       setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
-    } else {
-      setCurrentTutorWordIsFavorite(false);
-    }
+    } else { setCurrentTutorWordIsFavorite(false); }
   }, [inputQuestion, lastSubmittedQuestionRef.current, isReviewingStreakWordRef.current, profileData, activeMode]);
 
-
-  const handleEndStreak = useCallback(async (reason: string, streakToSave?: Streak) => {
+  const handleEndStreak = useCallback(async (reason: string, streakToSave?: Streak) => { /* ... same ... */ 
     const streak = streakToSave || currentStreak;
     console.log(`Streak end. Reason: ${reason}. Score: ${streak.score}, Words: ${streak.words.join(', ')}`);
-    
     if (user && streak.words.length > 0 && streak.score >= 2) {
       try {
-        const response = await fetch(`${API_BASE_URL}/save_streak`, {
-          method: 'POST',
-          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ words: streak.words, score: streak.score }),
-        });
+        const response = await fetch(`${API_BASE_URL}/save_streak`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ words: streak.words, score: streak.score }), });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to save streak');
-        
         setProfileData(prev => {
-          const newStreakEntry: Streak = { 
-            words: [...streak.words], score: streak.score, 
-            completed_at: new Date().toISOString(), id: result.streak_id || `temp-${Date.now()}` 
-          };
-          if (!prev) {
-            return { 
-              username: user.username, tier: user.tier, explored_words_count: 0, 
-              explored_words_list: [], favorite_words_list: [], 
-              streak_history: [newStreakEntry] 
-            };
-          }
+          const newStreakEntry: Streak = { words: [...streak.words], score: streak.score, completed_at: new Date().toISOString(), id: result.streak_id || `temp-${Date.now()}` };
+          if (!prev) { return { username: user.username, tier: user.tier, explored_words_count: 0, explored_words_list: [], favorite_words_list: [], streak_history: [newStreakEntry] }; }
           const existingHistory = Array.isArray(prev.streak_history) ? prev.streak_history : [];
           return { ...prev, streak_history: [newStreakEntry, ...existingHistory] };
         });
-      } catch (error) {
-        console.error('Error saving streak:', error);
-        setAiError(`Could not save streak: ${(error as Error).message}`);
-      }
+      } catch (error) { console.error('Error saving streak:', error); setAiError(`Could not save streak: ${(error as Error).message}`); }
     }
-     if (!streakToSave || (streakToSave.words.join(',') === currentStreak.words.join(',') && streakToSave.score === currentStreak.score)) {
-        setCurrentStreak({ words: [], score: 0 });
-    }
+     if (!streakToSave || (streakToSave.words.join(',') === currentStreak.words.join(',') && streakToSave.score === currentStreak.score)) { setCurrentStreak({ words: [], score: 0 }); }
     isReviewingStreakWordRef.current = false;
   }, [user, currentStreak, getAuthHeaders]);
 
-
-  const generateContent = async (
-    question: string,
-    mode: ContentMode,
-    options: {
-        isNewPrimaryFocus?: boolean;
-        triggeredBy?: 'generate_btn' | 'refresh_btn' | 'sub_topic_click' | 'profile_click' | 'mode_toggle' | 'review_click' | 'past_streak_click';
-        isReview?: boolean;
-        preserveCurrentStreak?: boolean; 
-    } = {}
-  ) => {
-    const {
-        isNewPrimaryFocus = false,
-        triggeredBy = 'mode_toggle',
-        isReview = false,
-        preserveCurrentStreak = false, 
-    } = options;
+  const generateContent = async ( question: string, mode: ContentMode, options: { isNewPrimaryFocus?: boolean; triggeredBy?: 'generate_btn' | 'refresh_btn' | 'sub_topic_click' | 'profile_click' | 'mode_toggle' | 'review_click' | 'past_streak_click'; isReview?: boolean; preserveCurrentStreak?: boolean; } = {} ) => { 
+    const { isNewPrimaryFocus = false, triggeredBy = 'mode_toggle', isReview = false, preserveCurrentStreak = false, } = options;
     const forceRefresh = triggeredBy === 'refresh_btn';
-
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); setAiError("Please login to generate content."); return; }
     if (!question.trim()) { setAiError("Please enter a word or concept."); return; }
-
     setIsLoadingExplanation(true); setAiError(null);
     isReviewingStreakWordRef.current = isReview;
-
     if (isNewPrimaryFocus) {
         if (!preserveCurrentStreak && (lastSubmittedQuestionRef.current?.toLowerCase() !== question.toLowerCase() || forceRefresh) && !isReview) {
             await handleEndStreak(forceRefresh ? `Refresh for ${question}` : `New primary focus: ${question}`, currentStreak);
         }
         lastSubmittedQuestionRef.current = question;
-        // For quiz mode, we want to keep the old quiz visible until the new one loads,
-        // so don't clear generatedContents if the mode is quiz and it's not a force refresh.
-        // For other modes, or if it's a force refresh for quiz, clear it.
-        if (mode !== 'quiz' || forceRefresh) {
-          setGeneratedContents({});
-        }
+        setGeneratedContents({}); 
+        resetQuizState(); // Reset quiz state for new primary focus
     }
-    
     try {
-      const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, mode, force_refresh: forceRefresh }),
-      });
+      const response = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ question, mode, force_refresh: forceRefresh }), });
       const data = await response.json(); 
-
       if (!response.ok) {
         if (data.full_cache) setGeneratedContents(data.full_cache);
-        // else setGeneratedContents({}); // Don't clear if quiz and not forceRefresh
-        else if (mode !== 'quiz' || forceRefresh) setGeneratedContents({});
+        else setGeneratedContents({});
         throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
-
       setGeneratedContents(data.full_cache || {});
       setActiveMode(mode);
-      
-      if (isNewPrimaryFocus && mode === 'explain' && data.source === 'generated') {
-          fetchProfileDataSilently(true);
-      } else if (user && !profileData && !isLoadingProfile) {
-          fetchProfileDataSilently();
+      if (mode === 'quiz' && data.full_cache?.quiz) { 
+        resetQuizState(); // Reset for newly fetched quiz set
       }
+      if (isNewPrimaryFocus && mode === 'explain' && data.source === 'generated') { fetchProfileDataSilently(true); } 
+      else if (user && !profileData && !isLoadingProfile) { fetchProfileDataSilently(); }
       const wordForFavoriteCheck = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
       if (wordForFavoriteCheck && profileData?.explored_words_list) {
         const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === wordForFavoriteCheck.toLowerCase().trim());
         setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
       }
-
-    } catch (error: any) {
-      console.error(`Error generating ${mode} for ${question}:`, error);
-      setAiError(error.message || `Failed to generate ${mode}.`);
-    } finally {
-      setIsLoadingExplanation(false);
-    }
+    } catch (error: any) { console.error(`Error generating ${mode} for ${question}:`, error); setAiError(error.message || `Failed to generate ${mode}.`); } 
+    finally { setIsLoadingExplanation(false); }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { setInputQuestion(e.target.value); };
-
-  const handleGenerateClick = () => {
+  const handleGenerateClick = () => { 
     if (inputQuestion.trim() && user) {
       isReviewingStreakWordRef.current = false;
       handleEndStreak("Generate Explanation button clicked", currentStreak);
       setCurrentStreak({ words: [inputQuestion.trim()], score: 1 });
+      resetQuizState();
       generateContent(inputQuestion.trim(), 'explain', { isNewPrimaryFocus: true, triggeredBy: 'generate_btn' });
     } else if (!user) { setAuthModalMode('login'); setShowAuthModal(true); }
   };
-
-  const handleRefreshContent = () => {
+  const handleRefreshContent = () => { 
     const questionToRefresh = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
     if (questionToRefresh && activeMode && user) {
-      if (isReviewingStreakWordRef.current) {
-         console.log(`Refreshing reviewed word: ${questionToRefresh} for mode ${activeMode}`);
-         generateContent(questionToRefresh, activeMode, { 
-            isNewPrimaryFocus: false, 
-            triggeredBy: 'refresh_btn', 
-            isReview: true, 
-            preserveCurrentStreak: true 
-        });
-      } else {
-        console.log(`Refreshing primary word: ${questionToRefresh} for mode ${activeMode}`);
-        generateContent(questionToRefresh, activeMode, { 
-            isNewPrimaryFocus: true, 
-            triggeredBy: 'refresh_btn',
-            preserveCurrentStreak: true 
-        });
-      }
-    } else if (!user) { 
-        setAuthModalMode('login'); 
-        setShowAuthModal(true); 
-    }
+      if (activeMode === 'quiz') { resetQuizState(); } // Reset quiz state on refresh
+      if (isReviewingStreakWordRef.current) { generateContent(questionToRefresh, activeMode, { isNewPrimaryFocus: false, triggeredBy: 'refresh_btn', isReview: true, preserveCurrentStreak: true }); } 
+      else { generateContent(questionToRefresh, activeMode, { isNewPrimaryFocus: true, triggeredBy: 'refresh_btn', preserveCurrentStreak: true }); }
+    } else if (!user) { setAuthModalMode('login'); setShowAuthModal(true); }
   };
   
-  const handleModeToggle = (newMode: ContentMode) => {
+  const handleModeToggle = (newMode: ContentMode) => { 
     const currentQuestionForModes = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
-
-    if (!currentQuestionForModes || !user) { 
-      if (!user) { setAuthModalMode('login'); setShowAuthModal(true); } 
-      return; 
-    }
-    
+    if (!currentQuestionForModes || !user) { if (!user) { setAuthModalMode('login'); setShowAuthModal(true); } return; }
     setAiError(null); 
+    const oldActiveMode = activeMode;
     setActiveMode(newMode);
-
-    if (!generatedContents[newMode] || (isReviewingStreakWordRef.current && (!generatedContents[newMode]))) {
-      console.log(`Content for '${newMode}' for "${currentQuestionForModes}" not in local cache. Fetching... (Review Mode: ${isReviewingStreakWordRef.current})`);
-      generateContent(currentQuestionForModes, newMode, { 
-        isNewPrimaryFocus: false,
-        triggeredBy: 'mode_toggle', 
-        preserveCurrentStreak: true,
-        isReview: isReviewingStreakWordRef.current
-      });
-    } else { 
-      console.log(`Content for '${newMode}' for "${currentQuestionForModes}" already in local cache. Displaying. (Review Mode: ${isReviewingStreakWordRef.current})`);
+    if (newMode === 'quiz' && oldActiveMode !== 'quiz') { 
+        resetQuizState(); // Reset quiz state when switching to quiz mode
+    }
+    const contentIsMissing = newMode === 'quiz' ? !generatedContents.quiz : !generatedContents[newMode];
+    const reviewContentMissing = isReviewingStreakWordRef.current && contentIsMissing;
+    if (contentIsMissing || reviewContentMissing) {
+      generateContent(currentQuestionForModes, newMode, { isNewPrimaryFocus: false, triggeredBy: 'mode_toggle', preserveCurrentStreak: true, isReview: isReviewingStreakWordRef.current });
+    } else if (newMode === 'quiz' && generatedContents.quiz && oldActiveMode !== 'quiz') {
+        resetQuizState(); // Also reset if data is there but we just switched
     }
   };
   
-  const handleWordClickFromExplanation = (clickedWord: string) => {
+  const handleQuizQuestionAnswered = (isCorrect: boolean) => {
+    setQuizSessionScores(prevScores => [...prevScores, isCorrect]);
+  };
+
+  const handleLoadNextQuizQuestion = () => {
+    if (generatedContents.quiz && currentQuizDisplayIndex < generatedContents.quiz.length - 1) {
+        setCurrentQuizDisplayIndex(prevIndex => prevIndex + 1);
+    }
+  };
+
+  const handleWordClickFromExplanation = (clickedWord: string) => { 
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
-    
     const currentFocusWord = lastSubmittedQuestionRef.current;
-    
     isReviewingStreakWordRef.current = false;
     setInputQuestion(clickedWord);
-
+    resetQuizState(); 
     if (!currentFocusWord) {
         handleEndStreak("Sub-topic click with no prior focus (edge case)", currentStreak);
         setCurrentStreak({ words: [clickedWord], score: 1 });
         generateContent(clickedWord, 'explain', { isNewPrimaryFocus: true, triggeredBy: 'sub_topic_click' });
         return;
     }
-
-    setCurrentStreak(prevStreak => {
-        if (prevStreak.words.length === 0 || 
-            (prevStreak.words.length > 0 && prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== currentFocusWord.toLowerCase())) {
-            if (prevStreak.score >= 2) {
-                handleEndStreak(`Starting new streak branch from ${currentFocusWord}. Old streak was ${prevStreak.words.join('->')}`, prevStreak);
-            }
-            console.log(`Streak: Starting new branch from ${currentFocusWord} -> ${clickedWord}`);
+    setCurrentStreak(prevStreak => { 
+        if (prevStreak.words.length === 0 || (prevStreak.words.length > 0 && prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== currentFocusWord.toLowerCase())) {
+            if (prevStreak.score >= 2) { handleEndStreak(`Starting new streak branch from ${currentFocusWord}. Old streak was ${prevStreak.words.join('->')}`, prevStreak); }
             return { words: [currentFocusWord, clickedWord], score: 2 };
-        } else { 
-            if (prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== clickedWord.toLowerCase()) {
-                console.log(`Streak: Continuing ${prevStreak.words.join(' -> ')} -> ${clickedWord}`);
-                return { words: [...prevStreak.words, clickedWord], score: prevStreak.score + 1 };
-            }
-        }
+        } else { if (prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== clickedWord.toLowerCase()) { return { words: [...prevStreak.words, clickedWord], score: prevStreak.score + 1 }; } }
         return prevStreak;
     });
-    
-    generateContent(clickedWord, 'explain', { 
-        isNewPrimaryFocus: true, 
-        triggeredBy: 'sub_topic_click', 
-        preserveCurrentStreak: true 
-    });
+    generateContent(clickedWord, 'explain', { isNewPrimaryFocus: true, triggeredBy: 'sub_topic_click', preserveCurrentStreak: true });
   };
-
-  const handleWordClickFromProfile = (word: string, cachedContentComplete?: Partial<GeneratedContent>) => {
+  const handleWordClickFromProfile = (word: string, cachedContentComplete?: Partial<GeneratedContent>) => { 
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
     isReviewingStreakWordRef.current = false;
     setInputQuestion(word); setAiError(null);
-    
+    resetQuizState();
     handleEndStreak("Clicked word from profile", currentStreak);
     setCurrentStreak({ words: [word], score: 1 });
-
     const initialModeToLoad = cachedContentComplete?.explain ? 'explain' : (Object.keys(cachedContentComplete || {})[0] as ContentMode | undefined) || 'explain';
-
     if (cachedContentComplete && Object.keys(cachedContentComplete).length > 0) {
       setGeneratedContents(cachedContentComplete);
       setActiveMode(initialModeToLoad);
       generateContent(word, initialModeToLoad, {isNewPrimaryFocus: true, triggeredBy: 'profile_click', preserveCurrentStreak: true}); 
-    } else {
-      generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'profile_click', preserveCurrentStreak: true});
-    }
+    } else { generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'profile_click', preserveCurrentStreak: true}); }
     setShowProfileModal(false);
   };
-
-  const handleReviewStreakWordClick = (wordFromStreak: string) => {
+  const handleReviewStreakWordClick = (wordFromStreak: string) => { 
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
-    
-    if (isReviewingStreakWordRef.current && inputQuestion.toLowerCase() === wordFromStreak.toLowerCase()) {
-        console.log("Already reviewing this word from streak:", wordFromStreak);
-        return;
-    }
-    
+    if (isReviewingStreakWordRef.current && inputQuestion.toLowerCase() === wordFromStreak.toLowerCase()) return;
     setInputQuestion(wordFromStreak);
     isReviewingStreakWordRef.current = true;
     setAiError(null);
-    
+    resetQuizState();
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === wordFromStreak.toLowerCase().trim());
     const cachedContentsForWord = wordData?.generated_content_cache;
-
     if (cachedContentsForWord && Object.keys(cachedContentsForWord).length > 0) {
-        console.log(`Reviewing '${wordFromStreak}' from streak. Loading from local component cache (generatedContents).`);
         setGeneratedContents(cachedContentsForWord); 
         const initialMode = cachedContentsForWord.explain ? 'explain' : (Object.keys(cachedContentsForWord)[0] as ContentMode | undefined) || 'explain';
         setActiveMode(initialMode);
         setCurrentTutorWordIsFavorite(wordData?.is_favorite || false);
-    } else {
-      console.warn(`No local cache for streak review word: ${wordFromStreak}. Fetching 'explain'.`);
-      generateContent(wordFromStreak, 'explain', { 
-        isNewPrimaryFocus: false,
-        isReview: true,
-        triggeredBy: 'review_click', 
-        preserveCurrentStreak: true
-      });
-    }
+        if (initialMode === 'quiz' && cachedContentsForWord.quiz) { resetQuizState(); }
+    } else { generateContent(wordFromStreak, 'explain', { isNewPrimaryFocus: false, isReview: true, triggeredBy: 'review_click', preserveCurrentStreak: true }); }
   };
-
-  const handlePastStreakWordClicked = (word: string) => {
+  const handlePastStreakWordClicked = (word: string) => { 
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
-    
     setInputQuestion(word);
     isReviewingStreakWordRef.current = false;
     setAiError(null);
-
+    resetQuizState();
     handleEndStreak("Clicked word from past streak history", currentStreak);
     setCurrentStreak({ words: [word], score: 1 });
-
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === word.toLowerCase().trim());
     const initialModeToLoad = wordData?.generated_content_cache?.explain ? 'explain' : (Object.keys(wordData?.generated_content_cache || {})[0] as ContentMode | undefined) || 'explain';
-
     if (wordData?.generated_content_cache && Object.keys(wordData.generated_content_cache).length > 0) {
         setGeneratedContents(wordData.generated_content_cache);
         setActiveMode(initialModeToLoad);
         generateContent(word, initialModeToLoad, {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click', preserveCurrentStreak: true});
-    } else {
-        generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click', preserveCurrentStreak: true});
-    }
+    } else { generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click', preserveCurrentStreak: true}); }
   };
-
-
-  const handleOpenProfileModal = async () => {
-    if (!user) { setShowAuthModal(true); setAuthModalMode('login'); return; }
-    setShowProfileModal(true);
-    fetchProfileDataSilently(true);
-  };
+  const handleOpenProfileModal = async () => { /* ... same ... */ if (!user) { setShowAuthModal(true); setAuthModalMode('login'); return; } setShowProfileModal(true); fetchProfileDataSilently(true); };
+  const handleToggleFavoriteOnTutorPage = async () => { /* ... same ... */ const wordToToggle = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current; if (!wordToToggle || !user) return; const newFavoriteStatus = !currentTutorWordIsFavorite; setCurrentTutorWordIsFavorite(newFavoriteStatus); setProfileData(prev => { if (!prev) return null; const listToUpdate = prev.explored_words_list.map(w => w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: newFavoriteStatus } : w ); return { ...prev, explored_words_list: listToUpdate, favorite_words_list: listToUpdate.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); try { const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ word: wordToToggle, is_favorite: newFavoriteStatus }), }); const data = await response.json(); if (!response.ok) { setCurrentTutorWordIsFavorite(!newFavoriteStatus); setProfileData(prev => { if (!prev) return null; const listToRevert = prev.explored_words_list.map(w => w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: !newFavoriteStatus } : w ); return { ...prev, explored_words_list: listToRevert, favorite_words_list: listToRevert.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); throw new Error(data.error || 'Failed to toggle favorite'); } } catch (error) { console.error("Error toggling favorite:", error); setAiError(`Could not toggle favorite for "${wordToToggle}": ${(error as Error).message}`); } };
+  const handleToggleFavoriteInProfile = async (wordId: string, isCurrentlyFavorite: boolean) => { /* ... same ... */ const wordEntry = profileData?.explored_words_list.find(w => w.id === wordId); if (!wordEntry || !user) return; const originalWord = wordEntry.word; const newFavoriteStatus = !isCurrentlyFavorite; setProfileData(prev => { if (!prev) return null; const updatedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: newFavoriteStatus } : w); return { ...prev, explored_words_list: updatedList, favorite_words_list: updatedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); const currentTutorDisplayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current; if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) { setCurrentTutorWordIsFavorite(newFavoriteStatus); } try { const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ word: originalWord, is_favorite: newFavoriteStatus }), }); const data = await response.json(); if (!response.ok) {  setProfileData(prev => { if (!prev) return null; const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w); return { ...prev, explored_words_list: revertedList, favorite_words_list: revertedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) { setCurrentTutorWordIsFavorite(isCurrentlyFavorite); } throw new Error(data.error || 'Failed to toggle favorite in profile'); } } catch (error) { console.error("Error toggling favorite from profile:", error); setAiError(`Failed to update favorite for "${originalWord}" from profile: ${(error as Error).message}`); } };
   
-  const handleToggleFavoriteOnTutorPage = async () => {
-    const wordToToggle = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
-    if (!wordToToggle || !user) return;
+  // Calculate quiz score
+  const correctQuizAnswers = quizSessionScores.filter(score => score).length;
+  const totalQuizzesInSet = generatedContents.quiz?.length || 0;
+  const quizScoreDisplay = totalQuizzesInSet > 0 ? `Score: ${correctQuizAnswers}/${quizSessionScores.length} (out of ${totalQuizzesInSet} available)` : '';
 
-    const newFavoriteStatus = !currentTutorWordIsFavorite;
-    setCurrentTutorWordIsFavorite(newFavoriteStatus);
 
-    setProfileData(prev => {
-        if (!prev) return null;
-        const listToUpdate = prev.explored_words_list.map(w => 
-            w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: newFavoriteStatus } : w
-        );
-        return { 
-            ...prev, 
-            explored_words_list: listToUpdate,
-            favorite_words_list: listToUpdate.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
-        };
-    });
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word: wordToToggle, is_favorite: newFavoriteStatus }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setCurrentTutorWordIsFavorite(!newFavoriteStatus); 
-        setProfileData(prev => {
-            if (!prev) return null;
-            const listToRevert = prev.explored_words_list.map(w => 
-                w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: !newFavoriteStatus } : w
-            );
-            return { 
-                ...prev, 
-                explored_words_list: listToRevert,
-                favorite_words_list: listToRevert.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
-            };
-        });
-        throw new Error(data.error || 'Failed to toggle favorite');
-      }
-    } catch (error) {
-      console.error("Error toggling favorite:", error);
-      setAiError(`Could not toggle favorite for "${wordToToggle}": ${(error as Error).message}`);
-    }
-  };
-  
-  const handleToggleFavoriteInProfile = async (wordId: string, isCurrentlyFavorite: boolean) => {
-    const wordEntry = profileData?.explored_words_list.find(w => w.id === wordId);
-    if (!wordEntry || !user) return;
-    
-    const originalWord = wordEntry.word;
-    const newFavoriteStatus = !isCurrentlyFavorite;
-
-    setProfileData(prev => {
-        if (!prev) return null;
-        const updatedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: newFavoriteStatus } : w);
-        return { 
-            ...prev, 
-            explored_words_list: updatedList, 
-            favorite_words_list: updatedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
-        };
-    });
-    
-    const currentTutorDisplayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
-    if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) {
-      setCurrentTutorWordIsFavorite(newFavoriteStatus);
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word: originalWord, is_favorite: newFavoriteStatus }),
-      });
-      const data = await response.json();
-      if (!response.ok) { 
-        setProfileData(prev => { 
-            if (!prev) return null;
-            const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w);
-            return { 
-                ...prev, 
-                explored_words_list: revertedList, 
-                favorite_words_list: revertedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
-            };
-        });
-        if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) {
-          setCurrentTutorWordIsFavorite(isCurrentlyFavorite);
-        }
-        throw new Error(data.error || 'Failed to toggle favorite in profile');
-      }
-    } catch (error) {
-      console.error("Error toggling favorite from profile:", error);
-       setAiError(`Failed to update favorite for "${originalWord}" from profile: ${(error as Error).message}`);
-    }
-  };
-  
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center p-4 transition-colors duration-300">
       <header className="w-full max-w-3xl mb-6 flex justify-between items-center">
@@ -1001,7 +786,7 @@ const TinyTutorAppContent: React.FC = () => {
             <>
               <span className="text-sm hidden sm:inline">Welcome, {user.username}!</span>
               <button onClick={handleOpenProfileModal} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Profile</button>
-              <button onClick={() => { handleEndStreak("Logout", currentStreak); logout(); setGeneratedContents({}); setInputQuestion(''); lastSubmittedQuestionRef.current = null; setAiError(null); setCurrentStreak({ words: [], score: 0 }); isReviewingStreakWordRef.current = false; setProfileData(null); }} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800">Logout</button>
+              <button onClick={() => { handleEndStreak("Logout", currentStreak); logout(); setGeneratedContents({}); setInputQuestion(''); lastSubmittedQuestionRef.current = null; setAiError(null); setCurrentStreak({ words: [], score: 0 }); isReviewingStreakWordRef.current = false; setProfileData(null); resetQuizState();}} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800">Logout</button>
             </>
           ) : (
             <button onClick={() => { setAuthModalMode('login'); setShowAuthModal(true); }} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Login / Sign Up</button>
@@ -1038,7 +823,8 @@ const TinyTutorAppContent: React.FC = () => {
                   {mode.charAt(0).toUpperCase() + mode.slice(1)}
                 </button>
               ))}
-              {(isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current) && generatedContents[activeMode] && (
+              {(isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current) && 
+               (activeMode === 'quiz' ? generatedContents.quiz?.[currentQuizDisplayIndex] : generatedContents[activeMode]) && (
                 <button onClick={handleToggleFavoriteOnTutorPage} disabled={isLoadingExplanation} className={`p-1.5 rounded-full transition-colors duration-150 focus:outline-none disabled:opacity-50 ${currentTutorWordIsFavorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-400'}`} title={currentTutorWordIsFavorite ? 'Unfavorite' : 'Favorite'}>
                     {currentTutorWordIsFavorite ? '♥' : '♡'}
                 </button>
@@ -1062,6 +848,12 @@ const TinyTutorAppContent: React.FC = () => {
                 )
               </div>
             )}
+            {/* Quiz Score Display */}
+            {activeMode === 'quiz' && totalQuizzesInSet > 0 && (
+                <div className="mt-2 text-sm font-medium text-blue-600 dark:text-blue-400">
+                    {quizScoreDisplay}
+                </div>
+            )}
           </div>
         )}
 
@@ -1069,50 +861,64 @@ const TinyTutorAppContent: React.FC = () => {
         
         {(() => {
           const displayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
-          if (isLoadingExplanation && (!generatedContents[activeMode] || (activeMode === 'quiz' && !generatedContents.quiz)) && displayWord) { // Adjusted loading for quiz
+          const currentQuizTextToShow = (activeMode === 'quiz' && generatedContents.quiz && Array.isArray(generatedContents.quiz) && generatedContents.quiz.length > currentQuizDisplayIndex) 
+                                        ? generatedContents.quiz[currentQuizDisplayIndex] 
+                                        : null;
+
+          if (isLoadingExplanation && (!currentQuizTextToShow && activeMode ==='quiz') && 
+              !(activeMode !== 'quiz' && generatedContents[activeMode]) && 
+              displayWord) {
             return <div className="mt-6 flex justify-center items-center h-32"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>;
           }
 
-          if (displayWord && generatedContents[activeMode] && !isLoadingExplanation) {
-            if (activeMode === 'quiz' && generatedContents.quiz) {
-              return (
-                <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
-                  <InteractiveQuiz quizText={generatedContents.quiz} />
-                </div>
-              );
-            }
-            if (activeMode === 'explain' && generatedContents.explain) {
-              return (
-                <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-grow mr-2">
-                      <HighlightedContentRenderer text={generatedContents.explain} onWordClick={handleWordClickFromExplanation} />
-                    </div>
-                    <button 
-                      onClick={handleRefreshContent} 
-                      disabled={isLoadingExplanation} 
-                      className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-50 flex-shrink-0"
-                      title="Refresh explanation"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-                      </svg>
-                    </button>
+          if (displayWord && !isLoadingExplanation) {
+            if (activeMode === 'quiz') {
+              if (currentQuizTextToShow) {
+                return (
+                  <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+                    <InteractiveQuiz
+                      key={`${displayWord}-quiz-${currentQuizDisplayIndex}`}
+                      quizText={currentQuizTextToShow}
+                      onLoadNextQuestion={handleLoadNextQuizQuestion}
+                      onQuestionAnswered={handleQuizQuestionAnswered}
+                      canLoadNext={generatedContents.quiz ? currentQuizDisplayIndex < generatedContents.quiz.length - 1 : false}
+                      questionNumber={currentQuizDisplayIndex + 1}
+                      totalQuestionsInSet={generatedContents.quiz?.length || 0}
+                    />
                   </div>
-                </div>
-              );
+                );
+              } else if (generatedContents.quiz === null || (Array.isArray(generatedContents.quiz) && generatedContents.quiz.length === 0)){
+                 return ( <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+                    <p className="text-gray-500 dark:text-gray-400">No quiz questions available for "{displayWord}".</p>
+                </div>);
+              } else if (isLoadingExplanation && !currentQuizTextToShow) { 
+                return <div className="mt-6 flex justify-center items-center h-32"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>;
+              }
+            } else if (generatedContents[activeMode]) {
+              if (activeMode === 'explain' && generatedContents.explain) {
+                return (
+                  <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-grow mr-2">
+                        <HighlightedContentRenderer text={generatedContents.explain} onWordClick={handleWordClickFromExplanation} />
+                      </div>
+                      {(isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current) && generatedContents.explain && (
+                        <button onClick={handleRefreshContent} disabled={isLoadingExplanation} className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-50 flex-shrink-0" title="Refresh explanation" >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div> );
+              }
+              return ( <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>
+                </div> );
             }
-            // Fallback for other modes (fact, image, deep)
-            return (
-              <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
-                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>
-              </div>
-            );
           }
-          if (displayWord && !isLoadingExplanation && !generatedContents[activeMode]) {
+          if (displayWord && !isLoadingExplanation && !generatedContents[activeMode] && !(activeMode === 'quiz' && generatedContents.quiz && Array.isArray(generatedContents.quiz) && generatedContents.quiz.length > 0) ) {
             return (
               <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
-                <p className="text-gray-500 dark:text-gray-400">Content for '{activeMode}' mode is not available for "{displayWord}". Click the '{activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}' tab again to generate it.</p>
+                <p className="text-gray-500 dark:text-gray-400">Content for '{activeMode}' mode is not available for "{displayWord}".</p>
               </div>
             );
           }

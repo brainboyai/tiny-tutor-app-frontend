@@ -238,8 +238,8 @@ const HighlightedContentRenderer: React.FC<HighlightedContentRendererProps> = ({
   );
 };
 
-// --- AuthModal Component (Assume same as previous correct version) ---
-// ... (AuthModal code from v8/v10)
+// --- AuthModal Component ---
+// ... (Assume AuthModal is the same as previous correct version)
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -308,8 +308,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'l
 
 
 // --- ProfileModal Components ---
-// ... (Assume ProfileModal, CompactWordListItem, AccordionSection are same as v8/v10,
-//      but ensure onPastStreakWordClick is passed to ProfileModal)
+// ... (ProfileModal, CompactWordListItem, AccordionSection same as v10/previous correct version)
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -318,45 +317,28 @@ interface ProfileModalProps {
   error: string | null;
   onWordClick: (word: string, cachedContentComplete?: Partial<GeneratedContent>) => void; // For explored/favorites
   onToggleFavorite: (wordId: string, currentIsFavorite: boolean) => Promise<void>;
-  onPastStreakWordClick: (word: string) => void; // New prop for clicking words in streak history
+  onPastStreakWordClick: (word: string) => void; 
 }
 
 const CompactWordListItem: React.FC<{ item: ExploredWord; onWordClick: () => void; onToggleFavorite: (event?: React.MouseEvent) => Promise<void>; isFavoriteList?: boolean;}> = ({ item, onWordClick, onToggleFavorite, isFavoriteList }) => {
-    // ... same as v8
   const [isToggling, setIsToggling] = useState(false);
-
   const handleToggleFavoriteInternal = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsToggling(true);
-    try {
-      await onToggleFavorite(e);
-    } catch (error) {
-      console.error("Failed to toggle favorite from item:", error);
-    } finally {
-      setIsToggling(false);
-    }
+    e.stopPropagation(); setIsToggling(true);
+    try { await onToggleFavorite(e); } catch (error) { console.error("Failed to toggle favorite from item:", error); }
+    finally { setIsToggling(false); }
   };
-
   return (
     <li className={`p-3 mb-2 rounded-lg shadow hover:shadow-md transition-all duration-200 cursor-pointer flex justify-between items-center ${isFavoriteList ? 'bg-yellow-50 dark:bg-yellow-900 border-l-4 border-yellow-400' : 'bg-gray-50 dark:bg-gray-700'}`} onClick={onWordClick}>
-      <div>
-        <span className="font-semibold text-indigo-600 dark:text-indigo-400 block text-md">{item.word}</span>
-        <span className="text-xs text-gray-500 dark:text-gray-400">Last seen: {new Date(item.last_explored_at).toLocaleDateString()}</span>
-      </div>
+      <div><span className="font-semibold text-indigo-600 dark:text-indigo-400 block text-md">{item.word}</span><span className="text-xs text-gray-500 dark:text-gray-400">Last seen: {new Date(item.last_explored_at).toLocaleDateString()}</span></div>
       <button onClick={handleToggleFavoriteInternal} disabled={isToggling} className={`p-1 rounded-full transition-colors duration-150 focus:outline-none ${item.is_favorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-400'} ${isToggling ? 'opacity-50 cursor-not-allowed' : ''}`} aria-label={item.is_favorite ? 'Unfavorite' : 'Favorite'}>{item.is_favorite ? '♥' : '♡'}</button>
     </li>
   );
 };
 
 const AccordionSection: React.FC<{title: string; count: number; isActive: boolean; onClick: () => void; children: React.ReactNode;}> = ({ title, count, isActive, onClick, children }) => (
-    // ... same as v8
   <div className="border-b border-gray-200 dark:border-gray-700">
-    <button
-      onClick={onClick}
-      className="w-full flex justify-between items-center py-4 px-2 text-left text-lg font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none"
-    >
-      <span>{title} ({count})</span>
-      <span className={`transform transition-transform duration-200 ${isActive ? 'rotate-180' : 'rotate-0'}`}>▼</span>
+    <button onClick={onClick} className="w-full flex justify-between items-center py-4 px-2 text-left text-lg font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none">
+      <span>{title} ({count})</span><span className={`transform transition-transform duration-200 ${isActive ? 'rotate-180' : 'rotate-0'}`}>▼</span>
     </button>
     {isActive && <div className="p-4 bg-gray-50 dark:bg-gray-750 max-h-[40vh] overflow-y-auto">{children}</div>}
   </div>
@@ -364,77 +346,35 @@ const AccordionSection: React.FC<{title: string; count: number; isActive: boolea
 
 const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileData, isLoading, error, onWordClick, onToggleFavorite, onPastStreakWordClick }) => {
   const [activeSection, setActiveSection] = useState<ProfileAccordionSection>(null);
-
-  useEffect(() => {
-    if (isOpen && profileData) setActiveSection('explored');
-    else if (!isOpen) setActiveSection(null);
-  }, [isOpen, profileData]);
-
+  useEffect(() => { if (isOpen && profileData) setActiveSection('explored'); else if (!isOpen) setActiveSection(null); }, [isOpen, profileData]);
   if (!isOpen) return null;
-
-  const handleWordClickInProfileLocal = (wordItem: ExploredWord) => {
-    onWordClick(wordItem.word, wordItem.generated_content_cache);
-    onClose(); // Ensure modal closes
-  };
-
+  const handleWordClickInProfileLocal = (wordItem: ExploredWord) => { onWordClick(wordItem.word, wordItem.generated_content_cache); onClose(); };
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-40">
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Profile</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl" aria-label="Close">&times;</button>
-        </div>
+        <div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">User Profile</h2><button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl" aria-label="Close">&times;</button></div>
         {isLoading && <p className="text-center text-gray-600 dark:text-gray-300 py-4">Loading profile...</p>}
         {error && <p className="text-center text-red-500 dark:text-red-400 py-4">Error: {error}</p>}
         {profileData && (
           <div className="flex-grow overflow-y-auto">
-            <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900 rounded-lg shadow">
-              <p className="text-lg"><span className="font-semibold text-indigo-700 dark:text-indigo-300">Username:</span> {profileData.username}</p>
-              <p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Tier:</span> {profileData.tier}</p>
-              <p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Words Explored:</span> {profileData.explored_words_list?.length || 0}</p>
-            </div>
+            <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900 rounded-lg shadow"><p className="text-lg"><span className="font-semibold text-indigo-700 dark:text-indigo-300">Username:</span> {profileData.username}</p><p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Tier:</span> {profileData.tier}</p><p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Words Explored:</span> {profileData.explored_words_list?.length || 0}</p></div>
             <AccordionSection title="All Explored Words" count={profileData.explored_words_list?.length || 0} isActive={activeSection === 'explored'} onClick={() => setActiveSection(activeSection === 'explored' ? null : 'explored')}>
-              {(profileData.explored_words_list && profileData.explored_words_list.length > 0) ? (
-                <ul className="space-y-1 pr-1">
-                  {profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfileLocal(item)} onToggleFavorite={() => onToggleFavorite(item.id, item.is_favorite)} />))}
-                </ul>
-              ) : (<p className="text-gray-500 dark:text-gray-400">No words explored yet.</p>)}
+              {(profileData.explored_words_list && profileData.explored_words_list.length > 0) ? (<ul className="space-y-1 pr-1">{profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfileLocal(item)} onToggleFavorite={() => onToggleFavorite(item.id, item.is_favorite)} />))}</ul>) : (<p className="text-gray-500 dark:text-gray-400">No words explored yet.</p>)}
             </AccordionSection>
             <AccordionSection title="Favorite Words" count={profileData.favorite_words_list?.length || 0} isActive={activeSection === 'favorites'} onClick={() => setActiveSection(activeSection === 'favorites' ? null : 'favorites')}>
-              {(profileData.favorite_words_list && profileData.favorite_words_list.length > 0) ? (
-                <ul className="space-y-1 pr-1">
-                  {profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfileLocal(item)} onToggleFavorite={() => onToggleFavorite(item.id, item.is_favorite)} isFavoriteList={true} />))}
-                </ul>
-              ) : (<p className="text-gray-500 dark:text-gray-400">No favorite words yet.</p>)}
+              {(profileData.favorite_words_list && profileData.favorite_words_list.length > 0) ? (<ul className="space-y-1 pr-1">{profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfileLocal(item)} onToggleFavorite={() => onToggleFavorite(item.id, item.is_favorite)} isFavoriteList={true} />))}</ul>) : (<p className="text-gray-500 dark:text-gray-400">No favorite words yet.</p>)}
             </AccordionSection>
             <AccordionSection title="Streak History" count={profileData.streak_history?.length || 0} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
               {(profileData.streak_history && profileData.streak_history.length > 0) ? (
-                <ul className="space-y-2 pr-1">
-                  {[...(profileData.streak_history || [])].sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()).map((streak) => (
+                <ul className="space-y-2 pr-1">{[...(profileData.streak_history || [])].sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()).map((streak) => (
                     <li key={streak.id || streak.words.join('-')} className="p-3 bg-gray-100 dark:bg-gray-600 rounded-md shadow">
                       <p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-300">
-                        Words: {streak.words.map((word, idx) => (
-                          <React.Fragment key={`${streak.id}-word-${idx}-${word}`}> {/* More unique key */}
-                            <button
-                              onClick={() => onPastStreakWordClick(word)} // Use the passed prop
-                              className="text-blue-500 hover:text-blue-700 hover:underline disabled:text-gray-400"
-                              // disabled={isLoadingExplanation} // isLoadingExplanation is not in scope here, consider passing if needed
-                            >
-                              {word}
-                            </button>
-                            {idx < streak.words.length - 1 && ' → '}
-                          </React.Fragment>
-                        ))}
-                      </p>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Words: {streak.words.map((word, idx) => (<React.Fragment key={`${streak.id}-word-${idx}-${word}`}><button onClick={() => onPastStreakWordClick(word)} className="text-blue-500 hover:text-blue-700 hover:underline disabled:text-gray-400">{word}</button>{idx < streak.words.length - 1 && ' → '}</React.Fragment>))}</p>
                       {streak.completed_at && (<p className="text-xs text-gray-500 dark:text-gray-400">Completed: {new Date(streak.completed_at).toLocaleString()}</p>)}
-                    </li>
-                  ))}
-                </ul>
+                    </li>))}</ul>
               ) : (<p className="text-gray-500 dark:text-gray-400">No completed streaks yet.</p>)}
             </AccordionSection>
-          </div>
-        )}
+          </div>)}
       </div>
     </div>
   );
@@ -546,16 +486,18 @@ const TinyTutorAppContent: React.FC = () => {
     question: string,
     mode: ContentMode,
     options: {
-        isNewPrimaryFocus?: boolean; // True if this call establishes a new primary word focus
+        isNewPrimaryFocus?: boolean;
         triggeredBy?: 'generate_btn' | 'refresh_btn' | 'sub_topic_click' | 'profile_click' | 'mode_toggle' | 'review_click' | 'past_streak_click';
         isReview?: boolean;
-        // No longer need isContinuingStreak, it's implicit by how currentStreak is managed by callers
+        // Flag to indicate if the current streak state should be preserved by this call
+        preserveCurrentStreak?: boolean; 
     } = {}
   ) => {
     const {
         isNewPrimaryFocus = false,
         triggeredBy = 'mode_toggle',
         isReview = false,
+        preserveCurrentStreak = false, // Default to false
     } = options;
     const forceRefresh = triggeredBy === 'refresh_btn';
 
@@ -565,18 +507,14 @@ const TinyTutorAppContent: React.FC = () => {
     setIsLoadingExplanation(true); setAiError(null);
     isReviewingStreakWordRef.current = isReview;
 
-    // If this action establishes a new primary focus word
     if (isNewPrimaryFocus) {
-        // End the previous streak if the word is changing OR if it's a refresh action,
-        // but NOT if we are just reviewing a word from the live streak display.
-        if ((lastSubmittedQuestionRef.current !== question || forceRefresh) && !isReview) {
+        // End previous streak if word changes OR it's a refresh, AND we are NOT preserving the current streak
+        if (!preserveCurrentStreak && (lastSubmittedQuestionRef.current !== question || forceRefresh) && !isReview) {
             await handleEndStreak(forceRefresh ? `Refresh for ${question}` : `New primary focus: ${question}`, currentStreak);
         }
-        lastSubmittedQuestionRef.current = question; // Set the new focus word
-        setGeneratedContents({}); // Clear content from any previous word
+        lastSubmittedQuestionRef.current = question;
+        setGeneratedContents({});
     }
-    // Streak starting/continuation is now handled by the calling functions directly modifying `currentStreak`
-    // *before* calling `generateContent`. `generateContent` is now "dumber" about streaks.
     
     try {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -595,12 +533,11 @@ const TinyTutorAppContent: React.FC = () => {
       setGeneratedContents(data.full_cache || {});
       setActiveMode(mode);
       
-      // If new 'explain' content was generated for a word, refresh profile to update explored words
       if (isNewPrimaryFocus && mode === 'explain' && data.source === 'generated') {
           fetchProfileDataSilently(true);
-      } else if (user && !profileData && !isLoadingProfile) { // Initial profile load
+      } else if (user && !profileData && !isLoadingProfile) {
           fetchProfileDataSilently();
-      } else if (profileData && lastSubmittedQuestionRef.current) { // Update favorite status
+      } else if (profileData && lastSubmittedQuestionRef.current) {
         const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === lastSubmittedQuestionRef.current!.toLowerCase().trim());
         setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
       }
@@ -612,14 +549,13 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
-  const handleInputChange = () => { /* ... same ... */ };
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... same ... */ };
 
   const handleGenerateClick = () => { // Main "Generate Explanation" button
     if (inputQuestion.trim() && user) {
       isReviewingStreakWordRef.current = false;
-      // This IS a new primary focus, will end old streak, and start a new one of score 1.
-      handleEndStreak("Generate Explanation button clicked", currentStreak); // End any ongoing streak first
-      setCurrentStreak({ words: [inputQuestion.trim()], score: 1 });
+      handleEndStreak("Generate Explanation button clicked", currentStreak); // End any ongoing streak
+      setCurrentStreak({ words: [inputQuestion.trim()], score: 1 }); // Start new streak
       generateContent(inputQuestion.trim(), 'explain', { isNewPrimaryFocus: true, triggeredBy: 'generate_btn' });
     } else if (!user) { setAuthModalMode('login'); setShowAuthModal(true); }
   };
@@ -628,7 +564,8 @@ const TinyTutorAppContent: React.FC = () => {
     const questionToRefresh = lastSubmittedQuestionRef.current;
     if (questionToRefresh && activeMode && user) {
       isReviewingStreakWordRef.current = false;
-      // This IS a new primary focus (for the purpose of ending streak), but won't start a new streak of 1.
+      // Refreshing ends the current streak for this word and re-evaluates.
+      // No new streak of 1 is started here by default; generateContent will end the old one.
       generateContent(questionToRefresh, activeMode, { isNewPrimaryFocus: true, triggeredBy: 'refresh_btn' });
     } else if (!user) { setAuthModalMode('login'); setShowAuthModal(true); }
   };
@@ -639,39 +576,51 @@ const TinyTutorAppContent: React.FC = () => {
     setAiError(null); setActiveMode(newMode);
     if (!generatedContents[newMode]) {
       console.log(`Content for '${newMode}' for "${currentQuestionForModes}" not in local cache. Fetching...`);
-      // Not a new primary focus for streak purposes.
-      generateContent(currentQuestionForModes, newMode, { triggeredBy: 'mode_toggle' });
+      // isNewPrimaryFocus = false, because we are getting content for the *current* focus word.
+      // preserveCurrentStreak = true, because toggling modes should not break the streak.
+      generateContent(currentQuestionForModes, newMode, { isNewPrimaryFocus: false, triggeredBy: 'mode_toggle', preserveCurrentStreak: true });
     } else { console.log(`Content for '${newMode}' for "${currentQuestionForModes}" already in local cache. Displaying.`); }
   };
   
-  // REVISED: handleWordClickFromExplanation
+  // REVISED: handleWordClickFromExplanation (Live Streak Chaining)
   const handleWordClickFromExplanation = (clickedWord: string) => {
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
     
-    // This action CONTINUES the current streak or starts a 2-word streak if current was empty.
-    setCurrentStreak(prevStreak => {
-        const currentFocusWord = lastSubmittedQuestionRef.current;
-        if (!currentFocusWord) return { words: [inputQuestion.trim(), clickedWord], score: 2 }; // Should have a focus word
+    const currentFocusWord = lastSubmittedQuestionRef.current;
+    if (!currentFocusWord) { // Should not happen if an explanation is displayed
+        console.error("Cannot continue streak: no current focus word (lastSubmittedQuestionRef is null)");
+        // Fallback: treat as new word generation
+        handleEndStreak("Sub-topic click with no prior focus", currentStreak);
+        setCurrentStreak({ words: [clickedWord], score: 1 });
+        generateContent(clickedWord, 'explain', { isNewPrimaryFocus: true, triggeredBy: 'sub_topic_click' });
+        return;
+    }
 
-        if (prevStreak.words.length === 0 || prevStreak.words[0] !== currentFocusWord) {
-            // If current streak is empty or its root doesn't match the word we're clicking from,
-            // it means we're starting a new chain from currentFocusWord.
-            if (prevStreak.score >=2) handleEndStreak("Starting new chain from sub-topic of a different root", prevStreak);
+    // Logic to continue or start a new chain based on currentFocusWord
+    setCurrentStreak(prevStreak => {
+        // If current streak is empty OR its root word is different from the word we're clicking FROM
+        if (prevStreak.words.length === 0 || prevStreak.words[0].toLowerCase() !== currentFocusWord.toLowerCase()) {
+            if (prevStreak.score >= 2) { // End the *actual* previous streak if it was valid
+                handleEndStreak("Starting new chain from sub-topic of a different root", prevStreak);
+            }
+            console.log(`Starting new streak chain from ${currentFocusWord} -> ${clickedWord}`);
             return { words: [currentFocusWord, clickedWord], score: 2 };
         }
         // Else, continue the current streak if the word is not already the last one
-        if (prevStreak.words[prevStreak.words.length -1].toLowerCase() !== clickedWord.toLowerCase()) {
+        if (prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== clickedWord.toLowerCase()) {
+            console.log(`Continuing streak: ${prevStreak.words.join(' -> ')} -> ${clickedWord}`);
             return { words: [...prevStreak.words, clickedWord], score: prevStreak.score + 1 };
         }
-        return prevStreak; // No change if word is already last in streak (or same as current)
+        console.log("Clicked word is already last in streak or same as current focus, no change to streak words/score.");
+        return prevStreak; // No change if word is already last in streak
     });
     
     isReviewingStreakWordRef.current = false;
     setInputQuestion(clickedWord); // Update input field
 
     // This call IS establishing the clickedWord as the new primary focus.
-    // The streak logic within generateContent (ending previous different streaks) will apply.
-    generateContent(clickedWord, 'explain', { isNewPrimaryFocus: true, triggeredBy: 'sub_topic_click' });
+    // preserveCurrentStreak = true tells generateContent not to mess with the streak we just updated.
+    generateContent(clickedWord, 'explain', { isNewPrimaryFocus: true, triggeredBy: 'sub_topic_click', preserveCurrentStreak: true });
   };
 
   // REVISED: handleWordClickFromProfile (Starts new streak of 1)
@@ -680,8 +629,8 @@ const TinyTutorAppContent: React.FC = () => {
     isReviewingStreakWordRef.current = false;
     setInputQuestion(word); setAiError(null);
     
-    handleEndStreak("Clicked word from profile", currentStreak); // End any ongoing streak
-    setCurrentStreak({ words: [word], score: 1 }); // Start new streak of 1
+    handleEndStreak("Clicked word from profile", currentStreak);
+    setCurrentStreak({ words: [word], score: 1 });
 
     if (cachedContentComplete && Object.keys(cachedContentComplete).length > 0) {
       lastSubmittedQuestionRef.current = word;
@@ -690,7 +639,6 @@ const TinyTutorAppContent: React.FC = () => {
       setActiveMode(initialMode);
       // Call generateContent to ensure profile data (like favorite status) is synced if needed,
       // even though we're primarily using the cache here.
-      // isNewPrimaryFocus is true because this word is now the focus.
       generateContent(word, initialMode, {isNewPrimaryFocus: true, triggeredBy: 'profile_click'});
     } else {
       generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'profile_click'});
@@ -702,28 +650,31 @@ const TinyTutorAppContent: React.FC = () => {
   const handleReviewStreakWordClick = (wordFromStreak: string) => {
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
     setInputQuestion(wordFromStreak);
-    isReviewingStreakWordRef.current = true; // Set that we are in review mode
+    isReviewingStreakWordRef.current = true;
     setAiError(null);
     
-    lastSubmittedQuestionRef.current = wordFromStreak; // This word is now the focus
+    // DO NOT change lastSubmittedQuestionRef here, as it's a review of a word *within* the current streak context.
+    // The primary focus (lastSubmittedQuestionRef) should remain the last word of the live streak.
+    // However, we need to load content for `wordFromStreak`.
 
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === wordFromStreak.toLowerCase().trim());
     const cachedContentsForWord = wordData?.generated_content_cache;
 
     if (cachedContentsForWord && Object.keys(cachedContentsForWord).length > 0) {
-        setGeneratedContents(cachedContentsForWord);
-        const initialMode = cachedContentsForWord.explain
-                            ? 'explain'
-                            : (Object.keys(cachedContentsForWord)[0] as ContentMode | undefined) || 'explain';
-        setActiveMode(initialMode);
+        // Temporarily set generatedContents for display, but don't change the main context
+        setGeneratedContents(cachedContentsForWord); // This will show the reviewed word's content
+        const initialMode = cachedContentsForWord.explain ? 'explain' : (Object.keys(cachedContentsForWord)[0] as ContentMode | undefined) || 'explain';
+        setActiveMode(initialMode); // Show explain mode for the reviewed word
     } else {
       console.warn(`No cache for streak review word: ${wordFromStreak}. Fetching 'explain'.`);
-      // Fetch content for this word. It's a review, so isNewPrimaryFocus = false.
-      generateContent(wordFromStreak, 'explain', { isNewPrimaryFocus: false, isReview: true, triggeredBy: 'review_click' });
+      // Fetch content for this word. It's a review.
+      // isNewPrimaryFocus = false, because the main focus (lastSubmittedQuestionRef) doesn't change.
+      // preserveCurrentStreak = true, because reviewing should not break the streak.
+      generateContent(wordFromStreak, 'explain', { isNewPrimaryFocus: false, isReview: true, triggeredBy: 'review_click', preserveCurrentStreak: true });
     }
   };
 
-  // NEW: handlePastStreakWordClicked (Clicking words in PAST streak history from profile)
+  // NEW: handlePastStreakWordClicked (Clicking words from PAST streak history from profile)
   const handlePastStreakWordClicked = (word: string) => {
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
     
@@ -731,17 +682,15 @@ const TinyTutorAppContent: React.FC = () => {
     isReviewingStreakWordRef.current = false;
     setAiError(null);
 
-    handleEndStreak("Clicked word from past streak history", currentStreak); // End any ongoing live streak
-    setCurrentStreak({ words: [word], score: 1 }); // Start a new live streak
+    handleEndStreak("Clicked word from past streak history", currentStreak);
+    setCurrentStreak({ words: [word], score: 1 });
 
-    // Attempt to load from profileData first, then generate if needed
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === word.toLowerCase().trim());
     if (wordData?.generated_content_cache && Object.keys(wordData.generated_content_cache).length > 0) {
-        lastSubmittedQuestionRef.current = word;
+        lastSubmittedQuestionRef.current = word; // Set new focus
         setGeneratedContents(wordData.generated_content_cache);
         const initialMode = wordData.generated_content_cache.explain ? 'explain' : (Object.keys(wordData.generated_content_cache)[0] as ContentMode | undefined) || 'explain';
         setActiveMode(initialMode);
-        // Call generateContent to ensure all states are consistent, even if using cache
         generateContent(word, initialMode, {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click'});
     } else {
         generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click'});
@@ -749,9 +698,9 @@ const TinyTutorAppContent: React.FC = () => {
   };
 
 
-  const handleOpenProfileModal = async () => { /* ... same as v8 ... */ };
-  const handleToggleFavoriteOnTutorPage = async () => { /* ... same as v8 ... */ };
-  const handleToggleFavoriteInProfile = async (_wordIdSanitized: string, _currentIsFavorite: boolean) => { /* ... same as v8 ... */ };
+  const handleOpenProfileModal = async () => { /* ... same as v10 ... */ };
+  const handleToggleFavoriteOnTutorPage = async () => { /* ... same as v10 ... */ };
+  const handleToggleFavoriteInProfile = async (wordIdSanitized: string, currentIsFavorite: boolean) => { /* ... same as v10 ... */ };
   
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center p-4 transition-colors duration-300">
@@ -814,7 +763,7 @@ const TinyTutorAppContent: React.FC = () => {
               <div className="mt-2 text-sm font-semibold text-purple-600 dark:text-purple-400">
                 Streak: {currentStreak.score} (
                 {currentStreak.words.map((word, index) => (
-                  <React.Fragment key={`live-streak-${index}-${word}`}> {/* More unique key */}
+                  <React.Fragment key={`live-streak-${index}-${word}`}>
                     <button
                       onClick={() => handleReviewStreakWordClick(word)}
                       className="hover:underline focus:outline-none disabled:no-underline disabled:text-gray-400"
@@ -863,7 +812,7 @@ const TinyTutorAppContent: React.FC = () => {
         error={profileError}
         onWordClick={handleWordClickFromProfile}
         onToggleFavorite={handleToggleFavoriteInProfile}
-        onPastStreakWordClick={handlePastStreakWordClicked} // Pass the new handler
+        onPastStreakWordClick={handlePastStreakWordClicked}
       />
     </div>
   );

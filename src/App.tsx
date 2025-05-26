@@ -612,7 +612,7 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... same ... */ };
+  const handleInputChange = () => { /* ... same ... */ };
 
   const handleGenerateClick = () => { // Main "Generate Explanation" button
     if (inputQuestion.trim() && user) {
@@ -751,7 +751,7 @@ const TinyTutorAppContent: React.FC = () => {
 
   const handleOpenProfileModal = async () => { /* ... same as v8 ... */ };
   const handleToggleFavoriteOnTutorPage = async () => { /* ... same as v8 ... */ };
-  const handleToggleFavoriteInProfile = async (wordIdSanitized: string, currentIsFavorite: boolean) => { /* ... same as v8 ... */ };
+  const handleToggleFavoriteInProfile = async (_wordIdSanitized: string, _currentIsFavorite: boolean) => { /* ... same as v8 ... */ };
   
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center p-4 transition-colors duration-300">

@@ -432,7 +432,7 @@ const TinyTutorAppContent: React.FC = () => {
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileError] = useState<string | null>(null);
 
   const [currentTutorWordIsFavorite, setCurrentTutorWordIsFavorite] = useState(false);
   const [currentStreak, setCurrentStreak] = useState<Streak>({ words: [], score: 0 });

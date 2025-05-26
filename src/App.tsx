@@ -31,7 +31,7 @@ interface AuthContextType {
   authError: string | null;
   setAuthError: (error: string | null) => void;
   login: (usernameOrEmailInput: string, passwordInput: string) => Promise<void>;
-  signup: (usernameInput: string, emailInput: string, passwordInput: string) => Promise<boolean>; // Returns true on success
+  signup: (usernameInput: string, emailInput: string, passwordInput: string) => Promise<boolean>;
   logout: () => void;
   getAuthHeaders: () => Record<string, string>;
 }
@@ -40,7 +40,7 @@ interface GeneratedContent {
   explain?: string;
   image?: string;
   fact?: string;
-  quiz?: string;
+  quiz?: string; // This will be the raw quiz string from backend
   deep?: string;
 }
 
@@ -73,6 +73,17 @@ interface Streak {
 }
 
 type ProfileAccordionSection = 'explored' | 'favorites' | 'streaks' | null;
+
+// --- Quiz Specific Types ---
+interface QuizOption {
+  key: string; // e.g., "A", "B"
+  text: string;
+}
+interface ParsedQuiz {
+  question: string;
+  options: QuizOption[];
+  correctAnswerKey: string;
+}
 
 
 // --- Auth Context ---
@@ -172,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       setAuthError(null);
       console.log('Signup successful! User should now login.');
-      return true; // Indicate success
+      return true;
     } catch (error: any) {
       console.error('Signup failed:', error);
        if (error instanceof TypeError && error.message === "Failed to fetch") {
@@ -180,7 +191,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       } else {
         setAuthError(error.message || 'Signup failed. Please try again.');
       }
-      return false; // Indicate failure
+      return false;
     } finally {
       setAuthLoadingGlobal(false);
     }
@@ -411,6 +422,121 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
   );
 };
 
+// --- InteractiveQuiz Component ---
+interface InteractiveQuizProps {
+  quizText: string; // Raw quiz string from backend
+}
+
+const InteractiveQuiz: React.FC<InteractiveQuizProps> = ({ quizText }) => {
+  const [parsedQuiz, setParsedQuiz] = useState<ParsedQuiz | null>(null);
+  const [selectedOptionKey, setSelectedOptionKey] = useState<string | null>(null);
+  const [isAnswered, setIsAnswered] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<string>('');
+
+  useEffect(() => {
+    // Reset state when quizText changes (new quiz loaded)
+    setSelectedOptionKey(null);
+    setIsAnswered(false);
+    setFeedbackMessage('');
+
+    const parseQuiz = (text: string): ParsedQuiz | null => {
+      if (!text) return null;
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+      
+      let question = '';
+      const options: QuizOption[] = [];
+      let correctAnswerKey = '';
+
+      const questionMatch = text.match(/Question:\s*(.*)/i);
+      if (questionMatch && questionMatch[1]) {
+        question = questionMatch[1].trim();
+      }
+
+      const optionRegex = /^([A-Za-z])\)\s*(.*)/;
+      lines.forEach(line => {
+        const optionMatch = line.match(optionRegex);
+        if (optionMatch && optionMatch[1] && optionMatch[2]) {
+          options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
+        }
+      });
+      
+      const correctMatch = text.match(/Correct:\s*([A-Za-z])\.?/i); // Handle optional period
+      if (correctMatch && correctMatch[1]) {
+        correctAnswerKey = correctMatch[1].toUpperCase();
+      }
+
+      if (question && options.length > 0 && correctAnswerKey) {
+        return { question, options, correctAnswerKey };
+      }
+      console.error("Failed to parse quiz string:", text);
+      return null; // Or throw an error, or return a default quiz structure
+    };
+
+    setParsedQuiz(parseQuiz(quizText));
+  }, [quizText]);
+
+  const handleOptionSelect = (optionKey: string) => {
+    if (isAnswered || !parsedQuiz) return;
+
+    setSelectedOptionKey(optionKey);
+    setIsAnswered(true);
+
+    if (optionKey === parsedQuiz.correctAnswerKey) {
+      setFeedbackMessage('Correct Answer!');
+    } else {
+      const correctOption = parsedQuiz.options.find(opt => opt.key === parsedQuiz.correctAnswerKey);
+      setFeedbackMessage(`Wrong Answer. The correct answer was ${parsedQuiz.correctAnswerKey}) ${correctOption?.text || ''}`);
+    }
+  };
+
+  if (!parsedQuiz) {
+    return <p className="text-red-500 dark:text-red-400">Could not load quiz. The format might be incorrect.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{parsedQuiz.question}</h3>
+      <div className="space-y-2">
+        {parsedQuiz.options.map((option) => {
+          const isSelected = selectedOptionKey === option.key;
+          const isCorrect = option.key === parsedQuiz.correctAnswerKey;
+          
+          let buttonClass = "w-full text-left p-3 border rounded-md transition-all duration-150 flex justify-between items-center ";
+          if (isAnswered) {
+            if (isCorrect) {
+              buttonClass += "bg-green-100 dark:bg-green-700 border-green-500 dark:border-green-400 text-green-700 dark:text-green-200";
+            } else if (isSelected && !isCorrect) {
+              buttonClass += "bg-red-100 dark:bg-red-700 border-red-500 dark:border-red-400 text-red-700 dark:text-red-200";
+            } else {
+              buttonClass += "bg-gray-100 dark:bg-gray-600 border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-300 cursor-not-allowed";
+            }
+          } else {
+            buttonClass += "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500 hover:bg-indigo-50 dark:hover:bg-indigo-900 hover:border-indigo-300 dark:hover:border-indigo-700";
+          }
+
+          return (
+            <button
+              key={option.key}
+              onClick={() => handleOptionSelect(option.key)}
+              disabled={isAnswered}
+              className={buttonClass}
+            >
+              <span>{option.key}) {option.text}</span>
+              {isAnswered && isCorrect && <span className="text-green-600 dark:text-green-300 text-xl">✓</span>}
+              {isAnswered && isSelected && !isCorrect && <span className="text-red-600 dark:text-red-300 text-xl">✗</span>}
+            </button>
+          );
+        })}
+      </div>
+      {isAnswered && (
+        <p className={`mt-3 text-sm font-semibold ${selectedOptionKey === parsedQuiz.correctAnswerKey ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+          {feedbackMessage}
+        </p>
+      )}
+    </div>
+  );
+};
+
 
 // --- TinyTutorAppContent Component (Main Tutor View) ---
 const TinyTutorAppContent: React.FC = () => {
@@ -540,12 +666,16 @@ const TinyTutorAppContent: React.FC = () => {
     isReviewingStreakWordRef.current = isReview;
 
     if (isNewPrimaryFocus) {
-        // Only end streak if preserveCurrentStreak is false, it's not a review, AND focus is changing or forced
         if (!preserveCurrentStreak && (lastSubmittedQuestionRef.current?.toLowerCase() !== question.toLowerCase() || forceRefresh) && !isReview) {
             await handleEndStreak(forceRefresh ? `Refresh for ${question}` : `New primary focus: ${question}`, currentStreak);
         }
         lastSubmittedQuestionRef.current = question;
-        setGeneratedContents({});
+        // For quiz mode, we want to keep the old quiz visible until the new one loads,
+        // so don't clear generatedContents if the mode is quiz and it's not a force refresh.
+        // For other modes, or if it's a force refresh for quiz, clear it.
+        if (mode !== 'quiz' || forceRefresh) {
+          setGeneratedContents({});
+        }
     }
     
     try {
@@ -558,7 +688,8 @@ const TinyTutorAppContent: React.FC = () => {
 
       if (!response.ok) {
         if (data.full_cache) setGeneratedContents(data.full_cache);
-        else setGeneratedContents({});
+        // else setGeneratedContents({}); // Don't clear if quiz and not forceRefresh
+        else if (mode !== 'quiz' || forceRefresh) setGeneratedContents({});
         throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
@@ -696,10 +827,8 @@ const TinyTutorAppContent: React.FC = () => {
     if (cachedContentComplete && Object.keys(cachedContentComplete).length > 0) {
       setGeneratedContents(cachedContentComplete);
       setActiveMode(initialModeToLoad);
-      // *** MODIFICATION START: Add preserveCurrentStreak: true ***
       generateContent(word, initialModeToLoad, {isNewPrimaryFocus: true, triggeredBy: 'profile_click', preserveCurrentStreak: true}); 
     } else {
-      // *** MODIFICATION START: Add preserveCurrentStreak: true ***
       generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'profile_click', preserveCurrentStreak: true});
     }
     setShowProfileModal(false);
@@ -753,10 +882,8 @@ const TinyTutorAppContent: React.FC = () => {
     if (wordData?.generated_content_cache && Object.keys(wordData.generated_content_cache).length > 0) {
         setGeneratedContents(wordData.generated_content_cache);
         setActiveMode(initialModeToLoad);
-        // *** MODIFICATION START: Add preserveCurrentStreak: true ***
         generateContent(word, initialModeToLoad, {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click', preserveCurrentStreak: true});
     } else {
-        // *** MODIFICATION START: Add preserveCurrentStreak: true ***
         generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click', preserveCurrentStreak: true});
     }
   };
@@ -911,7 +1038,6 @@ const TinyTutorAppContent: React.FC = () => {
                   {mode.charAt(0).toUpperCase() + mode.slice(1)}
                 </button>
               ))}
-              {/* Favorite Button - appears if there's a focus word and content is loaded */}
               {(isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current) && generatedContents[activeMode] && (
                 <button onClick={handleToggleFavoriteOnTutorPage} disabled={isLoadingExplanation} className={`p-1.5 rounded-full transition-colors duration-150 focus:outline-none disabled:opacity-50 ${currentTutorWordIsFavorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-400'}`} title={currentTutorWordIsFavorite ? 'Unfavorite' : 'Favorite'}>
                     {currentTutorWordIsFavorite ? '♥' : '♡'}
@@ -943,33 +1069,43 @@ const TinyTutorAppContent: React.FC = () => {
         
         {(() => {
           const displayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
-          if (isLoadingExplanation && !generatedContents[activeMode] && displayWord) {
+          if (isLoadingExplanation && (!generatedContents[activeMode] || (activeMode === 'quiz' && !generatedContents.quiz)) && displayWord) { // Adjusted loading for quiz
             return <div className="mt-6 flex justify-center items-center h-32"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>;
           }
+
           if (displayWord && generatedContents[activeMode] && !isLoadingExplanation) {
+            if (activeMode === 'quiz' && generatedContents.quiz) {
+              return (
+                <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+                  <InteractiveQuiz quizText={generatedContents.quiz} />
+                </div>
+              );
+            }
+            if (activeMode === 'explain' && generatedContents.explain) {
+              return (
+                <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex-grow mr-2">
+                      <HighlightedContentRenderer text={generatedContents.explain} onWordClick={handleWordClickFromExplanation} />
+                    </div>
+                    <button 
+                      onClick={handleRefreshContent} 
+                      disabled={isLoadingExplanation} 
+                      className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-50 flex-shrink-0"
+                      title="Refresh explanation"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            // Fallback for other modes (fact, image, deep)
             return (
               <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
-                {activeMode === 'explain' && generatedContents.explain ? (
-                  <>
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-grow mr-2"> {/* Added mr-2 for spacing */}
-                        <HighlightedContentRenderer text={generatedContents.explain} onWordClick={handleWordClickFromExplanation} />
-                      </div>
-                      <button 
-                        onClick={handleRefreshContent} 
-                        disabled={isLoadingExplanation} 
-                        className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-50 flex-shrink-0"
-                        title="Refresh explanation"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-                        </svg>
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>
-                )}
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>
               </div>
             );
           }

@@ -60,7 +60,7 @@ interface ProfileData {
   explored_words_count: number;
   explored_words_list: ExploredWord[];
   favorite_words_list: ExploredWord[];
-  streak_history: Streak[]; // Ensure this is always an array
+  streak_history: Streak[];
 }
 
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
@@ -128,10 +128,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           password: passwordInput,
         }),
       });
-      const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: "Login failed with status: " + response.status }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
+      const data = await response.json();
       localStorage.setItem('tinyTutorToken', data.token);
       const decodedToken = jwtDecode<DecodedToken>(data.token);
       setUser({
@@ -142,7 +143,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setAuthError(null);
     } catch (error: any) {
       console.error('Login failed:', error);
-      setAuthError(error.message || 'Login failed. Please try again.');
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
+        setAuthError("Failed to connect to the server. Please check your internet connection or try again later.");
+      } else {
+        setAuthError(error.message || 'Login failed. Please try again.');
+      }
     } finally {
       setAuthLoadingGlobal(false);
     }
@@ -161,15 +166,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           password: passwordInput,
         }),
       });
-      const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: "Signup failed with status: " + response.status }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
       setAuthError(null);
       alert('Signup successful! Please login.');
     } catch (error: any) {
       console.error('Signup failed:', error);
-      setAuthError(error.message || 'Signup failed. Please try again.');
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
+        setAuthError("Failed to connect to the server. Please check your internet connection or try again later.");
+      } else {
+        setAuthError(error.message || 'Signup failed. Please try again.');
+      }
     } finally {
       setAuthLoadingGlobal(false);
     }
@@ -380,23 +389,22 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
             <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900 rounded-lg shadow">
               <p className="text-lg"><span className="font-semibold text-indigo-700 dark:text-indigo-300">Username:</span> {profileData.username}</p>
               <p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Tier:</span> {profileData.tier}</p>
-              <p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Words Explored:</span> {profileData.explored_words_count}</p>
+              <p className="text-sm text-indigo-600 dark:text-indigo-400"><span className="font-semibold">Words Explored:</span> {profileData.explored_words_list?.length || 0}</p> {/* Use list length */}
             </div>
-            <AccordionSection title="All Explored Words" count={profileData.explored_words_list.length} isActive={activeSection === 'explored'} onClick={() => setActiveSection(activeSection === 'explored' ? null : 'explored')}>
-              {profileData.explored_words_list.length > 0 ? (
+            <AccordionSection title="All Explored Words" count={profileData.explored_words_list?.length || 0} isActive={activeSection === 'explored'} onClick={() => setActiveSection(activeSection === 'explored' ? null : 'explored')}>
+              {(profileData.explored_words_list && profileData.explored_words_list.length > 0) ? (
                 <ul className="space-y-1 pr-1">
                   {profileData.explored_words_list.map((item) => (<CompactWordListItem key={`explored-${item.id}`} item={item} onWordClick={() => handleWordClickInProfileLocal(item)} onToggleFavorite={() => onToggleFavorite(item.id, item.is_favorite)} />))}
                 </ul>
               ) : (<p className="text-gray-500 dark:text-gray-400">No words explored yet.</p>)}
             </AccordionSection>
-            <AccordionSection title="Favorite Words" count={profileData.favorite_words_list.length} isActive={activeSection === 'favorites'} onClick={() => setActiveSection(activeSection === 'favorites' ? null : 'favorites')}>
-              {profileData.favorite_words_list.length > 0 ? (
+            <AccordionSection title="Favorite Words" count={profileData.favorite_words_list?.length || 0} isActive={activeSection === 'favorites'} onClick={() => setActiveSection(activeSection === 'favorites' ? null : 'favorites')}>
+              {(profileData.favorite_words_list && profileData.favorite_words_list.length > 0) ? (
                 <ul className="space-y-1 pr-1">
                   {profileData.favorite_words_list.map((item) => (<CompactWordListItem key={`fav-${item.id}`} item={item} onWordClick={() => handleWordClickInProfileLocal(item)} onToggleFavorite={() => onToggleFavorite(item.id, item.is_favorite)} isFavoriteList={true} />))}
                 </ul>
               ) : (<p className="text-gray-500 dark:text-gray-400">No favorite words yet.</p>)}
             </AccordionSection>
-            {/* MODIFIED: Ensure streak_history is always an array before accessing length or sorting */}
             <AccordionSection title="Streak History" count={profileData.streak_history?.length || 0} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
               {(profileData.streak_history && profileData.streak_history.length > 0) ? (
                 <ul className="space-y-2 pr-1">
@@ -432,7 +440,7 @@ const TinyTutorAppContent: React.FC = () => {
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
-  const [profileError] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const [currentTutorWordIsFavorite, setCurrentTutorWordIsFavorite] = useState(false);
   const [currentStreak, setCurrentStreak] = useState<Streak>({ words: [], score: 0 });
@@ -440,22 +448,32 @@ const TinyTutorAppContent: React.FC = () => {
   const lastSubmittedQuestionRef = useRef<string | null>(null);
   const isReviewingStreakWordRef = useRef<boolean>(false);
 
-  // Function to silently fetch profile data
-  const fetchProfileDataSilently = useCallback(async () => {
-    if (!user || isLoadingProfile) return; // Don't fetch if no user or already fetching
-    setIsLoadingProfile(true); // Use the existing loading state
+  const fetchProfileDataSilently = useCallback(async (force: boolean = false) => {
+    if (!user || (isLoadingProfile && !force)) return;
+    if (!force && profileData && profileData.username === user.username) return;
+
+    console.log("Fetching profile data silently...");
+    setIsLoadingProfile(true); // Still use this to prevent multiple silent fetches concurrently
     try {
       const response = await fetch(`${API_BASE_URL}/profile`, { method: 'GET', headers: getAuthHeaders() });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to fetch profile');
       setProfileData(data);
+      setProfileError(null);
     } catch (error: any) {
       console.error('Silent profile fetch failed:', error);
-      // Optionally set profileError, but it's a silent fetch
+      // Don't set aiError here, as it's a background fetch.
+      // Profile modal will show its own error if open.
     } finally {
       setIsLoadingProfile(false);
     }
-  }, [user, getAuthHeaders, isLoadingProfile]);
+  }, [user, getAuthHeaders, isLoadingProfile, profileData]);
+
+  useEffect(() => {
+    if (user && (!profileData || profileData.username !== user.username)) {
+      fetchProfileDataSilently(true);
+    }
+  }, [user, profileData, fetchProfileDataSilently]);
 
 
   useEffect(() => {
@@ -484,25 +502,40 @@ const TinyTutorAppContent: React.FC = () => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to save streak');
 
+        // Optimistically update profileData with the new streak
         setProfileData(prev => {
-          if (!prev) return null;
-          const newStreakEntry = { words: currentStreak.words, score: currentStreak.score, completed_at: new Date().toISOString(), id: result.streak_id || `temp-${Date.now()}` };
-          return { ...prev, streak_history: [newStreakEntry, ...(prev.streak_history || [])] };
+          const newStreakEntry: Streak = {
+            words: [...currentStreak.words], // Create copies
+            score: currentStreak.score,
+            completed_at: new Date().toISOString(),
+            id: result.streak_id || `temp-${Date.now()}`
+          };
+          if (!prev) { // Should ideally not happen if profile is fetched on login
+            return {
+              username: user.username, tier: user.tier, explored_words_count: 0,
+              explored_words_list: [], favorite_words_list: [],
+              streak_history: [newStreakEntry]
+            };
+          }
+          return {
+            ...prev,
+            streak_history: [newStreakEntry, ...(prev.streak_history || [])]
+          };
         });
       } catch (error) {
         console.error('Error saving streak:', error);
         setAiError(`Could not save streak: ${(error as Error).message}`);
       }
     }
-    setCurrentStreak({ words: [], score: 0 });
+    setCurrentStreak({ words: [], score: 0 }); // Reset live streak
     isReviewingStreakWordRef.current = false;
   }, [user, currentStreak, getAuthHeaders]);
 
-
+  // MODIFIED: generateContent
   const generateContent = async (
     question: string,
     mode: ContentMode,
-    isTriggeredByExplicitUserAction: boolean = false,
+    isNewWordContext: boolean = false, // True if this call establishes a new primary word focus
     isReview: boolean = false,
     forceRefresh: boolean = false
   ) => {
@@ -516,17 +549,19 @@ const TinyTutorAppContent: React.FC = () => {
     setIsLoadingExplanation(true); setAiError(null);
     isReviewingStreakWordRef.current = isReview;
 
-    if (isTriggeredByExplicitUserAction) {
-      lastSubmittedQuestionRef.current = question; // Set context for the new/refreshed word
-      setGeneratedContents({});
-      await handleEndStreak(forceRefresh ? `Refresh button for ${question}` : `Generate Explanation for ${question}`);
+    if (isNewWordContext) {
+      if (lastSubmittedQuestionRef.current !== question || forceRefresh) { // End streak if word changes or it's a refresh
+        await handleEndStreak(forceRefresh ? `Refresh for ${question}` : `New word context: ${question}`);
+      }
+      lastSubmittedQuestionRef.current = question;
+      setGeneratedContents({}); // Clear previous word's content
       if (mode === 'explain' && !forceRefresh && !isReview) {
         setCurrentStreak({ words: [question], score: 1 });
       }
     }
 
     try {
-      console.log(`Fetching content for: ${question}, Mode: ${mode}, ForceRefresh: ${forceRefresh}, isReview: ${isReview}, isExplicitAction: ${isTriggeredByExplicitUserAction}`);
+      console.log(`Fetching content for: ${question}, Mode: ${mode}, ForceRefresh: ${forceRefresh}, isReview: ${isReview}, isNewWordContext: ${isNewWordContext}`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -536,21 +571,20 @@ const TinyTutorAppContent: React.FC = () => {
       console.log("Backend response data:", JSON.stringify(data, null, 2));
 
       if (!response.ok) {
-        if (data.full_cache) {
-          setGeneratedContents(data.full_cache);
-        } else {
-          setGeneratedContents({});
-        }
+        if (data.full_cache) setGeneratedContents(data.full_cache);
+        else setGeneratedContents({});
         throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
       setGeneratedContents(data.full_cache || {});
       setActiveMode(mode);
 
-      // MODIFIED: Issue 1 fix - Fetch profile data silently if needed, don't open modal
-      if (user && !profileData && !isLoadingProfile && lastSubmittedQuestionRef.current) {
+      // If a new word's 'explain' mode was successfully generated, refresh profile to get updated explored words count
+      if (isNewWordContext && mode === 'explain' && data.source === 'generated') {
+        fetchProfileDataSilently(true); // Force refresh profile
+      } else if (user && !profileData && !isLoadingProfile) { // Initial profile load if still missing
         fetchProfileDataSilently();
-      } else if (profileData && lastSubmittedQuestionRef.current) { // Update favorite status if profile data is already available
+      } else if (profileData && lastSubmittedQuestionRef.current) { // Update favorite from existing profile
         const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === lastSubmittedQuestionRef.current!.toLowerCase().trim());
         setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
       }
@@ -577,7 +611,7 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
-  const handleGenerateClick = () => {
+  const handleGenerateClick = () => { // Main "Generate Explanation" button
     if (inputQuestion.trim() && user) {
       isReviewingStreakWordRef.current = false;
       generateContent(inputQuestion.trim(), 'explain', true, false, false);
@@ -586,7 +620,7 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
-  const handleRefreshContent = () => {
+  const handleRefreshContent = () => { // Refresh button
     const questionToRefresh = lastSubmittedQuestionRef.current;
     if (questionToRefresh && activeMode && user) {
       isReviewingStreakWordRef.current = false;
@@ -596,7 +630,7 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
-  // MODIFIED: Issue 2 fix - Other modes generate on first click for the current word
+  // MODIFIED: Issue 2 Fix - Other modes generate on first click
   const handleModeToggle = (newMode: ContentMode) => {
     const currentQuestionForModes = lastSubmittedQuestionRef.current;
     if (!currentQuestionForModes || !user) {
@@ -604,27 +638,39 @@ const TinyTutorAppContent: React.FC = () => {
       return;
     }
     setAiError(null);
-    setActiveMode(newMode); // Switch mode immediately for responsiveness
+    setActiveMode(newMode);
 
-    if (!generatedContents[newMode]) { // If content for this mode is not in local state
+    if (!generatedContents[newMode]) {
       console.log(`Content for '${newMode}' for "${currentQuestionForModes}" not in local cache. Fetching...`);
-      // Call generateContent: isTriggeredByExplicitUserAction = false (not main generate/refresh)
-      // forceRefresh = false (backend checks its cache first)
+      // isNewWordContext = false (it's for the current word, not establishing a new one)
       generateContent(currentQuestionForModes, newMode, false, false, false);
     } else {
       console.log(`Content for '${newMode}' for "${currentQuestionForModes}" already in local cache. Displaying.`);
     }
   };
 
+  // MODIFIED: handleWordClickFromExplanation for streak continuation
   const handleWordClickFromExplanation = (word: string) => {
     if (!user) {
       setAuthModalMode('login'); setShowAuthModal(true); return;
     }
-    if (isReviewingStreakWordRef.current) {
-      handleEndStreak("Explored new word from a reviewed explanation");
+
+    // Update streak BEFORE calling generateContent
+    if (currentStreak.words.length > 0 && !currentStreak.words.includes(word)) {
+      setCurrentStreak(prev => ({ words: [...prev.words, word], score: prev.score + 1 }));
+    } else if (lastSubmittedQuestionRef.current && currentStreak.words.length === 0) { // If no active streak, but there was a root word
+      setCurrentStreak({ words: [lastSubmittedQuestionRef.current, word], score: 2 });
+    } else if (currentStreak.words.length === 0 && !lastSubmittedQuestionRef.current && inputQuestion.trim()) { // Edge case: no streak, no ref, but input has value
+      setCurrentStreak({ words: [inputQuestion.trim(), word], score: 2 });
     }
+    // If currentStreak.words already includes word, do nothing to streak (prevents re-adding same word)
+
     isReviewingStreakWordRef.current = false;
-    setInputQuestion(word);
+    setInputQuestion(word); // Update input field to the new word
+
+    // Call generateContent. isNewWordContext = true because this word becomes the new focus.
+    // This will correctly end any *previous different* streak via handleEndStreak inside generateContent,
+    // and then set up for the new word. The setCurrentStreak above handles the *current* ongoing streak.
     generateContent(word, 'explain', true, false, false);
   };
 
@@ -634,23 +680,28 @@ const TinyTutorAppContent: React.FC = () => {
     }
     isReviewingStreakWordRef.current = false;
     setInputQuestion(word);
-    handleEndStreak("Clicked word from profile");
     setAiError(null);
 
-    lastSubmittedQuestionRef.current = word;
+    // This is a new word context, so end previous streak and set new ref
+    // generateContent will handle this with isNewWordContext = true
 
     if (cachedContentComplete && Object.keys(cachedContentComplete).length > 0) {
+      lastSubmittedQuestionRef.current = word; // Set context before setting content
       setGeneratedContents(cachedContentComplete);
       const initialMode = cachedContentComplete.explain
         ? 'explain'
         : (Object.keys(cachedContentComplete)[0] as ContentMode | undefined) || 'explain';
       setActiveMode(initialMode);
+      // Start new streak if landing on explain
       if (initialMode === 'explain') {
+        handleEndStreak("Clicked word from profile, starting new streak"); // End old streak
         setCurrentStreak({ words: [word], score: 1 });
       } else {
+        handleEndStreak("Clicked word from profile, not starting with explain");
         setCurrentStreak({ words: [], score: 0 });
       }
     } else {
+      // If no cache, generateContent will handle it as a new word context
       generateContent(word, 'explain', true, false, false);
     }
     setShowProfileModal(false);
@@ -682,12 +733,10 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
-  const handleOpenProfileModal = async () => { // This is for the explicit "Profile" button
+  const handleOpenProfileModal = async () => {
     if (!user) { setShowAuthModal(true); setAuthModalMode('login'); return; }
     setShowProfileModal(true);
-    if (!profileData || profileData.username !== user.username) { // Fetch if no data or data for wrong user
-      fetchProfileDataSilently(); // Use the silent fetch here too
-    }
+    fetchProfileDataSilently(true); // Force a fresh fetch when profile is opened
   };
 
   const handleToggleFavoriteOnTutorPage = async () => {
@@ -824,8 +873,7 @@ const TinyTutorAppContent: React.FC = () => {
                 </>
               )}
             </div>
-            {/* MODIFIED: Live streak display */}
-            {currentStreak.words.length > 0 && currentStreak.score > 0 && ( // Show even if score is 1
+            {currentStreak.words.length > 0 && currentStreak.score > 0 && (
               <div className="mt-2 text-sm font-semibold text-purple-600 dark:text-purple-400">
                 Streak: {currentStreak.score} (
                 {currentStreak.words.map((word, index) => (

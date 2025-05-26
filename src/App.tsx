@@ -436,7 +436,7 @@ interface InteractiveQuizProps {
   onQuestionAnswered: (questionIndex: number, selectedOptionKey: string, isCorrect: boolean) => void;
   canLoadNext: boolean;
   questionNumber: number;
-  questionIndex: number; // 0-indexed
+  questionIndex: number;
   totalQuestionsInSet: number;
   previousAttempt: QuizAttempt | null;
 }
@@ -458,8 +458,8 @@ const InteractiveQuiz: React.FC<InteractiveQuizProps> = ({
 
   useEffect(() => {
     const parseAndSetQuiz = (text: string, attempt: QuizAttempt | null) => {
-      setSelectedOptionKey(null); // Always reset selection for new text/attempt
-      setIsAnswered(false);      // Always reset answered state for new text/attempt
+      setSelectedOptionKey(null);
+      setIsAnswered(false);
       setFeedbackMessage('');
 
       if (!text || typeof text !== 'string' || text.trim().length < 10 || !text.toLowerCase().includes('question:') || !text.toLowerCase().includes('correct:')) {
@@ -490,7 +490,7 @@ const InteractiveQuiz: React.FC<InteractiveQuizProps> = ({
         
         if (attempt && attempt.question_index === questionIndex) {
           setSelectedOptionKey(attempt.selected_option_key);
-          setIsAnswered(true); // Set to true if there's a previous attempt
+          setIsAnswered(true);
           if (attempt.is_correct) {
             setFeedbackMessage('Correct Answer! (Previously answered)');
           } else {
@@ -596,7 +596,6 @@ const TinyTutorAppContent: React.FC = () => {
 
   const resetQuizStateForNewWord = useCallback(() => {
     setCurrentQuizDisplayIndex(0);
-    // Quiz progress is part of generatedContents, so it's handled when generatedContents is set/cleared
   }, []);
 
   const fetchProfileDataSilently = useCallback(async (force: boolean = false) => { 
@@ -617,19 +616,23 @@ const TinyTutorAppContent: React.FC = () => {
         fetchProfileDataSilently(true);
     }
   }, [user, profileData, fetchProfileDataSilently]);
+
   useEffect(() => { 
     if (user && showAuthModal) setShowAuthModal(false);
   }, [user, showAuthModal]);
+
   useEffect(() => { 
     const wordForFavoriteCheck = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
     if (wordForFavoriteCheck && profileData?.explored_words_list) {
       const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === wordForFavoriteCheck.toLowerCase().trim());
       setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
     } else { setCurrentTutorWordIsFavorite(false); }
-  }, [inputQuestion, lastSubmittedQuestionRef.current, isReviewingStreakWordRef.current, profileData, activeMode, generatedContents]); // Added generatedContents
+  }, [inputQuestion, lastSubmittedQuestionRef.current, isReviewingStreakWordRef.current, profileData, activeMode, generatedContents]);
 
-  const handleEndStreak = useCallback(async (reason: string, streakToSave?: Streak) => { 
+  const handleEndStreak = useCallback(async (reason_param: string, streakToSave?: Streak) => { // Renamed 'reason' to 'reason_param'
     const streak = streakToSave || currentStreak;
+    // Use reason_param here if needed for logging, or remove if truly unused by logic
+    console.log(`Streak end. Reason: ${reason_param}. Score: ${streak.score}, Words: ${streak.words.join(', ')}`); 
     if (user && streak.words.length > 0 && streak.score >= 2) {
       try {
         const response = await fetch(`${API_BASE_URL}/save_streak`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ words: streak.words, score: streak.score }), });
@@ -666,19 +669,18 @@ const TinyTutorAppContent: React.FC = () => {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ question, mode, force_refresh: forceRefresh }), });
       const data = await response.json(); 
       if (!response.ok) {
-        if (data.full_cache) setGeneratedContents(data.full_cache); // Load cache even on error
+        if (data.full_cache) setGeneratedContents(data.full_cache);
         else setGeneratedContents({});
-        if (data.full_cache?.quiz) { setCurrentQuizDisplayIndex(0); } // Reset index if quiz data is in error cache
+        if (data.full_cache?.quiz) { setCurrentQuizDisplayIndex(0); }
         throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
       setGeneratedContents(data.full_cache || {});
       setActiveMode(mode);
       if (mode === 'quiz' && data.full_cache?.quiz) { 
-        setCurrentQuizDisplayIndex(0); // Always start quiz from first question on new fetch/load
+        setCurrentQuizDisplayIndex(0); 
       }
       if (isNewPrimaryFocus && mode === 'explain' && data.source === 'generated') { fetchProfileDataSilently(true); } 
       else if (user && !profileData && !isLoadingProfile) { fetchProfileDataSilently(); }
-      // Favorite status update is handled by a separate useEffect
     } catch (error: any) { console.error(`Error generating ${mode} for ${question}:`, error); setAiError(error.message || `Failed to generate ${mode}.`); } 
     finally { setIsLoadingExplanation(false); }
   };
@@ -709,7 +711,7 @@ const TinyTutorAppContent: React.FC = () => {
     const oldActiveMode = activeMode;
     setActiveMode(newMode);
     if (newMode === 'quiz' && oldActiveMode !== 'quiz') { 
-        setCurrentQuizDisplayIndex(0); // Reset index when switching to quiz mode
+        setCurrentQuizDisplayIndex(0); 
     }
     const contentIsMissing = newMode === 'quiz' ? !generatedContents.quiz : !generatedContents[newMode];
     const reviewContentMissing = isReviewingStreakWordRef.current && contentIsMissing;
@@ -721,7 +723,7 @@ const TinyTutorAppContent: React.FC = () => {
   };
   
   const saveQuizAttemptToServer = async (questionIndex: number, selectedKey: string, isCorrect: boolean) => {
-    const word = lastSubmittedQuestionRef.current; // Use the primary focus word for the quiz set
+    const word = lastSubmittedQuestionRef.current;
     if (!word || !user) { console.error("Cannot save quiz attempt: no word or user."); return; }
     try {
       const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
@@ -732,17 +734,15 @@ const TinyTutorAppContent: React.FC = () => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to save quiz attempt");
       
-      // Optimistically update local generatedContents.quiz_progress
       setGeneratedContents(prev => {
-        const newProgress = data.quiz_progress || // Use progress from server if available
+        const newProgress = data.quiz_progress || 
                             (Array.isArray(prev.quiz_progress) ? [...prev.quiz_progress] : []);
-        // Ensure the server response is used if valid, otherwise construct optimistically
-        if (!data.quiz_progress) {
-            const attemptIndex = newProgress.findIndex(att => att.question_index === questionIndex);
+        if (!data.quiz_progress) { // Fallback if backend didn't return updated progress (should not happen with current app.py)
+            const attemptIndex = newProgress.findIndex((att: QuizAttempt) => att.question_index === questionIndex); // TS Fix
             const newAttemptEntry: QuizAttempt = { question_index: questionIndex, selected_option_key: selectedKey, is_correct: isCorrect, timestamp: new Date().toISOString() };
             if (attemptIndex > -1) newProgress[attemptIndex] = newAttemptEntry;
             else newProgress.push(newAttemptEntry);
-            newProgress.sort((a,b) => a.question_index - b.question_index);
+            newProgress.sort((a: QuizAttempt,b: QuizAttempt) => a.question_index - b.question_index); // TS Fix
         }
         return { ...prev, quiz_progress: newProgress };
       });
@@ -792,10 +792,8 @@ const TinyTutorAppContent: React.FC = () => {
     handleEndStreak("Clicked word from profile", currentStreak);
     setCurrentStreak({ words: [word], score: 1 });
     const initialModeToLoad = cachedContentComplete?.explain ? 'explain' : (Object.keys(cachedContentComplete || {})[0] as ContentMode | undefined) || 'explain';
-    setGeneratedContents(cachedContentComplete || {}); // Set full cache including quiz_progress
+    setGeneratedContents(cachedContentComplete || {});
     setActiveMode(initialModeToLoad);
-    // Call generateContent to ensure lastSubmittedQuestionRef is set and other side effects.
-    // Backend will return the same cached data if not forced.
     generateContent(word, initialModeToLoad, {isNewPrimaryFocus: true, triggeredBy: 'profile_click', preserveCurrentStreak: true}); 
     if(initialModeToLoad === 'quiz' && cachedContentComplete?.quiz) {
         setCurrentQuizDisplayIndex(0);
@@ -842,8 +840,8 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
   const handleOpenProfileModal = async () => { if (!user) { setShowAuthModal(true); setAuthModalMode('login'); return; } setShowProfileModal(true); fetchProfileDataSilently(true); };
-  const handleToggleFavoriteOnTutorPage = async () => { const wordToToggle = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current; if (!wordToToggle || !user) return; const newFavoriteStatus = !currentTutorWordIsFavorite; setCurrentTutorWordIsFavorite(newFavoriteStatus); setProfileData(prev => { if (!prev) return null; const listToUpdate = prev.explored_words_list.map(w => w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: newFavoriteStatus } : w ); return { ...prev, explored_words_list: listToUpdate, favorite_words_list: listToUpdate.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); try { const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ word: wordToToggle, is_favorite: newFavoriteStatus }), }); const data = await response.json(); if (!response.ok) { setCurrentTutorWordIsFavorite(!newFavoriteStatus); setProfileData(prev => { if (!prev) return null; const listToRevert = prev.explored_words_list.map(w => w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: !newFavoriteStatus } : w ); return { ...prev, explored_words_list: listToRevert, favorite_words_list: listToRevert.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); throw new Error(data.error || 'Failed to toggle favorite'); } } catch (error) { console.error("Error toggling favorite:", error); setAiError(`Could not toggle favorite for "${wordToToggle}": ${(error as Error).message}`); } };
-  const handleToggleFavoriteInProfile = async (wordId: string, isCurrentlyFavorite: boolean) => { const wordEntry = profileData?.explored_words_list.find(w => w.id === wordId); if (!wordEntry || !user) return; const originalWord = wordEntry.word; const newFavoriteStatus = !isCurrentlyFavorite; setProfileData(prev => { if (!prev) return null; const updatedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: newFavoriteStatus } : w); return { ...prev, explored_words_list: updatedList, favorite_words_list: updatedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); const currentTutorDisplayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current; if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) { setCurrentTutorWordIsFavorite(newFavoriteStatus); } try { const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ word: originalWord, is_favorite: newFavoriteStatus }), }); const data = await response.json(); if (!response.ok) {  setProfileData(prev => { if (!prev) return null; const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w); return { ...prev, explored_words_list: revertedList, favorite_words_list: revertedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) { setCurrentTutorWordIsFavorite(isCurrentlyFavorite); } throw new Error(data.error || 'Failed to toggle favorite in profile'); } } catch (error) { console.error("Error toggling favorite from profile:", error); setAiError(`Failed to update favorite for "${originalWord}" from profile: ${(error as Error).message}`); } };
+  const handleToggleFavoriteOnTutorPage = async () => { const wordToToggle = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current; if (!wordToToggle || !user) return; const newFavoriteStatus = !currentTutorWordIsFavorite; setCurrentTutorWordIsFavorite(newFavoriteStatus); setProfileData(prev => { if (!prev) return null; const listToUpdate = prev.explored_words_list.map(w => w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: newFavoriteStatus } : w ); return { ...prev, explored_words_list: listToUpdate, favorite_words_list: listToUpdate.filter(w => w.is_favorite).sort((a: ExploredWord,b: ExploredWord) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); try { const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ word: wordToToggle, is_favorite: newFavoriteStatus }), }); const data = await response.json(); if (!response.ok) { setCurrentTutorWordIsFavorite(!newFavoriteStatus); setProfileData(prev => { if (!prev) return null; const listToRevert = prev.explored_words_list.map(w => w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: !newFavoriteStatus } : w ); return { ...prev, explored_words_list: listToRevert, favorite_words_list: listToRevert.filter(w => w.is_favorite).sort((a: ExploredWord,b: ExploredWord) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); throw new Error(data.error || 'Failed to toggle favorite'); } } catch (error) { console.error("Error toggling favorite:", error); setAiError(`Could not toggle favorite for "${wordToToggle}": ${(error as Error).message}`); } };
+  const handleToggleFavoriteInProfile = async (wordId: string, isCurrentlyFavorite: boolean) => { const wordEntry = profileData?.explored_words_list.find(w => w.id === wordId); if (!wordEntry || !user) return; const originalWord = wordEntry.word; const newFavoriteStatus = !isCurrentlyFavorite; setProfileData(prev => { if (!prev) return null; const updatedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: newFavoriteStatus } : w); return { ...prev, explored_words_list: updatedList, favorite_words_list: updatedList.filter(w => w.is_favorite).sort((a: ExploredWord,b: ExploredWord) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); const currentTutorDisplayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current; if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) { setCurrentTutorWordIsFavorite(newFavoriteStatus); } try { const response = await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ word: originalWord, is_favorite: newFavoriteStatus }), }); const data = await response.json(); if (!response.ok) {  setProfileData(prev => { if (!prev) return null; const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w); return { ...prev, explored_words_list: revertedList, favorite_words_list: revertedList.filter(w => w.is_favorite).sort((a: ExploredWord,b: ExploredWord) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()) }; }); if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) { setCurrentTutorWordIsFavorite(isCurrentlyFavorite); } throw new Error(data.error || 'Failed to toggle favorite in profile'); } } catch (error) { console.error("Error toggling favorite from profile:", error); setAiError(`Failed to update favorite for "${originalWord}" from profile: ${(error as Error).message}`); } };
   
   const currentQuizProgress = generatedContents.quiz_progress || [];
   const correctQuizAnswers = currentQuizProgress.filter(attempt => attempt.is_correct).length;
@@ -852,14 +850,15 @@ const TinyTutorAppContent: React.FC = () => {
   
   let quizScoreDisplay = '';
   if (activeMode === 'quiz' && totalQuizzesInSet > 0) {
-    if (attemptedQuizzesInSet === totalQuizzesInSet) {
+    if (attemptedQuizzesInSet === totalQuizzesInSet && totalQuizzesInSet > 0) { // Check totalQuizzesInSet > 0 here
         quizScoreDisplay = `Quiz Complete! Score: ${correctQuizAnswers}/${totalQuizzesInSet}`;
     } else if (attemptedQuizzesInSet > 0) {
         quizScoreDisplay = `Progress: ${correctQuizAnswers}/${attemptedQuizzesInSet} correct (out of ${totalQuizzesInSet} total)`;
-    } else { // No attempts yet, but quizzes are available
+    } else { 
         quizScoreDisplay = `0/${totalQuizzesInSet} questions attempted`;
     }
   }
+
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center p-4 transition-colors duration-300">
@@ -1028,12 +1027,10 @@ const TinyTutorAppContent: React.FC = () => {
       />
     </div>
   );
-}; // Make sure this is the correct closing for TinyTutorAppContent
+};
 
-// App function must be at the top level
 function App() {
   return (<AuthProvider><TinyTutorAppContent /></AuthProvider>);
 }
 
-// Default export must be at the top level
 export default App;

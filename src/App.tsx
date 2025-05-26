@@ -60,7 +60,7 @@ interface ProfileData {
   explored_words_count: number;
   explored_words_list: ExploredWord[];
   favorite_words_list: ExploredWord[];
-  streak_history: Streak[];
+  streak_history: Streak[]; // Ensure this is always an array
 }
 
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep';
@@ -307,7 +307,6 @@ interface ProfileModalProps {
   onToggleFavorite: (wordId: string, currentIsFavorite: boolean) => Promise<void>;
 }
 
-// MODIFIED CompactWordListItem: Removed local isFavoritedOptimistic state
 const CompactWordListItem: React.FC<{
   item: ExploredWord;
   onWordClick: () => void;
@@ -316,13 +315,11 @@ const CompactWordListItem: React.FC<{
 }> = ({ item, onWordClick, onToggleFavorite, isFavoriteList }) => {
   const [isToggling, setIsToggling] = useState(false);
 
-  // useEffect for isFavoritedOptimistic removed
-
   const handleToggleFavoriteInternal = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsToggling(true);
     try {
-      await onToggleFavorite(e); // Propagate the call
+      await onToggleFavorite(e);
     } catch (error) {
       console.error("Failed to toggle favorite from item:", error);
     } finally {
@@ -336,7 +333,6 @@ const CompactWordListItem: React.FC<{
         <span className="font-semibold text-indigo-600 dark:text-indigo-400 block text-md">{item.word}</span>
         <span className="text-xs text-gray-500 dark:text-gray-400">Last seen: {new Date(item.last_explored_at).toLocaleDateString()}</span>
       </div>
-      {/* Directly use item.is_favorite for rendering */}
       <button onClick={handleToggleFavoriteInternal} disabled={isToggling} className={`p-1 rounded-full transition-colors duration-150 focus:outline-none ${item.is_favorite ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-red-400'} ${isToggling ? 'opacity-50 cursor-not-allowed' : ''}`} aria-label={item.is_favorite ? 'Unfavorite' : 'Favorite'}>{item.is_favorite ? '♥' : '♡'}</button>
     </li>
   );
@@ -400,10 +396,11 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
                 </ul>
               ) : (<p className="text-gray-500 dark:text-gray-400">No favorite words yet.</p>)}
             </AccordionSection>
-            <AccordionSection title="Streak History" count={profileData.streak_history.length} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
-              {profileData.streak_history.length > 0 ? (
+            {/* MODIFIED: Ensure streak_history is always an array before accessing length or sorting */}
+            <AccordionSection title="Streak History" count={profileData.streak_history?.length || 0} isActive={activeSection === 'streaks'} onClick={() => setActiveSection(activeSection === 'streaks' ? null : 'streaks')}>
+              {(profileData.streak_history && profileData.streak_history.length > 0) ? (
                 <ul className="space-y-2 pr-1">
-                  {profileData.streak_history.sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()).map((streak, index) => (
+                  {[...(profileData.streak_history || [])].sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()).map((streak, index) => (
                     <li key={streak.id || `streak-${index}`} className="p-3 bg-gray-100 dark:bg-gray-600 rounded-md shadow">
                       <p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p>
                       <p className="text-sm text-gray-700 dark:text-gray-300">Words: {streak.words.join(' → ')}</p>
@@ -432,8 +429,6 @@ const TinyTutorAppContent: React.FC = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
-  // REMOVED isExplainGeneratedForCurrentWord state
-
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -444,6 +439,24 @@ const TinyTutorAppContent: React.FC = () => {
 
   const lastSubmittedQuestionRef = useRef<string | null>(null);
   const isReviewingStreakWordRef = useRef<boolean>(false);
+
+  // Function to silently fetch profile data
+  const fetchProfileDataSilently = useCallback(async () => {
+    if (!user || isLoadingProfile) return; // Don't fetch if no user or already fetching
+    setIsLoadingProfile(true); // Use the existing loading state
+    try {
+      const response = await fetch(`${API_BASE_URL}/profile`, { method: 'GET', headers: getAuthHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch profile');
+      setProfileData(data);
+    } catch (error: any) {
+      console.error('Silent profile fetch failed:', error);
+      // Optionally set profileError, but it's a silent fetch
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  }, [user, getAuthHeaders, isLoadingProfile]);
+
 
   useEffect(() => {
     if (user && showAuthModal) setShowAuthModal(false);
@@ -489,7 +502,7 @@ const TinyTutorAppContent: React.FC = () => {
   const generateContent = async (
     question: string,
     mode: ContentMode,
-    isExplicitNewWordAction: boolean = false,
+    isTriggeredByExplicitUserAction: boolean = false,
     isReview: boolean = false,
     forceRefresh: boolean = false
   ) => {
@@ -503,9 +516,9 @@ const TinyTutorAppContent: React.FC = () => {
     setIsLoadingExplanation(true); setAiError(null);
     isReviewingStreakWordRef.current = isReview;
 
-    if (isExplicitNewWordAction) {
+    if (isTriggeredByExplicitUserAction) {
+      lastSubmittedQuestionRef.current = question; // Set context for the new/refreshed word
       setGeneratedContents({});
-      // No longer setting isExplainGeneratedForCurrentWord
       await handleEndStreak(forceRefresh ? `Refresh button for ${question}` : `Generate Explanation for ${question}`);
       if (mode === 'explain' && !forceRefresh && !isReview) {
         setCurrentStreak({ words: [question], score: 1 });
@@ -513,41 +526,39 @@ const TinyTutorAppContent: React.FC = () => {
     }
 
     try {
+      console.log(`Fetching content for: ${question}, Mode: ${mode}, ForceRefresh: ${forceRefresh}, isReview: ${isReview}, isExplicitAction: ${isTriggeredByExplicitUserAction}`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ question, mode, force_refresh: forceRefresh }),
       });
       const data = await response.json();
+      console.log("Backend response data:", JSON.stringify(data, null, 2));
+
       if (!response.ok) {
-        if (data.full_cache) setGeneratedContents(data.full_cache);
+        if (data.full_cache) {
+          setGeneratedContents(data.full_cache);
+        } else {
+          setGeneratedContents({});
+        }
         throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
-      if (data.full_cache) {
-        setGeneratedContents(data.full_cache);
-      } else {
-        setGeneratedContents((prev) => ({ ...prev, [mode]: data.content }));
-      }
-
+      setGeneratedContents(data.full_cache || {});
       setActiveMode(mode);
-      // No longer setting isExplainGeneratedForCurrentWord here
 
-      if (!isReview) {
-        lastSubmittedQuestionRef.current = question;
-      }
-
-      if (profileData) {
-        const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === question.toLowerCase().trim());
+      // MODIFIED: Issue 1 fix - Fetch profile data silently if needed, don't open modal
+      if (user && !profileData && !isLoadingProfile && lastSubmittedQuestionRef.current) {
+        fetchProfileDataSilently();
+      } else if (profileData && lastSubmittedQuestionRef.current) { // Update favorite status if profile data is already available
+        const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === lastSubmittedQuestionRef.current!.toLowerCase().trim());
         setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
-      } else if (user && !profileData && !isLoadingProfile) {
-        handleOpenProfileModal();
       }
+
 
     } catch (error: any) {
       console.error(`Error generating ${mode} for ${question}:`, error);
       setAiError(error.message || `Failed to generate ${mode}.`);
-      // No longer setting isExplainGeneratedForCurrentWord here
     } finally {
       setIsLoadingExplanation(false);
     }
@@ -585,6 +596,7 @@ const TinyTutorAppContent: React.FC = () => {
     }
   };
 
+  // MODIFIED: Issue 2 fix - Other modes generate on first click for the current word
   const handleModeToggle = (newMode: ContentMode) => {
     const currentQuestionForModes = lastSubmittedQuestionRef.current;
     if (!currentQuestionForModes || !user) {
@@ -592,12 +604,15 @@ const TinyTutorAppContent: React.FC = () => {
       return;
     }
     setAiError(null);
+    setActiveMode(newMode); // Switch mode immediately for responsiveness
 
-    if (generatedContents[newMode]) {
-      setActiveMode(newMode);
+    if (!generatedContents[newMode]) { // If content for this mode is not in local state
+      console.log(`Content for '${newMode}' for "${currentQuestionForModes}" not in local cache. Fetching...`);
+      // Call generateContent: isTriggeredByExplicitUserAction = false (not main generate/refresh)
+      // forceRefresh = false (backend checks its cache first)
+      generateContent(currentQuestionForModes, newMode, false, false, false);
     } else {
-      setActiveMode(newMode);
-      console.log(`Content for '${newMode}' mode is not in generatedContents for "${currentQuestionForModes}". Displaying placeholder.`);
+      console.log(`Content for '${newMode}' for "${currentQuestionForModes}" already in local cache. Displaying.`);
     }
   };
 
@@ -622,14 +637,14 @@ const TinyTutorAppContent: React.FC = () => {
     handleEndStreak("Clicked word from profile");
     setAiError(null);
 
+    lastSubmittedQuestionRef.current = word;
+
     if (cachedContentComplete && Object.keys(cachedContentComplete).length > 0) {
       setGeneratedContents(cachedContentComplete);
       const initialMode = cachedContentComplete.explain
         ? 'explain'
         : (Object.keys(cachedContentComplete)[0] as ContentMode | undefined) || 'explain';
       setActiveMode(initialMode);
-      // No longer setting isExplainGeneratedForCurrentWord
-      lastSubmittedQuestionRef.current = word;
       if (initialMode === 'explain') {
         setCurrentStreak({ words: [word], score: 1 });
       } else {
@@ -649,6 +664,8 @@ const TinyTutorAppContent: React.FC = () => {
     isReviewingStreakWordRef.current = true;
     setAiError(null);
 
+    lastSubmittedQuestionRef.current = wordFromStreak;
+
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === wordFromStreak.toLowerCase().trim());
     const cachedContentsForWord = wordData?.generated_content_cache;
 
@@ -658,35 +675,23 @@ const TinyTutorAppContent: React.FC = () => {
         ? 'explain'
         : (Object.keys(cachedContentsForWord)[0] as ContentMode | undefined) || 'explain';
       setActiveMode(initialMode);
-      // No longer setting isExplainGeneratedForCurrentWord
-      lastSubmittedQuestionRef.current = wordFromStreak;
     } else {
       console.warn(`No cache found for streak review word: ${wordFromStreak}. Displaying placeholder.`);
       setGeneratedContents({});
       setActiveMode('explain');
-      // No longer setting isExplainGeneratedForCurrentWord
-      lastSubmittedQuestionRef.current = wordFromStreak;
     }
   };
 
-  const handleOpenProfileModal = async () => {
+  const handleOpenProfileModal = async () => { // This is for the explicit "Profile" button
     if (!user) { setShowAuthModal(true); setAuthModalMode('login'); return; }
-    setShowProfileModal(true); setIsLoadingProfile(true); setProfileError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/profile`, { method: 'GET', headers: getAuthHeaders() });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to fetch profile');
-      setProfileData(data);
-    } catch (error: any) {
-      console.error('Error fetching profile:', error); setProfileError(error.message);
-    } finally {
-      setIsLoadingProfile(false);
+    setShowProfileModal(true);
+    if (!profileData || profileData.username !== user.username) { // Fetch if no data or data for wrong user
+      fetchProfileDataSilently(); // Use the silent fetch here too
     }
   };
 
   const handleToggleFavoriteOnTutorPage = async () => {
     const wordToToggle = lastSubmittedQuestionRef.current;
-    // MODIFIED: Condition to enable favorite toggle - only need a word context
     if (!user || !wordToToggle) {
       if (!user) setShowAuthModal(true);
       return;
@@ -775,7 +780,7 @@ const TinyTutorAppContent: React.FC = () => {
             <>
               <span className="text-sm hidden sm:inline">Welcome, {user.username}!</span>
               <button onClick={handleOpenProfileModal} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Profile</button>
-              <button onClick={() => { handleEndStreak("Logout"); logout(); setGeneratedContents({}); setInputQuestion(''); lastSubmittedQuestionRef.current = null; /*isExplain... removed*/ setAiError(null); }} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800">Logout</button>
+              <button onClick={() => { handleEndStreak("Logout"); logout(); setGeneratedContents({}); setInputQuestion(''); lastSubmittedQuestionRef.current = null; setAiError(null); }} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800">Logout</button>
             </>
           ) : (
             <button onClick={() => { setAuthModalMode('login'); setShowAuthModal(true); }} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Login / Sign Up</button>
@@ -808,7 +813,6 @@ const TinyTutorAppContent: React.FC = () => {
                   {mode.charAt(0).toUpperCase() + mode.slice(1)}
                 </button>
               ))}
-              {/* MODIFIED: Condition for Refresh/Favorite buttons */}
               {lastSubmittedQuestionRef.current && generatedContents.explain && (
                 <>
                   <button onClick={handleRefreshContent} disabled={isLoadingExplanation} className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-50" title="Refresh content">
@@ -820,11 +824,12 @@ const TinyTutorAppContent: React.FC = () => {
                 </>
               )}
             </div>
-            {currentStreak.score >= 2 && (
+            {/* MODIFIED: Live streak display */}
+            {currentStreak.words.length > 0 && currentStreak.score > 0 && ( // Show even if score is 1
               <div className="mt-2 text-sm font-semibold text-purple-600 dark:text-purple-400">
                 Streak: {currentStreak.score} (
                 {currentStreak.words.map((word, index) => (
-                  <React.Fragment key={index}>
+                  <React.Fragment key={`streak-${index}-${word}`}>
                     <button
                       onClick={() => handleReviewStreakWordClick(word)}
                       className="hover:underline focus:outline-none disabled:no-underline disabled:text-gray-400"
@@ -847,7 +852,7 @@ const TinyTutorAppContent: React.FC = () => {
           <div className="mt-6 flex justify-center items-center h-32"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
         )}
 
-        {lastSubmittedQuestionRef.current && generatedContents[activeMode] && (
+        {lastSubmittedQuestionRef.current && generatedContents[activeMode] && !isLoadingExplanation && (
           <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
             {activeMode === 'explain' && generatedContents.explain ? (
               <HighlightedContentRenderer text={generatedContents.explain} onWordClick={handleWordClickFromExplanation} />
@@ -858,7 +863,7 @@ const TinyTutorAppContent: React.FC = () => {
         )}
         {lastSubmittedQuestionRef.current && !isLoadingExplanation && !generatedContents[activeMode] && (
           <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
-            <p className="text-gray-500 dark:text-gray-400">Content for '{activeMode}' mode is not available for "{lastSubmittedQuestionRef.current}". Use 'Generate Explanation' or 'Refresh' to create or update content for this word.</p>
+            <p className="text-gray-500 dark:text-gray-400">Content for '{activeMode}' mode is not available for "{lastSubmittedQuestionRef.current}". Click the '{activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}' tab again to generate it.</p>
           </div>
         )}
       </main>

@@ -314,24 +314,25 @@ interface ProfileModalProps {
   isLoading: boolean;
   error: string | null;
   onWordClick: (word: string, cachedContentComplete?: Partial<GeneratedContent>) => void;
-  onToggleFavorite: (wordId: string, currentIsFavoriteState: boolean) => Promise<void>; // Renamed param for clarity
+  onToggleFavorite: (wordId: string, currentIsFavoriteState: boolean) => Promise<void>;
   onPastStreakWordClick: (word: string) => void;
 }
 
-const CompactWordListItem: React.FC<{
+interface CompactWordListItemProps { // Define props for CompactWordListItem
   item: ExploredWord;
   onWordClick: () => void;
-  onToggleFavorite: () => Promise<void>; // Removed event param as it's not used by the prop
+  onToggleFavorite: () => Promise<void>; // Changed: No event param needed by the prop itself
   isFavoriteList?: boolean;
-}> = ({ item, onWordClick, onToggleFavorite, isFavoriteList }) => {
+}
+
+const CompactWordListItem: React.FC<CompactWordListItemProps> = ({ item, onWordClick, onToggleFavorite, isFavoriteList }) => {
   const [isToggling, setIsToggling] = useState(false);
 
-  // MODIFIED: handleToggleFavoriteInternal no longer takes 'e' if onToggleFavorite doesn't need it
-  const handleToggleFavoriteInternal = async (event: React.MouseEvent) => {
-    event.stopPropagation(); // Keep stopPropagation if needed by UI
+  const handleToggleFavoriteInternal = async (event: React.MouseEvent) => { // event is from onClick
+    event.stopPropagation(); // Use the event here for stopPropagation
     setIsToggling(true);
     try {
-      await onToggleFavorite(); // Call prop without event
+      await onToggleFavorite(); // Call prop which doesn't expect an event
     } catch (error) {
       console.error("Failed to toggle favorite from item:", error);
     } finally {
@@ -384,7 +385,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, profileDat
                 <ul className="space-y-2 pr-1">{[...(profileData.streak_history || [])].sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime()).map((streak) => (
                     <li key={streak.id || streak.words.join('-')} className="p-3 bg-gray-100 dark:bg-gray-600 rounded-md shadow">
                       <p className="font-semibold text-indigo-600 dark:text-indigo-400">Score: {streak.score}</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-300">Words: {streak.words.map((word, idx) => (<React.Fragment key={`${streak.id}-word-${idx}-${word}`}><button onClick={() => onPastStreakWordClick(word)} className="text-blue-500 hover:text-blue-700 hover:underline disabled:text-gray-400">{word}</button>{idx < streak.words.length - 1 && ' → '}</React.Fragment>))}</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Words: {streak.words.map((word, idx) => (<React.Fragment key={`${streak.id}-word-${idx}-${word}`}><button onClick={() => {onClose(); onPastStreakWordClick(word);}} className="text-blue-500 hover:text-blue-700 hover:underline disabled:text-gray-400">{word}</button>{idx < streak.words.length - 1 && ' → '}</React.Fragment>))}</p>
                       {streak.completed_at && (<p className="text-xs text-gray-500 dark:text-gray-400">Completed: {new Date(streak.completed_at).toLocaleString()}</p>)}
                     </li>))}</ul>
               ) : (<p className="text-gray-500 dark:text-gray-400">No completed streaks yet.</p>)}
@@ -603,12 +604,18 @@ const TinyTutorAppContent: React.FC = () => {
     }
 
     setCurrentStreak(prevStreak => {
-        if (prevStreak.words.length === 0 || prevStreak.words[0].toLowerCase() !== currentFocusWord.toLowerCase()) {
-            if (prevStreak.score >= 2) handleEndStreak("Starting new chain from sub-topic of a different root", prevStreak);
+        if (prevStreak.words.length === 0 || 
+            (prevStreak.words.length > 0 && prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== currentFocusWord.toLowerCase())) {
+            if (prevStreak.score >= 2) {
+                handleEndStreak(`Starting new streak branch from ${currentFocusWord} (previous was ${prevStreak.words.join('->')})`, prevStreak);
+            }
+            console.log(`Streak: Starting new branch ${currentFocusWord} -> ${clickedWord}`);
             return { words: [currentFocusWord, clickedWord], score: 2 };
-        }
-        if (prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== clickedWord.toLowerCase()) {
-            return { words: [...prevStreak.words, clickedWord], score: prevStreak.score + 1 };
+        } else {
+            if (prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== clickedWord.toLowerCase()) {
+                console.log(`Streak: Continuing ${prevStreak.words.join(' -> ')} -> ${clickedWord}`);
+                return { words: [...prevStreak.words, clickedWord], score: prevStreak.score + 1 };
+            }
         }
         return prevStreak;
     });
@@ -640,26 +647,20 @@ const TinyTutorAppContent: React.FC = () => {
 
   const handleReviewStreakWordClick = (wordFromStreak: string) => {
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
-    setInputQuestion(wordFromStreak); // Update input to show what's being reviewed
+    setInputQuestion(wordFromStreak);
     isReviewingStreakWordRef.current = true;
     setAiError(null);
     
-    // Important: For review, we don't change lastSubmittedQuestionRef from the streak's *last* word.
-    // We are just viewing content for an *intermediate* word in that streak.
-    // So, we load its content into generatedContents, but the "official" focus for new mode toggles
-    // should ideally remain the last word of the streak, or we need a temporary display context.
-    // For simplicity now, let's just load its content directly.
-
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === wordFromStreak.toLowerCase().trim());
     const cachedContentsForWord = wordData?.generated_content_cache;
 
     if (cachedContentsForWord && Object.keys(cachedContentsForWord).length > 0) {
-        setGeneratedContents(cachedContentsForWord);
+        setGeneratedContents(cachedContentsForWord); // Load this specific word's cache for display
         const initialMode = cachedContentsForWord.explain ? 'explain' : (Object.keys(cachedContentsForWord)[0] as ContentMode | undefined) || 'explain';
         setActiveMode(initialMode);
+        // Do not change lastSubmittedQuestionRef.current here, as the primary streak context remains.
     } else {
       console.warn(`No cache for streak review word: ${wordFromStreak}. Fetching 'explain'.`);
-      // isNewPrimaryFocus = false, preserveCurrentStreak = true
       generateContent(wordFromStreak, 'explain', { isNewPrimaryFocus: false, isReview: true, triggeredBy: 'review_click', preserveCurrentStreak: true });
     }
   };
@@ -693,8 +694,10 @@ const TinyTutorAppContent: React.FC = () => {
     fetchProfileDataSilently(true);
   };
   const handleToggleFavoriteOnTutorPage = async () => { /* ... same as v10 ... */ };
-  const handleToggleFavoriteInProfile = async (wordId: string, isCurrentlyFavorite: boolean) => { // Matched signature
-    const wordEntry = profileData?.explored_words_list.find(w => w.id === wordId); // Use wordId
+  
+  // MODIFIED: handleToggleFavoriteInProfile signature and usage
+  const handleToggleFavoriteInProfile = async (wordId: string, isCurrentlyFavorite: boolean) => {
+    const wordEntry = profileData?.explored_words_list.find(w => w.id === wordId);
     if (!wordEntry || !user) return;
     
     const originalWord = wordEntry.word;
@@ -719,11 +722,11 @@ const TinyTutorAppContent: React.FC = () => {
       if (!response.ok) {
         setProfileData(prev => { // Revert on error
             if (!prev) return null;
-            const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w);
+            const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w); // Use original state
             return { ...prev, explored_words_list: revertedList, favorite_words_list: revertedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())};
         });
         if (lastSubmittedQuestionRef.current?.toLowerCase() === originalWord.toLowerCase()) {
-          setCurrentTutorWordIsFavorite(isCurrentlyFavorite);
+          setCurrentTutorWordIsFavorite(isCurrentlyFavorite); // Revert
         }
         throw new Error(data.error || 'Failed to toggle favorite in profile');
       }

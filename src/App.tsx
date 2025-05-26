@@ -552,7 +552,8 @@ const TinyTutorAppContent: React.FC = () => {
       } else if (user && !profileData && !isLoadingProfile) {
           fetchProfileDataSilently();
       } else if (profileData && lastSubmittedQuestionRef.current) {
-        const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === lastSubmittedQuestionRef.current!.toLowerCase().trim());
+        const currentWordForFavoriteCheck = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
+        const foundWord = profileData.explored_words_list.find(w => w.word.toLowerCase().trim() === currentWordForFavoriteCheck!.toLowerCase().trim());
         setCurrentTutorWordIsFavorite(foundWord ? foundWord.is_favorite : false);
       }
     } catch (error: any) {
@@ -575,54 +576,111 @@ const TinyTutorAppContent: React.FC = () => {
   };
 
   const handleRefreshContent = () => {
-    const questionToRefresh = lastSubmittedQuestionRef.current;
+    const questionToRefresh = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current; // Refresh the reviewed word if in review mode
     if (questionToRefresh && activeMode && user) {
-      isReviewingStreakWordRef.current = false;
-      generateContent(questionToRefresh, activeMode, { isNewPrimaryFocus: true, triggeredBy: 'refresh_btn' });
-    } else if (!user) { setAuthModalMode('login'); setShowAuthModal(true); }
+      // If refreshing a reviewed word, it should not reset the main streak's lastSubmittedQuestionRef
+      // It should also not end the current streak, but force a regeneration for the *reviewed* word.
+      const isNewPrimaryFocusForRefresh = !isReviewingStreakWordRef.current;
+      
+      if (isReviewingStreakWordRef.current) {
+         console.log(`Refreshing reviewed word: ${questionToRefresh} for mode ${activeMode}`);
+         generateContent(questionToRefresh, activeMode, { 
+            isNewPrimaryFocus: false, // Do not change primary focus
+            triggeredBy: 'refresh_btn', 
+            isReview: true, // Stay in review mode
+            preserveCurrentStreak: true // Keep the main streak
+        });
+      } else {
+        console.log(`Refreshing primary word: ${questionToRefresh} for mode ${activeMode}`);
+        // This case (not reviewing) implies we are refreshing the main focus word.
+        // It's okay to treat it as a new primary focus for caching/UI update purposes,
+        // but we should decide if it ends the current streak or not.
+        // Original behavior: handleEndStreak is called inside generateContent if isNewPrimaryFocus and not preserveCurrentStreak
+        // Let's make it explicit: refresh should not end a streak, it just refreshes content for the current focus.
+        generateContent(questionToRefresh, activeMode, { 
+            isNewPrimaryFocus: true, // This will clear local cache for this word and make it primary.
+            triggeredBy: 'refresh_btn',
+            preserveCurrentStreak: true // Explicitly preserve streak on refresh.
+        });
+      }
+    } else if (!user) { 
+        setAuthModalMode('login'); 
+        setShowAuthModal(true); 
+    }
   };
-
+  
   const handleModeToggle = (newMode: ContentMode) => {
-    const currentQuestionForModes = lastSubmittedQuestionRef.current;
-    if (!currentQuestionForModes || !user) { if (!user) { setAuthModalMode('login'); setShowAuthModal(true); } return; }
-    setAiError(null); setActiveMode(newMode);
-    if (!generatedContents[newMode]) {
-      console.log(`Content for '${newMode}' for "${currentQuestionForModes}" not in local cache. Fetching...`);
-      generateContent(currentQuestionForModes, newMode, { isNewPrimaryFocus: false, triggeredBy: 'mode_toggle', preserveCurrentStreak: true });
-    } else { console.log(`Content for '${newMode}' for "${currentQuestionForModes}" already in local cache. Displaying.`); }
+    // *** MODIFICATION START ***
+    const currentQuestionForModes = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
+    // *** MODIFICATION END ***
+
+    if (!currentQuestionForModes || !user) { 
+      if (!user) { 
+        setAuthModalMode('login'); 
+        setShowAuthModal(true); 
+      } 
+      return; 
+    }
+    
+    setAiError(null); 
+    setActiveMode(newMode);
+
+    if (!generatedContents[newMode] || (isReviewingStreakWordRef.current && (!generatedContents[newMode]))) {
+      console.log(`Content for '${newMode}' for "${currentQuestionForModes}" not in local cache. Fetching... (Review Mode: ${isReviewingStreakWordRef.current})`);
+      generateContent(currentQuestionForModes, newMode, { 
+        isNewPrimaryFocus: false, // Mode toggle should not change the primary focus word of the streak
+        triggeredBy: 'mode_toggle', 
+        preserveCurrentStreak: true, // Always preserve streak on mode toggle
+        isReview: isReviewingStreakWordRef.current // Pass the current review state
+      });
+    } else { 
+      console.log(`Content for '${newMode}' for "${currentQuestionForModes}" already in local cache. Displaying. (Review Mode: ${isReviewingStreakWordRef.current})`);
+    }
   };
   
   const handleWordClickFromExplanation = (clickedWord: string) => {
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
     
-    const currentFocusWord = lastSubmittedQuestionRef.current;
-    if (!currentFocusWord) {
-        handleEndStreak("Sub-topic click with no prior focus", currentStreak);
+    const currentFocusWord = lastSubmittedQuestionRef.current; // This is the word whose explanation was clicked
+    
+    isReviewingStreakWordRef.current = false; // Clicking a sub-topic always exits review mode
+    setInputQuestion(clickedWord); // Update input to the new focus
+
+    if (!currentFocusWord) { // Should ideally not happen if an explanation is visible
+        handleEndStreak("Sub-topic click with no prior focus (edge case)", currentStreak);
         setCurrentStreak({ words: [clickedWord], score: 1 });
         generateContent(clickedWord, 'explain', { isNewPrimaryFocus: true, triggeredBy: 'sub_topic_click' });
         return;
     }
 
     setCurrentStreak(prevStreak => {
+        // If streak is empty, or if the last word of the streak isn't the word we just clicked from (currentFocusWord),
+        // it implies we are branching off or starting fresh relative to currentFocusWord.
         if (prevStreak.words.length === 0 || 
             (prevStreak.words.length > 0 && prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== currentFocusWord.toLowerCase())) {
+            
+            // If there was an old streak with score >= 2, save it before starting new branch
             if (prevStreak.score >= 2) {
-                handleEndStreak(`Starting new streak branch from ${currentFocusWord} (previous was ${prevStreak.words.join('->')})`, prevStreak);
+                handleEndStreak(`Starting new streak branch from ${currentFocusWord}. Old streak was ${prevStreak.words.join('->')}`, prevStreak);
             }
-            console.log(`Streak: Starting new branch ${currentFocusWord} -> ${clickedWord}`);
+            console.log(`Streak: Starting new branch from ${currentFocusWord} -> ${clickedWord}`);
             return { words: [currentFocusWord, clickedWord], score: 2 };
-        } else {
-            if (prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== clickedWord.toLowerCase()) {
+        } else { // We are continuing the streak from currentFocusWord
+            if (prevStreak.words[prevStreak.words.length - 1].toLowerCase() !== clickedWord.toLowerCase()) { // Avoid adding same word twice
                 console.log(`Streak: Continuing ${prevStreak.words.join(' -> ')} -> ${clickedWord}`);
                 return { words: [...prevStreak.words, clickedWord], score: prevStreak.score + 1 };
             }
         }
-        return prevStreak;
+        return prevStreak; // No change if clickedWord is same as last word in streak
     });
     
-    isReviewingStreakWordRef.current = false;
-    setInputQuestion(clickedWord);
-    generateContent(clickedWord, 'explain', { isNewPrimaryFocus: true, triggeredBy: 'sub_topic_click', preserveCurrentStreak: true });
+    // Generate content for the new clickedWord, making it the new primary focus
+    // and preserving the (now updated) current streak.
+    generateContent(clickedWord, 'explain', { 
+        isNewPrimaryFocus: true, 
+        triggeredBy: 'sub_topic_click', 
+        preserveCurrentStreak: true 
+    });
   };
 
   const handleWordClickFromProfile = (word: string, cachedContentComplete?: Partial<GeneratedContent>) => {
@@ -633,12 +691,16 @@ const TinyTutorAppContent: React.FC = () => {
     handleEndStreak("Clicked word from profile", currentStreak);
     setCurrentStreak({ words: [word], score: 1 });
 
+    const initialModeToLoad = cachedContentComplete?.explain ? 'explain' : (Object.keys(cachedContentComplete || {})[0] as ContentMode | undefined) || 'explain';
+
     if (cachedContentComplete && Object.keys(cachedContentComplete).length > 0) {
-      lastSubmittedQuestionRef.current = word;
-      setGeneratedContents(cachedContentComplete);
-      const initialMode = cachedContentComplete.explain ? 'explain' : (Object.keys(cachedContentComplete)[0] as ContentMode | undefined) || 'explain';
-      setActiveMode(initialMode);
-      generateContent(word, initialMode, {isNewPrimaryFocus: true, triggeredBy: 'profile_click'});
+      lastSubmittedQuestionRef.current = word; // Set primary focus
+      setGeneratedContents(cachedContentComplete); // Load cache
+      setActiveMode(initialModeToLoad);
+      // Fetch to confirm/update explored status, don't force refresh unless needed
+      // The generateContent call below will handle setting lastSubmittedQuestionRef correctly
+      // and checking for favorite status.
+      generateContent(word, initialModeToLoad, {isNewPrimaryFocus: true, triggeredBy: 'profile_click'}); 
     } else {
       generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'profile_click'});
     }
@@ -647,21 +709,45 @@ const TinyTutorAppContent: React.FC = () => {
 
   const handleReviewStreakWordClick = (wordFromStreak: string) => {
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
-    setInputQuestion(wordFromStreak);
-    isReviewingStreakWordRef.current = true;
+    
+    // If already reviewing this word, or if it's the current primary focus and not in review mode, do nothing to avoid re-renders/fetches
+    if ((isReviewingStreakWordRef.current && inputQuestion.toLowerCase() === wordFromStreak.toLowerCase()) ||
+        (!isReviewingStreakWordRef.current && lastSubmittedQuestionRef.current?.toLowerCase() === wordFromStreak.toLowerCase())) {
+        // If it's the primary focus but we are *not* in review mode, clicking it should enter review mode for *it*.
+        if (!isReviewingStreakWordRef.current && lastSubmittedQuestionRef.current?.toLowerCase() === wordFromStreak.toLowerCase()) {
+             // This means user clicked the *last* word of the streak display, which is also the primary focus.
+             // We should still allow "reviewing" it to set the flag correctly for mode toggles.
+        } else {
+            console.log("Already viewing/reviewing this word from streak:", wordFromStreak);
+            return;
+        }
+    }
+    
+    setInputQuestion(wordFromStreak); // Set input to the word being reviewed
+    isReviewingStreakWordRef.current = true; // Enter review mode
     setAiError(null);
     
+    // Try to find the word's cached content from profileData (which should be up-to-date)
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === wordFromStreak.toLowerCase().trim());
     const cachedContentsForWord = wordData?.generated_content_cache;
 
     if (cachedContentsForWord && Object.keys(cachedContentsForWord).length > 0) {
-        setGeneratedContents(cachedContentsForWord); // Load this specific word's cache for display
+        console.log(`Reviewing '${wordFromStreak}' from streak. Loading from cache.`);
+        setGeneratedContents(cachedContentsForWord); 
         const initialMode = cachedContentsForWord.explain ? 'explain' : (Object.keys(cachedContentsForWord)[0] as ContentMode | undefined) || 'explain';
         setActiveMode(initialMode);
-        // Do not change lastSubmittedQuestionRef.current here, as the primary streak context remains.
+        setCurrentTutorWordIsFavorite(wordData?.is_favorite || false); 
+        // DO NOT change lastSubmittedQuestionRef.current - the primary streak end remains the same.
+        // DO NOT call generateContent here if cache is found, as it might overwrite with stale data or trigger unwanted fetches.
     } else {
-      console.warn(`No cache for streak review word: ${wordFromStreak}. Fetching 'explain'.`);
-      generateContent(wordFromStreak, 'explain', { isNewPrimaryFocus: false, isReview: true, triggeredBy: 'review_click', preserveCurrentStreak: true });
+      console.warn(`No local cache for streak review word: ${wordFromStreak}. Fetching 'explain'.`);
+      // Fetch content for the reviewed word. This won't change primary focus.
+      generateContent(wordFromStreak, 'explain', { 
+        isNewPrimaryFocus: false, // Not a new primary focus
+        isReview: true,           // Mark as review
+        triggeredBy: 'review_click', 
+        preserveCurrentStreak: true // Keep the main streak
+      });
     }
   };
 
@@ -669,19 +755,20 @@ const TinyTutorAppContent: React.FC = () => {
     if (!user) { setAuthModalMode('login'); setShowAuthModal(true); return; }
     
     setInputQuestion(word);
-    isReviewingStreakWordRef.current = false;
+    isReviewingStreakWordRef.current = false; // Clicking from past streak starts a new primary focus
     setAiError(null);
 
     handleEndStreak("Clicked word from past streak history", currentStreak);
     setCurrentStreak({ words: [word], score: 1 });
 
     const wordData = profileData?.explored_words_list.find(w => w.word.toLowerCase().trim() === word.toLowerCase().trim());
+    const initialModeToLoad = wordData?.generated_content_cache?.explain ? 'explain' : (Object.keys(wordData?.generated_content_cache || {})[0] as ContentMode | undefined) || 'explain';
+
     if (wordData?.generated_content_cache && Object.keys(wordData.generated_content_cache).length > 0) {
-        lastSubmittedQuestionRef.current = word;
+        // lastSubmittedQuestionRef.current = word; // Will be set by generateContent
         setGeneratedContents(wordData.generated_content_cache);
-        const initialMode = wordData.generated_content_cache.explain ? 'explain' : (Object.keys(wordData.generated_content_cache)[0] as ContentMode | undefined) || 'explain';
-        setActiveMode(initialMode);
-        generateContent(word, initialMode, {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click'});
+        setActiveMode(initialModeToLoad);
+        generateContent(word, initialModeToLoad, {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click'});
     } else {
         generateContent(word, 'explain', {isNewPrimaryFocus: true, triggeredBy: 'past_streak_click'});
     }
@@ -691,24 +778,79 @@ const TinyTutorAppContent: React.FC = () => {
   const handleOpenProfileModal = async () => {
     if (!user) { setShowAuthModal(true); setAuthModalMode('login'); return; }
     setShowProfileModal(true);
-    fetchProfileDataSilently(true);
+    fetchProfileDataSilently(true); // Force fetch fresh profile data
   };
-  const handleToggleFavoriteOnTutorPage = async () => { /* ... same as v10 ... */ };
   
-  // MODIFIED: handleToggleFavoriteInProfile signature and usage
+  const handleToggleFavoriteOnTutorPage = async () => {
+    const wordToToggle = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
+    if (!wordToToggle || !user) return;
+
+    const newFavoriteStatus = !currentTutorWordIsFavorite;
+    setCurrentTutorWordIsFavorite(newFavoriteStatus); // Optimistic UI update
+
+    // Also update in profileData if it exists there
+    setProfileData(prev => {
+        if (!prev) return null;
+        const listToUpdate = prev.explored_words_list.map(w => 
+            w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: newFavoriteStatus } : w
+        );
+        return { 
+            ...prev, 
+            explored_words_list: listToUpdate,
+            favorite_words_list: listToUpdate.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
+        };
+    });
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ word: wordToToggle, is_favorite: newFavoriteStatus }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setCurrentTutorWordIsFavorite(!newFavoriteStatus); // Revert on error
+        setProfileData(prev => { // Revert in profileData
+            if (!prev) return null;
+            const listToRevert = prev.explored_words_list.map(w => 
+                w.word.toLowerCase() === wordToToggle.toLowerCase() ? { ...w, is_favorite: !newFavoriteStatus } : w
+            );
+            return { 
+                ...prev, 
+                explored_words_list: listToRevert,
+                favorite_words_list: listToRevert.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
+            };
+        });
+        throw new Error(data.error || 'Failed to toggle favorite');
+      }
+      // Success, profile data should be refetched if it was modified to get correct IDs etc.
+      // or rely on the optimistic update. For now, optimistic is fine.
+      // fetchProfileDataSilently(true); // Optionally refetch to ensure consistency
+    } catch (error) {
+      console.error("Error toggling favorite:", error);
+      setAiError(`Could not toggle favorite: ${(error as Error).message}`);
+    }
+  };
+  
   const handleToggleFavoriteInProfile = async (wordId: string, isCurrentlyFavorite: boolean) => {
     const wordEntry = profileData?.explored_words_list.find(w => w.id === wordId);
     if (!wordEntry || !user) return;
     
     const originalWord = wordEntry.word;
-    const newFavoriteStatus = !isCurrentlyFavorite; // Use the passed current state
+    const newFavoriteStatus = !isCurrentlyFavorite;
 
-    setProfileData(prev => {
+    setProfileData(prev => { // Optimistic update for profile modal
         if (!prev) return null;
         const updatedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: newFavoriteStatus } : w);
-        return { ...prev, explored_words_list: updatedList, favorite_words_list: updatedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())};
+        return { 
+            ...prev, 
+            explored_words_list: updatedList, 
+            favorite_words_list: updatedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
+        };
     });
-    if (lastSubmittedQuestionRef.current?.toLowerCase() === originalWord.toLowerCase()) {
+    // If the word being toggled in profile is the one currently displayed in the tutor:
+    const currentTutorDisplayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
+    if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) {
       setCurrentTutorWordIsFavorite(newFavoriteStatus);
     }
 
@@ -716,22 +858,28 @@ const TinyTutorAppContent: React.FC = () => {
       const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word: originalWord, is_favorite: newFavoriteStatus }),
+        body: JSON.stringify({ word: originalWord, is_favorite: newFavoriteStatus }), // Send originalWord (name)
       });
       const data = await response.json();
-      if (!response.ok) {
-        setProfileData(prev => { // Revert on error
+      if (!response.ok) { // Revert on error
+        setProfileData(prev => { 
             if (!prev) return null;
-            const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w); // Use original state
-            return { ...prev, explored_words_list: revertedList, favorite_words_list: revertedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())};
+            const revertedList = prev.explored_words_list.map(w => w.id === wordId ? { ...w, is_favorite: isCurrentlyFavorite } : w);
+            return { 
+                ...prev, 
+                explored_words_list: revertedList, 
+                favorite_words_list: revertedList.filter(w => w.is_favorite).sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())
+            };
         });
-        if (lastSubmittedQuestionRef.current?.toLowerCase() === originalWord.toLowerCase()) {
-          setCurrentTutorWordIsFavorite(isCurrentlyFavorite); // Revert
+        if (currentTutorDisplayWord?.toLowerCase() === originalWord.toLowerCase()) {
+          setCurrentTutorWordIsFavorite(isCurrentlyFavorite);
         }
         throw new Error(data.error || 'Failed to toggle favorite in profile');
       }
+      // fetchProfileDataSilently(true); // Optionally refetch, but optimistic should be okay.
     } catch (error) {
       console.error("Error toggling favorite from profile:", error);
+       setAiError(`Failed to update favorite for "${originalWord}": ${(error as Error).message}`);
     }
   };
   
@@ -744,7 +892,7 @@ const TinyTutorAppContent: React.FC = () => {
             <>
               <span className="text-sm hidden sm:inline">Welcome, {user.username}!</span>
               <button onClick={handleOpenProfileModal} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Profile</button>
-              <button onClick={() => { handleEndStreak("Logout", currentStreak); logout(); setGeneratedContents({}); setInputQuestion(''); lastSubmittedQuestionRef.current = null; setAiError(null); }} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800">Logout</button>
+              <button onClick={() => { handleEndStreak("Logout", currentStreak); logout(); setGeneratedContents({}); setInputQuestion(''); lastSubmittedQuestionRef.current = null; setAiError(null); setCurrentStreak({ words: [], score: 0 }); isReviewingStreakWordRef.current = false; }} className="px-4 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-200 dark:bg-indigo-700 dark:hover:bg-indigo-800">Logout</button>
             </>
           ) : (
             <button onClick={() => { setAuthModalMode('login'); setShowAuthModal(true); }} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-600">Login / Sign Up</button>
@@ -761,23 +909,23 @@ const TinyTutorAppContent: React.FC = () => {
           </div>
         </div>
 
-        <button onClick={handleGenerateClick} disabled={isLoadingExplanation || !inputQuestion.trim() || !user} className="w-full sm:w-auto bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-md focus:outline-none focus:shadow-outline disabled:opacity-50 transition duration-150 ease-in-out mb-4 text-lg">
-          {isLoadingExplanation && (lastSubmittedQuestionRef.current === inputQuestion.trim()) ? 'Generating...' : 'Generate Explanation'}
+        <button onClick={handleGenerateClick} disabled={isLoadingExplanation || !inputQuestion.trim() || (!user && !inputQuestion.trim())} className="w-full sm:w-auto bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-md focus:outline-none focus:shadow-outline disabled:opacity-50 transition duration-150 ease-in-out mb-4 text-lg">
+           {isLoadingExplanation && (isReviewingStreakWordRef.current ? inputQuestion.toLowerCase() : lastSubmittedQuestionRef.current?.toLowerCase()) === inputQuestion.toLowerCase().trim() ? 'Generating...' : 'Generate Explanation'}
         </button>
 
-        {user && lastSubmittedQuestionRef.current && (
+        {user && (lastSubmittedQuestionRef.current || isReviewingStreakWordRef.current) && ( // Show controls if logged in AND there's a focus word OR reviewing
           <div className="my-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-md shadow-sm">
             <div className="flex flex-wrap items-center gap-2">
               {(['explain', 'image', 'fact', 'quiz', 'deep'] as ContentMode[]).map((mode) => (
                 <button key={mode} onClick={() => handleModeToggle(mode)}
-                        disabled={isLoadingExplanation || !lastSubmittedQuestionRef.current}
+                        disabled={isLoadingExplanation || !(isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current)}
                         className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors
                                     ${activeMode === mode ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'}
-                                    ${(!lastSubmittedQuestionRef.current || isLoadingExplanation) ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                    ${(!(isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current) || isLoadingExplanation) ? 'opacity-50 cursor-not-allowed' : ''}`}>
                   {mode.charAt(0).toUpperCase() + mode.slice(1)}
                 </button>
               ))}
-              {lastSubmittedQuestionRef.current && generatedContents.explain && (
+              {(isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current) && generatedContents.explain && (
                 <>
                   <button onClick={handleRefreshContent} disabled={isLoadingExplanation} className="p-2 text-gray-600 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 rounded-full focus:outline-none disabled:opacity-50" title="Refresh content">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
@@ -796,7 +944,7 @@ const TinyTutorAppContent: React.FC = () => {
                     <button
                       onClick={() => handleReviewStreakWordClick(word)}
                       className="hover:underline focus:outline-none disabled:no-underline disabled:text-gray-400"
-                      disabled={isLoadingExplanation || (word.toLowerCase().trim() === inputQuestion.toLowerCase().trim() && isReviewingStreakWordRef.current)}
+                      disabled={isLoadingExplanation || (isReviewingStreakWordRef.current && inputQuestion.toLowerCase().trim() === word.toLowerCase().trim())}
                     >
                       {word}
                     </button>
@@ -810,25 +958,33 @@ const TinyTutorAppContent: React.FC = () => {
         )}
 
         {aiError && (<div className="mt-4 p-3 bg-red-100 dark:bg-red-800 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-200 rounded-md text-sm"><p><strong>Error:</strong> {aiError}</p></div>)}
-
-        {isLoadingExplanation && !generatedContents[activeMode] && lastSubmittedQuestionRef.current && (
-            <div className="mt-6 flex justify-center items-center h-32"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>
-        )}
-
-        {lastSubmittedQuestionRef.current && generatedContents[activeMode] && !isLoadingExplanation && (
-            <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+        
+        {/* Determine current word for loading/display based on review state */}
+        {(() => {
+          const displayWord = isReviewingStreakWordRef.current ? inputQuestion : lastSubmittedQuestionRef.current;
+          if (isLoadingExplanation && !generatedContents[activeMode] && displayWord) {
+            return <div className="mt-6 flex justify-center items-center h-32"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>;
+          }
+          if (displayWord && generatedContents[activeMode] && !isLoadingExplanation) {
+            return (
+              <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
                 {activeMode === 'explain' && generatedContents.explain ? (
-                    <HighlightedContentRenderer text={generatedContents.explain} onWordClick={handleWordClickFromExplanation} />
+                  <HighlightedContentRenderer text={generatedContents.explain} onWordClick={handleWordClickFromExplanation} />
                 ) : (
-                    <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>
+                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedContents[activeMode]}</p>
                 )}
-            </div>
-        )}
-        {lastSubmittedQuestionRef.current && !isLoadingExplanation && !generatedContents[activeMode] && (
-             <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
-                <p className="text-gray-500 dark:text-gray-400">Content for '{activeMode}' mode is not available for "{lastSubmittedQuestionRef.current}". Click the '{activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}' tab again to generate it.</p>
-            </div>
-        )}
+              </div>
+            );
+          }
+          if (displayWord && !isLoadingExplanation && !generatedContents[activeMode]) {
+            return (
+              <div className="mt-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700 shadow">
+                <p className="text-gray-500 dark:text-gray-400">Content for '{activeMode}' mode is not available for "{displayWord}". Click the '{activeMode.charAt(0).toUpperCase() + activeMode.slice(1)}' tab again to generate it.</p>
+              </div>
+            );
+          }
+          return null;
+        })()}
       </main>
 
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} initialMode={authModalMode} />

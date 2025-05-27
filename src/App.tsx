@@ -182,7 +182,7 @@ function App() {
 
   const fetchUserProfile = async (token: string) => {
     if (!token) return;
-    console.log(`Fetching user profile from: ${API_BASE_URL}/profile`);
+    console.log(`Workspaceing user profile from: ${API_BASE_URL}/profile`);
     try {
       const response = await fetch(`${API_BASE_URL}/profile`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -290,9 +290,10 @@ function App() {
 
     if (isNewPrimaryWordSearch || isProfileWordClick) {
       await endCurrentStreakIfNeeded(true);
-      setIsReviewingStreakWord(false);
+      setIsReviewingStreakWord(false); // Ensure exiting review mode for new searches
       setWordForReview('');
     }
+    // Note: handleSubTopicClick already sets isReviewingStreakWord to false.
     
     console.log(`Generating content for "${wordToFetch}", mode "${targetMode}" from: ${API_BASE_URL}/generate_explanation`);
     try {
@@ -315,16 +316,25 @@ function App() {
       }
 
       const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
+      const dataWord = data.word; // The actual word returned by the backend
       const contentToStore = data.full_cache || data;
-      const sanitizedWordId = sanitizeWordForId(data.word);
+      const sanitizedFetchedWordId = sanitizeWordForId(dataWord);
 
+      // Update currentFocusWord if appropriate
       if (isNewPrimaryWordSearch || isProfileWordClick) {
-        setCurrentFocusWord(data.word);
+        // For new searches or profile clicks, the fetched word becomes the new focus.
+        setCurrentFocusWord(dataWord);
+      } else if (isSubTopicClick) {
+        // For sub-topic clicks, the sub-topic (fetched word) becomes the new current focus.
+        // isReviewingStreakWord is false in this path due to handleSubTopicClick.
+        setCurrentFocusWord(dataWord);
       }
+      // If it's a refresh (isRefreshClick=true), currentFocusWord is not changed here.
+      // It's assumed to be a refresh for the existing currentFocusWord or wordForReview.
       
       setGeneratedContent(prev => {
         const newWordContent = {
-            ...(prev[sanitizedWordId] || {}), 
+            ...(prev[sanitizedFetchedWordId] || {}), 
             ...contentToStore,
             is_favorite: data.is_favorite, 
         };
@@ -333,28 +343,32 @@ function App() {
         }
         return {
             ...prev,
-            [sanitizedWordId]: newWordContent,
+            [sanitizedFetchedWordId]: newWordContent,
         };
       });
 
       setActiveContentMode(targetMode);
+      // Reset quiz index if quiz mode was targeted for the word now in display focus
+      // The useEffect for quiz handling will pick up changes based on getDisplayWord()
       if (targetMode === 'quiz') {
-          setCurrentQuizQuestionIndex(0);
+          setCurrentQuizQuestionIndex(0); // General reset, useEffect will refine
       }
 
-      if (!isSubTopicClick && !isProfileWordClick) {
-        setInputValue('');
+
+      if (!isSubTopicClick && !isProfileWordClick) { // Don't clear input if it's a sub-topic or profile click
+        setInputValue(''); 
       }
 
+      // Streak Update Logic
       if (isSubTopicClick && liveStreak) {
-        if (liveStreak.words[liveStreak.words.length - 1]?.toLowerCase() !== data.word.toLowerCase()) {
+        if (liveStreak.words[liveStreak.words.length - 1]?.toLowerCase() !== dataWord.toLowerCase()) {
           setLiveStreak(prev => ({
             score: (prev?.score || 0) + 1,
-            words: [...(prev?.words || []), data.word],
+            words: [...(prev?.words || []), dataWord],
           }));
         }
       } else if (isNewPrimaryWordSearch || isProfileWordClick) {
-        setLiveStreak({ score: 1, words: [data.word] });
+        setLiveStreak({ score: 1, words: [dataWord] });
       }
 
     } catch (err) {
@@ -368,7 +382,7 @@ function App() {
   const handleFetchNewQuizSet = () => {
     const wordForNewQuiz = getDisplayWord();
     if (wordForNewQuiz && authToken) {
-        console.log(`Fetching new quiz set for "${wordForNewQuiz}"`);
+        console.log(`Workspaceing new quiz set for "${wordForNewQuiz}"`);
         handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
     } else if (!authToken) {
         setShowAuthModal(true);
@@ -385,11 +399,11 @@ function App() {
         setIsQuizAttempted(false);
     }
 
-    const wordInFocus = getDisplayWord(); // This variable is used below
+    const wordInFocus = getDisplayWord();
     const sanitizedWordInFocus = getDisplayWordSanitized();
 
-    if (!wordInFocus) { // Check if wordInFocus has a value
-        if (!getDisplayWord()) { // Redundant check, but safe
+    if (!wordInFocus) { 
+        if (!getDisplayWord()) { 
             setError("Please search for a word first or select a word from your history/streak.");
         }
         return;
@@ -399,7 +413,7 @@ function App() {
     
     if (
         authToken &&
-        sanitizedWordInFocus && // This implies wordInFocus is also valid
+        sanitizedWordInFocus && 
         (!currentWordDataForModeCheck ||
          !currentWordDataForModeCheck[mode] ||
          (mode === 'quiz' && (!currentWordDataForModeCheck.quiz || currentWordDataForModeCheck.quiz.length === 0))
@@ -407,7 +421,7 @@ function App() {
     ) {
         setIsLoading(true);
         setError(null);
-        console.log(`Fetching content for mode "${mode}" for word "${wordInFocus}" from: ${API_BASE_URL}/generate_explanation`); // wordInFocus used here
+        console.log(`Workspaceing content for mode "${mode}" for word "${wordInFocus}" from: ${API_BASE_URL}/generate_explanation`); 
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
@@ -415,7 +429,7 @@ function App() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${authToken}`,
                 },
-                body: JSON.stringify({ word: wordInFocus.trim(), mode: mode }), // wordInFocus used here
+                body: JSON.stringify({ word: wordInFocus.trim(), mode: mode }), 
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
@@ -448,7 +462,7 @@ function App() {
             }
 
         } catch (err) {
-            console.error(`Error fetching ${mode} for ${wordInFocus}:`, err); // wordInFocus used here for logging
+            console.error(`Error fetching ${mode} for ${wordInFocus}:`, err); 
             setError((err as Error).message);
         } finally {
             setIsLoading(false);
@@ -497,9 +511,10 @@ function App() {
   };
 
   const handleSubTopicClick = (subTopic: string) => {
-    setIsReviewingStreakWord(false);
+    setIsReviewingStreakWord(false); // Exit review mode when clicking a sub-topic
     setWordForReview('');
-    setInputValue(subTopic);
+    setInputValue(subTopic); // Optionally set input, or clear it
+    // This call will update currentFocusWord to subTopic inside handleGenerateExplanation
     handleGenerateExplanation(subTopic, true, false, false, 'explain');
   };
 
@@ -537,7 +552,7 @@ function App() {
     if (!authToken) return;
     setIsLoading(true);
     setError(null);
-    console.log(`Fetching 'explain' content for review word "${wordToReview}" from: ${API_BASE_URL}/generate_explanation`);
+    console.log(`Workspaceing 'explain' content for review word "${wordToReview}" from: ${API_BASE_URL}/generate_explanation`);
     try {
         const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
             method: 'POST',
@@ -574,8 +589,7 @@ function App() {
 
 
   useEffect(() => {
-    // const wordInFocus = getDisplayWord(); // This line was causing the "declared but not read" error.
-    const sanitizedWordInFocus = getDisplayWordSanitized(); // This is used.
+    const sanitizedWordInFocus = getDisplayWordSanitized(); 
 
     if (activeContentMode === 'quiz' && sanitizedWordInFocus && generatedContent[sanitizedWordInFocus]?.quiz) {
         const wordData = generatedContent[sanitizedWordInFocus];

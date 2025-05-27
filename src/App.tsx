@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, CheckCircle, XCircle, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain } from 'lucide-react';
-import './App.css'; // Assuming some base styles might be here
-// import './index.css'; // Tailwind base is usually in main.tsx or index.html
+import './App.css';
 
 // --- Constants ---
-//const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'; // Ensure this is set in .env
+// USE YOUR DEPLOYED BACKEND URL HERE
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
+// const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'; // For local dev if using .env
+
 // --- Types ---
 interface UserProfile {
   username: string;
@@ -24,7 +25,6 @@ interface WordHistoryEntry {
   last_explored_at: string; // ISO Date string
   is_favorite: boolean;
   modes_generated?: string[];
-  // explicit_connections might be part of generated_content_cache.explain
 }
 
 interface StreakEntry {
@@ -82,7 +82,10 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     return null;
   }
   const lines = quizStr.trim().split('\n');
-  if (lines.length < 6) return null; // Question, 4 options, Correct Answer
+  if (lines.length < 6) { // Question, 4 options, Correct Answer
+    console.warn("Quiz string has too few lines:", lines.length, quizStr);
+    return null;
+  }
 
   const questionText = lines[0].replace(/^Question:\s*/i, '').trim();
   const options: { key: string; text: string }[] = [];
@@ -90,22 +93,27 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   let correctOptionKey = '';
 
   for (let i = 1; i <= 4; i++) {
-    if (!lines[i]) return null;
+    if (!lines[i]) {
+        console.warn("Missing option line for quiz:", i, quizStr);
+        return null;
+    }
     const match = lines[i].match(optionRegex);
     if (match) {
       options.push({ key: match[1].toUpperCase(), text: match[2].trim() });
     } else {
-      // Fallback if regex fails but line exists
       const key = String.fromCharCode(64 + i); // A, B, C, D
-      options.push({ key, text: lines[i].trim().substring(3).trim() });
+      const textContent = lines[i].trim().length > 3 ? lines[i].trim().substring(3).trim() : lines[i].trim();
+      options.push({ key, text: textContent });
+      console.warn(`Option line ${i} did not match regex, fallback parsing:`, lines[i]);
     }
   }
 
   const correctAnswerLine = lines.find(line => line.toLowerCase().startsWith('correct answer:'));
   if (correctAnswerLine) {
     correctOptionKey = correctAnswerLine.replace(/Correct Answer:\s*/i, '').trim().toUpperCase();
-  } else if (lines[5]) { // Fallback if "Correct Answer:" prefix is missing
+  } else if (lines[5]) { 
      correctOptionKey = lines[5].trim().toUpperCase();
+     console.warn("Correct answer line prefix missing, fallback to line 5:", lines[5]);
   }
 
 
@@ -119,7 +127,9 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     if (foundOptByText) {
         correctOptionKey = foundOptByText.key;
     } else {
-        console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}`);
+        console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}. Defaulting to A or first valid option if possible.`);
+        // Fallback or error handling for invalid correctOptionKey
+        // correctOptionKey = options[0]?.key || 'A'; // Example fallback
     }
   }
 
@@ -130,7 +140,7 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
 // --- Main App Component ---
 function App() {
   const [inputValue, setInputValue] = useState<string>('');
-  const [currentFocusWord, setCurrentFocusWord] = useState<string>(''); // The word being displayed
+  const [currentFocusWord, setCurrentFocusWord] = useState<string>(''); 
   const [currentFocusWordSanitized, setCurrentFocusWordSanitized] = useState<string>('');
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent>({});
   const [activeContentMode, setActiveContentMode] = useState<ContentMode>('explain');
@@ -143,12 +153,10 @@ function App() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
 
-  // Streak Management
   const [liveStreak, setLiveStreak] = useState<LiveStreak | null>(null);
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState<boolean>(false);
-  const [wordForReview, setWordForReview] = useState<string>(''); // Word being reviewed from streak/profile
+  const [wordForReview, setWordForReview] = useState<string>(''); 
 
-  // Quiz Management
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState<number>(0);
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
@@ -156,7 +164,6 @@ function App() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // --- Authentication Effects & Handlers ---
   useEffect(() => {
     const token = localStorage.getItem('authToken');
     if (token) {
@@ -167,17 +174,25 @@ function App() {
 
   const fetchUserProfile = async (token: string) => {
     if (!token) return;
+    console.log(`Fetching user profile from: ${API_BASE_URL}/profile`);
     try {
       const response = await fetch(`${API_BASE_URL}/profile`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!response.ok) throw new Error('Failed to fetch profile');
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 422) { // Unauthorized or Unprocessable Entity (invalid token)
+            console.warn("Token validation failed or token expired. Logging out.");
+            handleLogout(); // Logout if token is invalid
+            return;
+        }
+        throw new Error('Failed to fetch profile, status: ' + response.status);
+      }
       const data: UserProfile = await response.json();
       setCurrentUser(data);
     } catch (err) {
       console.error("Error fetching profile:", err);
-      if ((err as Error).message.includes('Failed to fetch profile') || (err as Error).message.includes('401')) {
-        handleLogout(); 
+      if ((err as Error).message.includes('Token validation failed') || (err as Error).message.includes('401')) {
+        // Already handled by status check, but good to catch specific messages too
       }
     }
   };
@@ -203,11 +218,14 @@ function App() {
     setCurrentFocusWordSanitized('');
     setGeneratedContent({});
     setLiveStreak(null);
+    setError(null); // Clear any errors on logout
+    setShowAuthModal(false); // Ensure auth modal is closed
+    setShowProfileModal(false); // Ensure profile modal is closed
   };
 
-  // --- Streak Management ---
   const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false) => {
     if (liveStreak && liveStreak.score >= 2 && authToken) {
+      console.log(`Attempting to save streak to: ${API_BASE_URL}/save_streak`);
       try {
         await fetch(`${API_BASE_URL}/save_streak`, {
           method: 'POST',
@@ -226,8 +244,6 @@ function App() {
     }
   }, [liveStreak, authToken]);
 
-
-  // --- Content Generation & Handling ---
   const handleGenerateExplanation = async (
     wordToFetch: string,
     isSubTopicClick: boolean = false,
@@ -257,6 +273,7 @@ function App() {
       await endCurrentStreakIfNeeded(true); 
     }
     
+    console.log(`Generating explanation for "${wordToFetch}" from: ${API_BASE_URL}/generate_explanation`);
     try {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
@@ -272,7 +289,7 @@ function App() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "An unknown error occurred." }));
+        const errorData = await response.json().catch(() => ({ error: "An unknown error occurred processing the request." }));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
@@ -328,6 +345,7 @@ function App() {
     ) {
         setIsLoading(true);
         setError(null);
+        console.log(`Fetching content for mode "${mode}" for word "${currentFocusWord}" from: ${API_BASE_URL}/generate_explanation`);
         try {
             const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
                 method: 'POST',
@@ -337,7 +355,10 @@ function App() {
                 },
                 body: JSON.stringify({ word: currentFocusWord, mode: mode }),
             });
-            if (!response.ok) throw new Error(`Failed to fetch content for ${mode}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            }
             const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
             const contentToStore = data.full_cache || data;
 
@@ -358,7 +379,6 @@ function App() {
     }
   };
 
-
   const handleToggleFavorite = async () => {
     if (!authToken || !currentFocusWordSanitized) return;
     const currentIsFavorite = generatedContent[currentFocusWordSanitized]?.is_favorite || false;
@@ -369,7 +389,7 @@ function App() {
         is_favorite: !currentIsFavorite,
       }
     }));
-
+    console.log(`Toggling favorite for "${currentFocusWord}" to ${!currentIsFavorite} at: ${API_BASE_URL}/toggle_favorite`);
     try {
       await fetch(`${API_BASE_URL}/toggle_favorite`, {
         method: 'POST',
@@ -377,7 +397,7 @@ function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ word: currentFocusWord }),
+        body: JSON.stringify({ word: currentFocusWord }), // Backend toggles based on current state
       });
       if (showProfileModal && authToken) fetchUserProfile(authToken);
     } catch (err) {
@@ -427,6 +447,7 @@ function App() {
   const handleFetchContentForReview = async (wordToReview: string) => {
     if (!authToken) return;
     setIsLoading(true);
+    console.log(`Fetching content for review word "${wordToReview}" from: ${API_BASE_URL}/generate_explanation`);
     try {
         const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
             method: 'POST',
@@ -436,7 +457,10 @@ function App() {
             },
             body: JSON.stringify({ word: wordToReview, mode: 'explain' }), 
         });
-        if (!response.ok) throw new Error(`Failed to fetch content for review: ${wordToReview}`);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for review: ${wordToReview}` }));
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
         const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
         const contentToStore = data.full_cache || data;
         setGeneratedContent(prev => ({
@@ -451,8 +475,6 @@ function App() {
     }
   };
 
-
-  // --- Quiz Logic ---
   useEffect(() => {
     const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
     const sanitizedWordInFocus = sanitizeWordForId(wordInFocus);
@@ -483,7 +505,6 @@ function App() {
       generatedContent, 
   ]);
 
-
   const handleSaveQuizAttempt = async (questionIndex: number, optionKey: string, isCorrect: boolean) => {
     const wordBeingQuizzed = isReviewingStreakWord ? wordForReview : currentFocusWord;
     const sanitizedWordBeingQuizzed = sanitizeWordForId(wordBeingQuizzed);
@@ -503,7 +524,7 @@ function App() {
         }
         return;
     }
-
+    console.log(`Saving quiz attempt for "${wordBeingQuizzed}" to: ${API_BASE_URL}/save_quiz_attempt`);
     try {
       const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
         method: 'POST',
@@ -518,7 +539,10 @@ function App() {
           is_correct: isCorrect,
         }),
       });
-      if (!response.ok) throw new Error('Failed to save quiz attempt');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to save quiz attempt' }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
       const data: { message: string, quiz_progress: QuizAttempt[] } = await response.json();
 
       setGeneratedContent(prev => ({
@@ -530,7 +554,7 @@ function App() {
       }));
     } catch (err) {
       console.error("Error saving quiz attempt:", err);
-      setError("Failed to save your answer. Please try again.");
+      setError("Failed to save your answer. Please try again. " + (err as Error).message);
     }
   };
 
@@ -562,8 +586,6 @@ function App() {
     }
   };
 
-
-  // --- Render Logic ---
   const getDisplayWord = () => isReviewingStreakWord ? wordForReview : currentFocusWord;
   const getDisplayWordSanitized = () => sanitizeWordForId(getDisplayWord());
 
@@ -571,18 +593,17 @@ function App() {
   const explanationHTML = { __html: currentDisplayWordData?.explain?.replace(/<click>(.*?)<\/click>/g, '<strong class="text-blue-500 hover:text-blue-700 cursor-pointer underline">$1</strong>') || '' };
 
   const renderContent = () => {
-    if (isLoading && !currentDisplayWordData?.[activeContentMode]) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2">Loading content...</span></div>;
+    if (isLoading && !currentDisplayWordData?.[activeContentMode]) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading content...</span></div>; // Text color for loading
     if (error && !currentDisplayWordData?.[activeContentMode]) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
 
     const displayData = currentDisplayWordData;
     if (!displayData && getDisplayWord()) return <div className="text-gray-500 p-4">Select a mode or generate content for "{getDisplayWord()}".</div>;
     if (!displayData && !getDisplayWord()) return <div className="text-gray-500 p-4">Enter a word and click "Generate Explanation".</div>;
 
-
     switch (activeContentMode) {
       case 'explain':
         return (
-          <div className="prose max-w-none p-1" onClick={(e) => {
+          <div className="prose max-w-none p-1 text-gray-800" onClick={(e) => { // Ensure prose text is dark
             const target = e.target as HTMLElement;
             if (target.tagName === 'STRONG' && target.classList.contains('text-blue-500')) {
               handleSubTopicClick(target.innerText);
@@ -601,11 +622,11 @@ function App() {
           </div>
         );
       case 'fact':
-        return <div className="prose max-w-none p-1">{displayData?.fact || "No fact available yet."}</div>;
+        return <div className="prose max-w-none p-1 text-gray-800">{displayData?.fact || "No fact available yet."}</div>;
       case 'image':
-        return <div className="prose max-w-none p-1">{displayData?.image || "Image feature coming soon."}</div>;
+        return <div className="prose max-w-none p-1 text-gray-800">{displayData?.image || "Image feature coming soon."}</div>;
       case 'deep_dive':
-        return <div className="prose max-w-none p-1">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
+        return <div className="prose max-w-none p-1 text-gray-800">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
       case 'quiz':
         const quizSet = displayData?.quiz;
         const quizProgress = displayData?.quiz_progress || [];
@@ -621,7 +642,7 @@ function App() {
             });
 
             return (
-                <div className="p-4 space-y-6">
+                <div className="p-4 space-y-6 text-gray-800"> {/* Ensure text color for summary */}
                     <h3 className="text-xl font-semibold text-gray-700">Quiz Summary for "{getDisplayWord()}"</h3>
                     <p className="text-lg font-medium">Your Score: {correctCount} / {quizSet.length}</p>
                     {quizSet.map((quizString, index) => {
@@ -632,11 +653,11 @@ function App() {
                         const selectedOptionInfo = attempt ? parsedQuestion.options.find(opt => opt.key === attempt.selected_option_key) : null;
 
                         return (
-                            <div key={index} className="p-4 border rounded-lg shadow-sm bg-white">
+                            <div key={index} className="p-4 border rounded-lg shadow-sm bg-white"> {/* White background for each question summary */}
                                 <p className="font-semibold text-gray-800 mb-2">Q{index + 1}: {parsedQuestion.questionText}</p>
                                 <ul className="space-y-1">
                                     {parsedQuestion.options.map(opt => (
-                                        <li key={opt.key} className={`p-2 rounded-md border text-sm
+                                        <li key={opt.key} className={`p-2 rounded-md border text-sm text-gray-700 
                                             ${opt.key === parsedQuestion.correctOptionKey ? 'bg-green-100 border-green-300 font-medium' : ''}
                                             ${attempt && opt.key === attempt.selected_option_key && opt.key !== parsedQuestion.correctOptionKey ? 'bg-red-100 border-red-300' : ''}
                                             ${attempt && opt.key === attempt.selected_option_key ? 'ring-2 ring-offset-1' : ''}
@@ -689,9 +710,8 @@ function App() {
         const attemptForThisQuestion = quizProgress.find(p => p.question_index === currentQuizQuestionIndex);
         const alreadyAnsweredThisQuestion = !!attemptForThisQuestion;
 
-
         return (
-          <div className="p-4 space-y-4">
+          <div className="p-4 space-y-4 text-gray-800"> {/* Ensure text color for active quiz */}
             <p className="font-semibold text-lg text-gray-700">Question {currentQuizQuestionIndex + 1} of {quizSet.length}:</p>
             <p className="text-gray-800">{parsedQuestion.questionText}</p>
             <div className="space-y-2">
@@ -700,7 +720,7 @@ function App() {
                   key={opt.key}
                   onClick={() => !alreadyAnsweredThisQuestion && handleQuizOptionSelect(opt.key, parsedQuestion.correctOptionKey, currentQuizQuestionIndex)}
                   disabled={alreadyAnsweredThisQuestion || isQuizAttempted}
-                  className={`w-full text-left p-3 rounded-lg border transition-all duration-150
+                  className={`w-full text-left p-3 rounded-lg border transition-all duration-150 text-gray-700 
                     ${selectedQuizOption === opt.key ? (quizFeedback?.isCorrect ? 'bg-green-200 border-green-400 ring-2 ring-green-500' : 'bg-red-200 border-red-400 ring-2 ring-red-500') : 'bg-white hover:bg-gray-100 border-gray-300'}
                     ${alreadyAnsweredThisQuestion && opt.key === attemptForThisQuestion!.selected_option_key ? (attemptForThisQuestion!.is_correct ? 'bg-green-200 border-green-400' : 'bg-red-200 border-red-400') : ''}
                     ${alreadyAnsweredThisQuestion && opt.key === parsedQuestion.correctOptionKey && opt.key !== attemptForThisQuestion!.selected_option_key ? 'border-green-500 border-2' : ''}
@@ -731,7 +751,7 @@ function App() {
           </div>
         );
       default:
-        return <div className="p-4">Select a content mode.</div>;
+        return <div className="p-4 text-gray-500">Select a content mode.</div>;
     }
   };
   
@@ -746,7 +766,7 @@ function App() {
             {words.map(wh => (
               <li key={wh.id} 
                   onClick={() => handleWordSelectionFromProfile(wh.word)}
-                  className="p-1.5 hover:bg-gray-200 rounded cursor-pointer flex justify-between items-center">
+                  className="p-1.5 hover:bg-gray-200 rounded cursor-pointer flex justify-between items-center text-gray-800"> {/* Text color for list items */}
                 <span>{wh.word} <span className="text-xs text-gray-500">({new Date(wh.last_explored_at).toLocaleDateString()})</span></span>
                 {wh.is_favorite && <Heart size={14} className="text-red-500 fill-current" />}
               </li>
@@ -762,7 +782,7 @@ function App() {
         {streaks && streaks.length > 0 ? (
           <ul className="max-h-40 overflow-y-auto text-sm space-y-1">
             {streaks.map(streak => (
-              <li key={streak.id} className="p-1.5 hover:bg-gray-200 rounded">
+              <li key={streak.id} className="p-1.5 hover:bg-gray-200 rounded text-gray-800"> {/* Text color for list items */}
                 <span className="font-medium">Score {streak.score}:</span> {streak.words.map((w, i) => (
                   <span key={i} onClick={() => handleWordSelectionFromProfile(w)} className="cursor-pointer hover:underline">{w}</span>
                 )).reduce((prev, curr) => <>{prev} → {curr}</>)}
@@ -776,7 +796,7 @@ function App() {
   
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto text-gray-800"> {/* Default text color for modal */}
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold">User Profile</h3>
             <button onClick={() => setShowProfileModal(false)} className="text-gray-500 hover:text-gray-700">&times;</button>
@@ -801,15 +821,21 @@ function App() {
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const formData = new FormData(e.currentTarget);
-      const email = formData.get('email') as string;
-      const username = formData.get('username') as string; 
+      // For login, use the 'email' field name for username/email input
+      // For signup, use 'username_signup' for username and 'email_signup' for email
+      const usernameOrEmail = formData.get('email_login') as string; 
+      const usernameSignup = formData.get('username_signup') as string;
+      const emailSignup = formData.get('email_signup') as string;
       const password = formData.get('password') as string;
       
       const endpoint = authMode === 'login' ? '/login' : '/signup';
-      const payload = authMode === 'login' ? { email_or_username: email, password } : { email, username, password };
+      const payload = authMode === 'login' 
+        ? { email_or_username: usernameOrEmail, password } 
+        : { email: emailSignup, username: usernameSignup, password };
 
       setIsLoading(true); 
       setError(null);
+      console.log(`Attempting ${authMode} to: ${API_BASE_URL}${endpoint} with payload:`, payload);
       try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
           method: 'POST',
@@ -822,7 +848,7 @@ function App() {
         }
         handleAuthSuccess(data.access_token, data.user);
       } catch (err) {
-        setError((err as Error).message);
+        setError("Auth failed: " + (err as Error).message); // More specific error
       } finally {
         setIsLoading(false);
       }
@@ -830,18 +856,23 @@ function App() {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm text-gray-800"> {/* Default text color for modal */}
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold">{authMode === 'login' ? 'Login' : 'Sign Up'}</h3>
             <button onClick={() => { setShowAuthModal(false); setError(null);}} className="text-gray-500 hover:text-gray-700">&times;</button>
           </div>
-          {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+          {error && <p className="text-red-500 text-sm mb-2 bg-red-100 p-2 rounded">{error}</p>}
           <form onSubmit={handleSubmit} className="space-y-4">
             {authMode === 'signup' && (
-              <input type="text" name="username" placeholder="Username" required className="w-full p-2 border rounded" />
+              <>
+                <input type="text" name="username_signup" placeholder="Username" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
+                <input type="email" name="email_signup" placeholder="Email" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
+              </>
             )}
-            <input type="text" name="email" placeholder={authMode === 'login' ? "Username or Email" : "Email"} required className="w-full p-2 border rounded" />
-            <input type="password" name="password" placeholder="Password" required className="w-full p-2 border rounded" />
+            {authMode === 'login' && (
+                 <input type="text" name="email_login" placeholder="Username or Email" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
+            )}
+            <input type="password" name="password" placeholder="Password" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
             <button type="submit" disabled={isLoading} className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 disabled:bg-blue-300">
               {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')}
             </button>
@@ -854,11 +885,9 @@ function App() {
     );
   };
 
-
-  // --- Main JSX ---
   const displayWord = getDisplayWord();
   const displayWordSanitized = getDisplayWordSanitized();
-  const isFavorite = generatedContent[displayWordSanitized]?.is_favorite || false;
+  const isFavoriteCurrent = generatedContent[displayWordSanitized]?.is_favorite || false;
 
   const contentModes: { id: ContentMode, label: string, icon: React.ElementType }[] = [
     { id: 'explain', label: 'Explain', icon: MessageSquare },
@@ -868,11 +897,9 @@ function App() {
     { id: 'deep_dive', label: 'Deep Dive', icon: FileText },
   ];
 
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-gray-100 flex flex-col items-center p-4 font-sans">
       <div className="w-full max-w-2xl bg-white/10 backdrop-blur-md shadow-2xl rounded-xl p-6 md:p-8">
-        {/* Header */}
         <header className="flex flex-col sm:flex-row justify-between items-center mb-6 pb-4 border-b border-white/20">
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 mb-2 sm:mb-0">
             Tiny Tutor AI
@@ -890,7 +917,6 @@ function App() {
           </div>
         </header>
 
-        {/* Input Area */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -900,7 +926,7 @@ function App() {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleGenerateExplanation(inputValue)}
               placeholder="Enter a word or concept..."
-              className="flex-grow p-3 rounded-lg bg-white/20 border border-white/30 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none placeholder-gray-400"
+              className="flex-grow p-3 rounded-lg bg-white/20 border border-white/30 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none placeholder-gray-300 text-white" // Ensure placeholder and text are visible
             />
             <button
               onClick={() => handleGenerateExplanation(inputValue)}
@@ -913,7 +939,6 @@ function App() {
           </div>
         </div>
 
-        {/* Live Streak Display */}
         {liveStreak && liveStreak.score > 0 && (
           <div className="mb-4 p-3 bg-white/10 rounded-lg text-sm">
             <span className="font-semibold">Live Streak: {liveStreak.score} </span>
@@ -936,40 +961,36 @@ function App() {
           </div>
         )}
         
-        {/* Content Area */}
         { (displayWord || error) && (
           <div className="bg-white/5 backdrop-blur-sm shadow-inner rounded-lg min-h-[200px]">
-            {/* Mode Toggles & Favorite */}
             <div className="flex flex-wrap items-center justify-between p-3 border-b border-white/20">
                 <div className="flex flex-wrap gap-1">
-                    {contentModes.map(mode => (
+                    {contentModes.map(modeInfo => (
                         <button
-                        key={mode.id}
-                        onClick={() => handleModeChange(mode.id)}
+                        key={modeInfo.id}
+                        onClick={() => handleModeChange(modeInfo.id)}
                         disabled={!displayWord}
                         className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center
-                            ${activeContentMode === mode.id ? 'bg-purple-500 text-white shadow-md' : 'bg-white/10 hover:bg-white/20 text-gray-200'}
+                            ${activeContentMode === modeInfo.id ? 'bg-purple-500 text-white shadow-md' : 'bg-white/10 hover:bg-white/20 text-gray-200'}
                             disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
-                        <mode.icon size={14} className="mr-1.5" /> {mode.label}
+                        <modeInfo.icon size={14} className="mr-1.5" /> {modeInfo.label}
                         </button>
                     ))}
                 </div>
                 {displayWord && (
-                    <button onClick={handleToggleFavorite} title={isFavorite ? "Remove from favorites" : "Add to favorites"} className="p-2 rounded-full hover:bg-white/20 transition-colors">
-                        <Heart size={20} className={`${isFavorite ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
+                    <button onClick={handleToggleFavorite} title={isFavoriteCurrent ? "Remove from favorites" : "Add to favorites"} className="p-2 rounded-full hover:bg-white/20 transition-colors">
+                        <Heart size={20} className={`${isFavoriteCurrent ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
                     </button>
                 )}
             </div>
             
-            {/* Content Display */}
-            <div className="p-2 sm:p-4">
+            <div className="p-2 sm:p-4 text-gray-800 bg-white rounded-b-lg"> {/* Content area background and text color */}
               {renderContent()}
             </div>
           </div>
         )}
 
-        {/* Modals */}
         {renderAuthModal()}
         {renderProfileModal()}
 

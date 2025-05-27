@@ -79,43 +79,70 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     console.error("Invalid quiz string for parsing:", quizStr);
     return null;
   }
-  const lines = quizStr.trim().split('\n');
+
+  // Clean up lines: trim, remove empty lines, and potential "Question X:" prefixes
+  let lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line.length > 0);
+
+  // Remove common "Question X:" or "**Question X:**" prefixes if they are on their own line
+  if (lines.length > 0 && lines[0].match(/^(\*\*?)?Question\s*\d+:(\*\*?)?$/i)) {
+    lines.shift(); // Remove the "Question X:" line
+    // If the next line is empty after removing the prefix, remove it too
+    if (lines.length > 0 && lines[0].trim() === '') {
+        lines.shift();
+    }
+  }
+  
+  // Further filter empty lines that might have been left or were part of original formatting
+  lines = lines.filter(line => line.trim().length > 0);
+
   if (lines.length < 6) { 
-    console.warn("Quiz string has too few lines:", lines.length, quizStr);
+    console.warn("Quiz string has too few content lines after cleaning:", lines.length, "Original string:", quizStr, "Cleaned lines:", lines);
     return null;
   }
 
-  const questionText = lines[0].replace(/^Question:\s*/i, '').trim();
+  const questionText = lines[0].replace(/^Question:\s*/i, '').trim(); // Question is now expected at lines[0]
   const options: { key: string; text: string }[] = [];
-  const optionRegex = /^\(([A-D])\)\s*(.*)/i;
+  const optionRegex = /^\s*([A-D])\)\s*(.*)/i; // Allow leading spaces before option key
   let correctOptionKey = '';
 
+  // Options are expected from lines[1] to lines[4]
   for (let i = 1; i <= 4; i++) {
     if (!lines[i]) {
-        console.warn("Missing option line for quiz:", i, quizStr);
+        console.warn("Missing option line for quiz:", i, "Original string:", quizStr, "Cleaned lines:", lines);
         return null;
     }
     const match = lines[i].match(optionRegex);
-    if (match) {
+    if (match && match[1] && match[2] !== undefined) { // Ensure match[2] is captured
       options.push({ key: match[1].toUpperCase(), text: match[2].trim() });
     } else {
-      const key = String.fromCharCode(64 + i); 
-      const textContent = lines[i].trim().length > 3 ? lines[i].trim().substring(3).trim() : lines[i].trim();
+      // Fallback if regex fails but line exists, assuming it's an option
+      // This fallback is risky if formatting is very inconsistent
+      const key = String.fromCharCode(64 + (i - 1) + 1); // A, B, C, D based on loop
+      const textContent = lines[i].trim().startsWith(`${key})`) ? lines[i].trim().substring(3).trim() : lines[i].trim();
       options.push({ key, text: textContent });
       console.warn(`Option line ${i} did not match regex, fallback parsing:`, lines[i]);
     }
   }
-
-  const correctAnswerLine = lines.find(line => line.toLowerCase().startsWith('correct answer:'));
-  if (correctAnswerLine) {
-    correctOptionKey = correctAnswerLine.replace(/Correct Answer:\s*/i, '').trim().toUpperCase();
-  } else if (lines[5]) { 
-     correctOptionKey = lines[5].trim().toUpperCase();
-     console.warn("Correct answer line prefix missing, fallback to line 5:", lines[5]);
+  
+  // Correct answer is expected at lines[5] or as a line starting with "Correct Answer:"
+  let correctAnswerLine = lines.find(line => line.toLowerCase().includes('correct answer:'));
+  if (!correctAnswerLine && lines[5]) { // If not found by keyword, check line 5
+      correctAnswerLine = lines[5];
   }
 
+  if (correctAnswerLine) {
+    // Try to extract from "Correct Answer: X" or just "X"
+    const correctMatch = correctAnswerLine.match(/(?:Correct Answer:\s*|^\s*)([A-D])(?:[.)]?\s*.*)?$/i);
+    if (correctMatch && correctMatch[1]) {
+      correctOptionKey = correctMatch[1].toUpperCase();
+    } else {
+        console.warn("Could not extract correct option key from line:", correctAnswerLine);
+    }
+  }
+
+
   if (options.length !== 4 || !correctOptionKey || !questionText) {
-    console.warn("Could not parse quiz string fully:", quizStr, { questionText, options, correctOptionKey });
+    console.warn("Could not parse quiz string fully after cleaning:", "Original string:", quizStr, "Cleaned lines:", lines, { questionText, options, correctOptionKey });
     return null; 
   }
   
@@ -125,6 +152,8 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
         correctOptionKey = foundOptByText.key;
     } else {
         console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}.`);
+        // Potentially mark as invalid or default if necessary
+        // return null; // Or handle error more gracefully
     }
   }
   return { questionText, options, correctOptionKey, originalString: quizStr };
@@ -138,30 +167,25 @@ function App() {
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent>({});
   const [activeContentMode, setActiveContentMode] = useState<ContentMode>('explain');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null); // General error for non-auth operations
+  const [error, setError] = useState<string | null>(null); 
 
   // Auth State
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [authError, setAuthError] = useState<string | null>(null); // Specific error for auth operations
+  const [authError, setAuthError] = useState<string | null>(null); 
   
-  // Auth Modal Input State (lifted from renderAuthModal)
   const [authInputUsername, setAuthInputUsername] = useState('');
   const [authInputEmail, setAuthInputEmail] = useState('');
   const [authInputPassword, setAuthInputPassword] = useState('');
 
-  // Profile Modal State
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
-  // Note: Profile data fetching logic is within fetchUserProfile and handleOpenProfileModal
 
-  // Streak State
   const [liveStreak, setLiveStreak] = useState<LiveStreak | null>(null);
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState<boolean>(false);
   const [wordForReview, setWordForReview] = useState<string>(''); 
 
-  // Quiz State
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState<number>(0);
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
@@ -197,7 +221,6 @@ function App() {
       setCurrentUser(data);
     } catch (err) {
       console.error("Error fetching profile:", err);
-      // setAuthError("Could not fetch profile. " + (err as Error).message); // Avoid setting general error for this
     }
   };
 
@@ -211,7 +234,6 @@ function App() {
     }
     setShowAuthModal(false);
     setAuthError(null); 
-    // Clear auth modal inputs
     setAuthInputUsername('');
     setAuthInputEmail('');
     setAuthInputPassword('');
@@ -230,7 +252,7 @@ function App() {
     setAuthError(null);
     setShowAuthModal(false); 
     setShowProfileModal(false); 
-    setAuthInputUsername(''); // Clear auth inputs on logout too
+    setAuthInputUsername(''); 
     setAuthInputEmail('');
     setAuthInputPassword('');
   };
@@ -269,13 +291,13 @@ function App() {
     if (!authToken) {
       setShowAuthModal(true);
       setAuthMode('login');
-      setAuthError("Please log in to generate content."); // Use authError
+      setAuthError("Please log in to generate content."); 
       return;
     }
 
     setIsLoading(true);
-    setError(null); // Clear general error
-    setAuthError(null); // Clear auth error
+    setError(null); 
+    setAuthError(null); 
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttempted(false);
@@ -567,7 +589,7 @@ function App() {
       }));
     } catch (err) {
       console.error("Error saving quiz attempt:", err);
-      setError("Failed to save your answer. " + (err as Error).message); // Use general error
+      setError("Failed to save your answer. " + (err as Error).message); 
     }
   };
 
@@ -620,7 +642,7 @@ function App() {
     switch (activeContentMode) {
       case 'explain':
         if (isLoading && !displayData?.explain) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading explanation...</span></div>;
-        if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>; // Show error if specific to explain
+        if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>; 
         return (
           <div className="prose max-w-none p-1 text-gray-800" onClick={(e) => { 
             const target = e.target as HTMLElement;
@@ -648,7 +670,9 @@ function App() {
         return <div className="prose max-w-none p-1 text-gray-800">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
       case 'quiz':
         if (isLoading && !displayData?.quiz) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading quiz...</span></div>;
-        if (error && !displayData?.quiz) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>; // Show error if specific to quiz
+        // Use authError for quiz-specific loading errors if needed, or general 'error'
+        const quizSpecificError = error && !displayData?.quiz; // Check if general error applies and quiz data is missing
+        if (quizSpecificError) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
         
         const quizSet = displayData?.quiz;
         const quizProgress = displayData?.quiz_progress || [];
@@ -669,7 +693,7 @@ function App() {
                     <p className="text-lg font-medium">Your Score: {correctCount} / {quizSet.length}</p>
                     {quizSet.map((quizString, index) => {
                         const parsedQuestion = parseQuizString(quizString);
-                        if (!parsedQuestion) return <div key={index} className="text-red-500">Error displaying question {index + 1}.</div>;
+                        if (!parsedQuestion) return <div key={index} className="text-red-500">Error displaying question {index + 1}. Data might be malformed.</div>;
                         
                         const attempt = quizProgress.find(p => p.question_index === index);
                         const selectedOptionInfo = attempt ? parsedQuestion.options.find(opt => opt.key === attempt.selected_option_key) : null;
@@ -726,7 +750,7 @@ function App() {
         const parsedQuestion = parseQuizString(currentQuestionString);
 
         if (!parsedQuestion) {
-          return <div className="text-red-500 p-4">Error loading question. Please try refreshing.</div>;
+          return <div className="text-red-500 p-4">Error loading question. Please try refreshing or check console for parsing errors.</div>;
         }
         
         const attemptForThisQuestion = quizProgress.find(p => p.question_index === currentQuizQuestionIndex);
@@ -839,12 +863,11 @@ function App() {
   };
 
   const renderAuthModal = () => {
-    // This function now uses authInputUsername, setAuthInputUsername, etc. from App's scope
     if (!showAuthModal) return null;
   
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-      setAuthError(null); // Clear previous auth errors
+      setAuthError(null); 
   
       const trimmedPassword = authInputPassword.trim();
       let endpoint = '';
@@ -858,7 +881,7 @@ function App() {
         }
         endpoint = '/login';
         payload = { email_or_username: trimmedUsernameOrEmail, password: trimmedPassword };
-      } else { // signup
+      } else { 
         const trimmedUsername = authInputUsername.trim(); 
         const trimmedEmail = authInputEmail.trim();
         if (!trimmedUsername || !trimmedEmail || !trimmedPassword) {
@@ -877,7 +900,7 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const data = await response.json(); // Attempt to parse JSON regardless of status
+        const data = await response.json(); 
         if (!response.ok) {
           throw new Error(data.error || `${authMode.charAt(0).toUpperCase() + authMode.slice(1)} failed. Status: ${response.status}`);
         }
@@ -922,7 +945,7 @@ function App() {
                   type="text" 
                   name="username_signup" 
                   placeholder="Username" 
-                  value={authInputUsername} // Use state from App component
+                  value={authInputUsername} 
                   onChange={(e) => setAuthInputUsername(e.target.value)}
                   required 
                   className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 
@@ -931,7 +954,7 @@ function App() {
                   type="email" 
                   name="email_signup" 
                   placeholder="Email" 
-                  value={authInputEmail} // Use state from App component
+                  value={authInputEmail} 
                   onChange={(e) => setAuthInputEmail(e.target.value)}
                   required 
                   className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 
@@ -943,7 +966,7 @@ function App() {
                     type="text" 
                     name="email_login" 
                     placeholder="Username or Email" 
-                    value={authInputUsername} // Use state from App component (serves as username/email for login)
+                    value={authInputUsername} 
                     onChange={(e) => setAuthInputUsername(e.target.value)}
                     required 
                     className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 
@@ -953,7 +976,7 @@ function App() {
               type="password" 
               name="password" 
               placeholder="Password" 
-              value={authInputPassword} // Use state from App component
+              value={authInputPassword} 
               onChange={(e) => setAuthInputPassword(e.target.value)}
               required 
               className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 

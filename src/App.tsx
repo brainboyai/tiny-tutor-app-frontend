@@ -260,7 +260,8 @@ function App() {
     isSubTopicClick: boolean = false,
     isRefreshClick: boolean = false, 
     isProfileWordClick: boolean = false,
-    targetMode: ContentMode = 'explain'
+    targetMode: ContentMode = 'explain',
+    isReviewFetch: boolean = false // New flag for review fetches
   ) => {
     if (!wordToFetch.trim()) {
       setError("Please enter a word.");
@@ -287,9 +288,10 @@ function App() {
         setIsQuizAttempted(false);
     }
 
-    const isNewPrimaryWordSearch = !isSubTopicClick && !isRefreshClick && !isProfileWordClick;
+    const isNewPrimaryWordSearch = !isSubTopicClick && !isRefreshClick && !isProfileWordClick && !isReviewFetch;
 
-    if (isNewPrimaryWordSearch || isProfileWordClick) {
+
+    if (isNewPrimaryWordSearch || (isProfileWordClick && !isReviewFetch)) {
       await endCurrentStreakIfNeeded(true); 
     }
     
@@ -317,17 +319,20 @@ function App() {
       const contentToStore = data.full_cache || data; 
       const sanitizedWordId = sanitizeWordForId(data.word);
 
-      setCurrentFocusWord(data.word); 
-      setCurrentFocusWordSanitized(sanitizedWordId);
+      if (!isReviewFetch) { // Only update focus word if not a background review fetch
+        setCurrentFocusWord(data.word); 
+        setCurrentFocusWordSanitized(sanitizedWordId);
+      }
       
       setGeneratedContent(prev => {
+        const existingWordData = prev[sanitizedWordId] || {};
         const newWordData = {
-            ...prev[sanitizedWordId], 
+            ...existingWordData, 
             ...contentToStore, 
-            is_favorite: data.is_favorite,
+            is_favorite: data.is_favorite !== undefined ? data.is_favorite : existingWordData.is_favorite,
         };
-        if (targetMode === 'quiz' && contentToStore.quiz) {
-            console.log("New quiz data received, resetting quiz_progress and index.");
+        if (targetMode === 'quiz' && (isRefreshClick || !existingWordData.quiz || existingWordData.quiz?.join('') !== contentToStore.quiz?.join(''))) {
+            console.log("New quiz data received or quiz refreshed, resetting quiz_progress and index for word:", data.word);
             newWordData.quiz_progress = []; 
         }
         return {
@@ -336,7 +341,10 @@ function App() {
         };
       });
 
-      setActiveContentMode(targetMode); 
+      if (!isReviewFetch) { // Only change active mode if not a background review fetch
+        setActiveContentMode(targetMode); 
+      }
+      
       if (targetMode === 'quiz') {
           setCurrentQuizQuestionIndex(0); 
           setIsQuizAttempted(false); 
@@ -344,20 +352,23 @@ function App() {
           setQuizFeedback(null);
       }
 
-      if (!isSubTopicClick && !isProfileWordClick) { 
+      if (!isSubTopicClick && !isProfileWordClick && !isReviewFetch) { 
         setInputValue(''); 
       }
-      setIsReviewingStreakWord(false); 
-      setWordForReview('');
+      if (!isReviewFetch) { // Don't change review state if it's a background fetch for review
+        setIsReviewingStreakWord(false); 
+        setWordForReview('');
+      }
 
-      if (isSubTopicClick && liveStreak) {
+
+      if (isSubTopicClick && liveStreak && !isReviewFetch) {
         if (liveStreak.words[liveStreak.words.length - 1]?.toLowerCase() !== wordToFetch.toLowerCase()) {
           setLiveStreak(prev => ({
             score: (prev?.score || 0) + 1,
             words: [...(prev?.words || []), data.word],
           }));
         }
-      } else if (isNewPrimaryWordSearch || isProfileWordClick) {
+      } else if ((isNewPrimaryWordSearch || isProfileWordClick) && !isReviewFetch) {
         setLiveStreak({ score: 1, words: [data.word] });
       }
 
@@ -371,10 +382,10 @@ function App() {
   };
 
   const handleFetchNewQuizSet = () => {
-    const wordForNewQuiz = getDisplayWord();
+    const wordForNewQuiz = getDisplayWord(); // This will be currentFocusWord or wordForReview
     if (wordForNewQuiz && authToken) {
         console.log(`Fetching new quiz set for "${wordForNewQuiz}"`);
-        handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
+        handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz', isReviewingStreakWord);
     } else if (!authToken) {
         setShowAuthModal(true);
         setAuthMode('login');
@@ -383,6 +394,9 @@ function App() {
   };
   
   const handleModeChange = async (mode: ContentMode) => {
+    const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
+    const sanitizedWordInFocus = sanitizeWordForId(wordInFocus);
+
     setActiveContentMode(mode);
     if (mode !== 'quiz') {
         setSelectedQuizOption(null);
@@ -390,68 +404,36 @@ function App() {
         setIsQuizAttempted(false);
     }
 
-    const currentWordData = generatedContent[currentFocusWordSanitized];
+    const currentWordData = generatedContent[sanitizedWordInFocus];
+    // Fetch if mode data is missing OR if it's quiz mode and quiz array is missing/empty
     if (
-        currentFocusWordSanitized && 
+        wordInFocus && 
         authToken &&
         (!currentWordData || 
          !currentWordData[mode] || 
          (mode === 'quiz' && (!currentWordData.quiz || currentWordData.quiz.length === 0))
         )
     ) {
-        setIsLoading(true);
-        setError(null);
-        console.log(`Fetching content for mode "${mode}" for word "${currentFocusWord}" from: ${API_BASE_URL}/generate_explanation`);
-        try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
-                body: JSON.stringify({ word: currentFocusWord.trim(), mode: mode }), 
-            });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-            }
-            const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-            const contentToStore = data.full_cache || data;
-
-            setGeneratedContent(prev => ({
-                ...prev,
-                [currentFocusWordSanitized]: {
-                    ...prev[currentFocusWordSanitized],
-                    ...contentToStore,
-                    is_favorite: data.is_favorite !== undefined ? data.is_favorite : prev[currentFocusWordSanitized]?.is_favorite,
-                },
-            }));
-            if (mode === 'quiz' && contentToStore.quiz) {
-                setCurrentQuizQuestionIndex(0); 
-                setSelectedQuizOption(null);
-                setQuizFeedback(null);
-                setIsQuizAttempted(false);
-            }
-        } catch (err) {
-            console.error(`Error fetching ${mode}:`, err);
-            setError((err as Error).message);
-        } finally {
-            setIsLoading(false);
-        }
+        // Call handleGenerateExplanation to fetch missing content for the current/reviewed word
+        // Pass isReviewFetch = isReviewingStreakWord to ensure focus doesn't change if it's a review
+        handleGenerateExplanation(wordInFocus, false, false, false, mode, isReviewingStreakWord);
     }
   };
 
   const handleToggleFavorite = async () => {
-    if (!authToken || !currentFocusWordSanitized) return;
-    const currentIsFavorite = generatedContent[currentFocusWordSanitized]?.is_favorite || false;
+    const wordToToggle = getDisplayWord();
+    const sanitizedWordToToggle = getDisplayWordSanitized();
+    if (!authToken || !sanitizedWordToToggle) return;
+
+    const currentIsFavorite = generatedContent[sanitizedWordToToggle]?.is_favorite || false;
     setGeneratedContent(prev => ({
       ...prev,
-      [currentFocusWordSanitized]: {
-        ...prev[currentFocusWordSanitized],
+      [sanitizedWordToToggle]: {
+        ...prev[sanitizedWordToToggle],
         is_favorite: !currentIsFavorite,
       }
     }));
-    console.log(`Toggling favorite for "${currentFocusWord}" to ${!currentIsFavorite} at: ${API_BASE_URL}/toggle_favorite`);
+    console.log(`Toggling favorite for "${wordToToggle}" to ${!currentIsFavorite} at: ${API_BASE_URL}/toggle_favorite`);
     try {
       await fetch(`${API_BASE_URL}/toggle_favorite`, {
         method: 'POST',
@@ -459,15 +441,15 @@ function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ word: currentFocusWord.trim() }), 
+        body: JSON.stringify({ word: wordToToggle.trim() }), 
       });
       if (showProfileModal && authToken) fetchUserProfile(authToken);
     } catch (err) {
       console.error("Error toggling favorite:", err);
       setGeneratedContent(prev => ({
         ...prev,
-        [currentFocusWordSanitized]: {
-          ...prev[currentFocusWordSanitized],
+        [sanitizedWordToToggle]: {
+          ...prev[sanitizedWordToToggle],
           is_favorite: currentIsFavorite,
         }
       }));
@@ -481,8 +463,9 @@ function App() {
   };
 
   const handleRefreshContent = () => {
-    if (currentFocusWord) {
-      handleGenerateExplanation(currentFocusWord, false, true, false, activeContentMode);
+    const wordToRefresh = getDisplayWord();
+    if (wordToRefresh) {
+      handleGenerateExplanation(wordToRefresh, false, true, false, activeContentMode, isReviewingStreakWord);
     }
   };
   
@@ -493,51 +476,29 @@ function App() {
   };
 
   const handleStreakWordClick = (word: string) => {
-    if (word.toLowerCase() === (isReviewingStreakWord ? wordForReview : currentFocusWord).toLowerCase()) return; 
+    const currentActiveWord = isReviewingStreakWord ? wordForReview : currentFocusWord;
+    if (word.toLowerCase() === currentActiveWord.toLowerCase()) return; 
 
     setIsReviewingStreakWord(true);
     setWordForReview(word); 
+    setError(null); // Clear general errors when reviewing
     
     const sanitizedReviewWord = sanitizeWordForId(word);
-    if (generatedContent[sanitizedReviewWord]?.explain) {
+    const reviewWordData = generatedContent[sanitizedReviewWord];
+
+    // If explain content for review word isn't there, fetch it.
+    // If it is there, set active mode to explain.
+    // If user then switches to quiz/fact, handleModeChange will fetch if needed.
+    if (reviewWordData?.explain) {
       setActiveContentMode('explain'); 
     } else {
-      handleFetchContentForReview(word);
+      handleGenerateExplanation(word, false, false, false, 'explain', true); // true for isReviewFetch
     }
   };
 
-  const handleFetchContentForReview = async (wordToReview: string) => {
-    if (!authToken) return;
-    setIsLoading(true);
-    console.log(`Fetching content for review word "${wordToReview}" from: ${API_BASE_URL}/generate_explanation`);
-    try {
-        const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`,
-            },
-            body: JSON.stringify({ word: wordToReview.trim(), mode: 'explain' }), 
-        });
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for review: ${wordToReview}` }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-        const contentToStore = data.full_cache || data;
-        setGeneratedContent(prev => ({
-            ...prev,
-            [sanitizeWordForId(data.word)]: { ...prev[sanitizeWordForId(data.word)], ...contentToStore, is_favorite: data.is_favorite },
-        }));
-        setActiveContentMode('explain');
-    } catch (err) {
-        setError((err as Error).message);
-    } finally {
-        setIsLoading(false);
-    }
-  };
+  // handleFetchContentForReview is effectively merged into handleGenerateExplanation with isReviewFetch flag
 
-  useEffect(() => { // This useEffect determines the current question or summary view
+  useEffect(() => { 
     const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
     const sanitizedWordInFocus = sanitizeWordForId(wordInFocus);
 
@@ -549,18 +510,17 @@ function App() {
         let nextQuestionIndex = 0;
         if (quizQuestions.length > 0) {
             if (progress.length >= quizQuestions.length) {
-                nextQuestionIndex = quizQuestions.length; // Go to summary
+                nextQuestionIndex = quizQuestions.length; 
             } else {
-                nextQuestionIndex = progress.length; // Go to next unanswered
+                nextQuestionIndex = progress.length; 
             }
         }
         
         if (currentQuizQuestionIndex !== nextQuestionIndex) {
             setCurrentQuizQuestionIndex(nextQuestionIndex);
         }
-        // Reset feedback for the new question/summary if index changes or mode activated
-        // This part might need refinement if feedback persists undesirably
-        if (currentQuizQuestionIndex !== nextQuestionIndex || (currentQuizQuestionIndex === nextQuestionIndex && !isQuizAttempted)) {
+        // Only reset feedback if the question index is actually changing or if we are at the start of a quiz
+        if (currentQuizQuestionIndex !== nextQuestionIndex || (nextQuestionIndex === 0 && !isQuizAttempted)) {
              setSelectedQuizOption(null);
              setQuizFeedback(null);
              // setIsQuizAttempted(false); // This is reset by the auto-advance effect or when new quiz loads
@@ -572,10 +532,10 @@ function App() {
       wordForReview, 
       isReviewingStreakWord, 
       generatedContent,
-      currentQuizQuestionIndex // Added to re-evaluate if index is externally changed
+      currentQuizQuestionIndex 
   ]);
 
-  useEffect(() => { // This useEffect handles auto-advance after an answer
+  useEffect(() => { 
     if (activeContentMode === 'quiz' && isQuizAttempted && quizFeedback) { 
         const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
         const sanitizedWordInFocus = sanitizeWordForId(wordInFocus);
@@ -604,8 +564,8 @@ function App() {
 
 
   const handleSaveQuizAttempt = async (questionIndex: number, optionKey: string, isCorrect: boolean) => {
-    const wordBeingQuizzed = isReviewingStreakWord ? wordForReview : currentFocusWord;
-    const sanitizedWordBeingQuizzed = sanitizeWordForId(wordBeingQuizzed);
+    const wordBeingQuizzed = getDisplayWord(); // Use getDisplayWord for consistency
+    const sanitizedWordBeingQuizzed = getDisplayWordSanitized();
 
     if (!authToken || !sanitizedWordBeingQuizzed) return;
     
@@ -634,7 +594,7 @@ function App() {
         ...prev,
         [sanitizedWordBeingQuizzed]: {
           ...prev[sanitizedWordBeingQuizzed],
-          quiz_progress: data.quiz_progress, // This update will trigger the auto-advance useEffect
+          quiz_progress: data.quiz_progress, 
         },
       }));
     } catch (err) {
@@ -653,13 +613,9 @@ function App() {
 
     handleSaveQuizAttempt(questionIdx, optionKey, isCorrect);
   };
-
-  const getDisplayWord = () => isReviewingStreakWord ? wordForReview : currentFocusWord;
-  const getDisplayWordSanitized = () => sanitizeWordForId(getDisplayWord());
-
-  const currentDisplayWordData = generatedContent[getDisplayWordSanitized()];
-  const explanationHTML = { __html: currentDisplayWordData?.explain?.replace(/<click>(.*?)<\/click>/g, '<strong class="text-blue-500 hover:text-blue-700 cursor-pointer underline">$1</strong>') || '' };
-
+  
+  // ... (renderContent, renderProfileModal, renderAuthModal, main return structure remain the same as v9)
+  // ... Ensure that the "Next Question" button is removed from renderContent -> quiz case
   const renderContent = () => {
     const generalErrorToDisplay = error && activeContentMode !== 'explain' && activeContentMode !== 'quiz';
 
@@ -669,8 +625,10 @@ function App() {
     }
 
     const displayData = currentDisplayWordData;
-    if (!displayData && getDisplayWord()) return <div className="text-gray-500 p-4">Select a mode or generate content for "{getDisplayWord()}".</div>;
-    if (!displayData && !getDisplayWord()) return <div className="text-gray-500 p-4">Enter a word and click "Generate Explanation".</div>;
+    const currentWordForDisplay = getDisplayWord(); // Get the word currently in focus
+
+    if (!displayData && currentWordForDisplay) return <div className="text-gray-500 p-4">Select a mode or generate content for "{currentWordForDisplay}".</div>;
+    if (!displayData && !currentWordForDisplay) return <div className="text-gray-500 p-4">Enter a word and click "Generate Explanation".</div>;
 
     switch (activeContentMode) {
       case 'explain':
@@ -710,7 +668,7 @@ function App() {
         const quizProgress = displayData?.quiz_progress || [];
 
         if (!quizSet || quizSet.length === 0) {
-          return <div className="p-4 text-gray-500">No quiz available for this topic yet. Try generating content first.</div>;
+          return <div className="p-4 text-gray-500">No quiz available for "{currentWordForDisplay}". Try generating content first or check other modes.</div>;
         }
         
         if (currentQuizQuestionIndex >= quizSet.length) { // SUMMARY VIEW
@@ -721,7 +679,7 @@ function App() {
 
             return (
                 <div className="p-4 space-y-4 text-gray-800"> 
-                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
+                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{currentWordForDisplay}"</h3>
                     <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
                     <div className="max-h-[45vh] sm:max-h-[50vh] overflow-y-auto space-y-3 pr-2 bg-gray-50 p-2 rounded-md"> 
                         {quizSet.map((quizString, index) => {
@@ -765,7 +723,7 @@ function App() {
                         className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
                     >
                        {isFetchingNewQuiz ? <Loader2 className="animate-spin mr-2" size={18}/> : <PlusCircle size={18} className="mr-2" />}
-                        More Questions for "{getDisplayWord()}"
+                        More Questions for "{currentWordForDisplay}"
                     </button>
                 </div>
             );

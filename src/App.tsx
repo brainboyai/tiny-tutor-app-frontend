@@ -166,7 +166,7 @@ function App() {
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
   const [isQuizAttempted, setIsQuizAttempted] = useState<boolean>(false);
-  const [isFetchingNewQuiz, setIsFetchingNewQuiz] = useState(false); // For "More Questions" loading state
+  const [isFetchingNewQuiz, setIsFetchingNewQuiz] = useState(false); 
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -258,7 +258,7 @@ function App() {
   const handleGenerateExplanation = async (
     wordToFetch: string,
     isSubTopicClick: boolean = false,
-    isRefreshClick: boolean = false, // This will be true for "More Questions"
+    isRefreshClick: boolean = false, 
     isProfileWordClick: boolean = false,
     targetMode: ContentMode = 'explain'
   ) => {
@@ -274,14 +274,13 @@ function App() {
     }
 
     if (targetMode === 'quiz' && isRefreshClick) {
-        setIsFetchingNewQuiz(true); // Specific loading for new quiz set
+        setIsFetchingNewQuiz(true); 
     } else {
         setIsLoading(true);
     }
     setError(null); 
     setAuthError(null); 
     
-    // Reset quiz UI states if we are targeting quiz mode, especially if refreshing
     if (targetMode === 'quiz') {
         setSelectedQuizOption(null);
         setQuizFeedback(null);
@@ -324,13 +323,12 @@ function App() {
       setGeneratedContent(prev => {
         const newWordData = {
             ...prev[sanitizedWordId], 
-            ...contentToStore, // This will overwrite .quiz with the new questions if mode was 'quiz'
+            ...contentToStore, 
             is_favorite: data.is_favorite,
         };
-        // If new quiz data came (specifically for "More Questions" or initial quiz load)
         if (targetMode === 'quiz' && contentToStore.quiz) {
             console.log("New quiz data received, resetting quiz_progress and index.");
-            newWordData.quiz_progress = []; // CRITICAL: Reset progress for the new quiz set
+            newWordData.quiz_progress = []; 
         }
         return {
             ...prev,
@@ -340,8 +338,8 @@ function App() {
 
       setActiveContentMode(targetMode); 
       if (targetMode === 'quiz') {
-          setCurrentQuizQuestionIndex(0); // Start new quiz from first question
-          setIsQuizAttempted(false); // Ensure this is reset for the new quiz
+          setCurrentQuizQuestionIndex(0); 
+          setIsQuizAttempted(false); 
           setSelectedQuizOption(null);
           setQuizFeedback(null);
       }
@@ -376,7 +374,6 @@ function App() {
     const wordForNewQuiz = getDisplayWord();
     if (wordForNewQuiz && authToken) {
         console.log(`Fetching new quiz set for "${wordForNewQuiz}"`);
-        // Pass targetMode 'quiz' and isRefreshClick true
         handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
     } else if (!authToken) {
         setShowAuthModal(true);
@@ -540,7 +537,7 @@ function App() {
     }
   };
 
-  useEffect(() => {
+  useEffect(() => { // This useEffect determines the current question or summary view
     const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
     const sanitizedWordInFocus = sanitizeWordForId(wordInFocus);
 
@@ -549,38 +546,25 @@ function App() {
         const quizQuestions = wordData.quiz!; 
         const progress = wordData.quiz_progress || [];
         
-        console.log("Quiz useEffect: Word:", wordInFocus, "QCount:", quizQuestions.length, "ProgressLen:", progress.length, "CurrentQIdx:", currentQuizQuestionIndex);
-
-
+        let nextQuestionIndex = 0;
         if (quizQuestions.length > 0) {
             if (progress.length >= quizQuestions.length) {
-                // All questions answered for the current set
-                if (currentQuizQuestionIndex !== quizQuestions.length) { // Avoid re-setting if already at summary
-                    console.log("Quiz useEffect: All questions answered, going to summary. Target index:", quizQuestions.length);
-                    setCurrentQuizQuestionIndex(quizQuestions.length); 
-                }
+                nextQuestionIndex = quizQuestions.length; // Go to summary
             } else {
-                // Not all questions answered, go to next unanswered
-                if (currentQuizQuestionIndex !== progress.length) { // Avoid re-setting if already at correct next q
-                    console.log("Quiz useEffect: More questions to answer, going to next. Target index:", progress.length);
-                    setCurrentQuizQuestionIndex(progress.length); 
-                }
-            }
-        } else { // No questions in the set
-            if (currentQuizQuestionIndex !== 0) {
-                setCurrentQuizQuestionIndex(0); 
+                nextQuestionIndex = progress.length; // Go to next unanswered
             }
         }
-        // Reset UI feedback only if the question index actually changes or quiz mode is newly activated
-        // This is implicitly handled by the dependency array triggering the effect.
-        // However, if we want to clear feedback even if index doesn't change (e.g. re-entering quiz mode for same question)
-        // we might need a more nuanced condition here or handle it in handleModeChange.
-        // For now, let's assume the current logic is fine for auto-advance.
-        if (currentQuizQuestionIndex !== progress.length && currentQuizQuestionIndex !== quizQuestions.length) {
-            // This condition might be too strict, let's see. The primary goal is to set the index.
-            // Feedback reset is more tied to selecting an option or moving to a *new* question.
+        
+        if (currentQuizQuestionIndex !== nextQuestionIndex) {
+            setCurrentQuizQuestionIndex(nextQuestionIndex);
         }
-
+        // Reset feedback for the new question/summary if index changes or mode activated
+        // This part might need refinement if feedback persists undesirably
+        if (currentQuizQuestionIndex !== nextQuestionIndex || (currentQuizQuestionIndex === nextQuestionIndex && !isQuizAttempted)) {
+             setSelectedQuizOption(null);
+             setQuizFeedback(null);
+             // setIsQuizAttempted(false); // This is reset by the auto-advance effect or when new quiz loads
+        }
     }
   }, [
       activeContentMode, 
@@ -588,13 +572,11 @@ function App() {
       wordForReview, 
       isReviewingStreakWord, 
       generatedContent,
-      // currentQuizQuestionIndex // Adding this can cause infinite loops if not careful.
-                           // The effect should react to data changes that *imply* an index change.
+      currentQuizQuestionIndex // Added to re-evaluate if index is externally changed
   ]);
 
-  // Effect to auto-advance quiz after an answer is submitted and feedback is shown
-  useEffect(() => {
-    if (activeContentMode === 'quiz' && isQuizAttempted && quizFeedback) { // isQuizAttempted is true after an option is selected
+  useEffect(() => { // This useEffect handles auto-advance after an answer
+    if (activeContentMode === 'quiz' && isQuizAttempted && quizFeedback) { 
         const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
         const sanitizedWordInFocus = sanitizeWordForId(wordInFocus);
         const wordData = generatedContent[sanitizedWordInFocus];
@@ -603,20 +585,19 @@ function App() {
             const quizQuestions = wordData.quiz;
             const progress = wordData.quiz_progress;
             
-            // Set a short delay to allow user to see feedback
             const timer = setTimeout(() => {
                 setSelectedQuizOption(null);
                 setQuizFeedback(null);
-                setIsQuizAttempted(false); // Reset for the next question
+                setIsQuizAttempted(false); 
 
                 if (progress.length >= quizQuestions.length) {
-                    setCurrentQuizQuestionIndex(quizQuestions.length); // Go to summary
+                    setCurrentQuizQuestionIndex(quizQuestions.length); 
                 } else {
-                    setCurrentQuizQuestionIndex(progress.length); // Go to next question
+                    setCurrentQuizQuestionIndex(progress.length); 
                 }
-            }, 1500); // 1.5 second delay for feedback
+            }, 1500); 
 
-            return () => clearTimeout(timer); // Cleanup timer
+            return () => clearTimeout(timer); 
         }
     }
   }, [isQuizAttempted, quizFeedback, activeContentMode, generatedContent, currentFocusWord, wordForReview, isReviewingStreakWord]);
@@ -627,9 +608,6 @@ function App() {
     const sanitizedWordBeingQuizzed = sanitizeWordForId(wordBeingQuizzed);
 
     if (!authToken || !sanitizedWordBeingQuizzed) return;
-
-    // Optimistically update UI for feedback, actual progress saved to backend
-    // The useEffect watching isQuizAttempted and quizFeedback will handle UI transition
     
     console.log(`Saving quiz attempt for "${wordBeingQuizzed}" to: ${API_BASE_URL}/save_quiz_attempt`);
     try {
@@ -652,21 +630,16 @@ function App() {
       }
       const data: { message: string, quiz_progress: QuizAttempt[] } = await response.json();
 
-      // Update local state with the new progress from backend
-      // This will trigger the useEffect that manages currentQuizQuestionIndex for auto-advance
       setGeneratedContent(prev => ({
         ...prev,
         [sanitizedWordBeingQuizzed]: {
           ...prev[sanitizedWordBeingQuizzed],
-          quiz_progress: data.quiz_progress,
+          quiz_progress: data.quiz_progress, // This update will trigger the auto-advance useEffect
         },
       }));
     } catch (err) {
       console.error("Error saving quiz attempt:", err);
       setError("Failed to save your answer. " + (err as Error).message); 
-      // If save fails, we might need to revert optimistic UI changes or allow retry
-      // For now, feedback will show, but progress won't be saved.
-      // To prevent auto-advance on fail, we could set a flag here.
     }
   };
 
@@ -676,14 +649,10 @@ function App() {
     const isCorrect = optionKey === correctKey;
     setSelectedQuizOption(optionKey);
     setQuizFeedback({ message: isCorrect ? "Correct!" : "Incorrect.", isCorrect });
-    setIsQuizAttempted(true); // This will trigger the useEffect for auto-advance after feedback
+    setIsQuizAttempted(true); 
 
     handleSaveQuizAttempt(questionIdx, optionKey, isCorrect);
   };
-
-  // handleNextQuestion is no longer needed due to auto-advance
-  // const handleNextQuestion = () => { ... };
-
 
   const getDisplayWord = () => isReviewingStreakWord ? wordForReview : currentFocusWord;
   const getDisplayWordSanitized = () => sanitizeWordForId(getDisplayWord());
@@ -692,9 +661,6 @@ function App() {
   const explanationHTML = { __html: currentDisplayWordData?.explain?.replace(/<click>(.*?)<\/click>/g, '<strong class="text-blue-500 hover:text-blue-700 cursor-pointer underline">$1</strong>') || '' };
 
   const renderContent = () => {
-    // ... (renderContent logic remains largely the same, but the quiz part will not render the "Next Question" button)
-    // ... (ensure error display logic is robust)
-
     const generalErrorToDisplay = error && activeContentMode !== 'explain' && activeContentMode !== 'quiz';
 
     if ((isLoading || isFetchingNewQuiz) && !currentDisplayWordData?.[activeContentMode]) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading content...</span></div>;
@@ -708,7 +674,6 @@ function App() {
 
     switch (activeContentMode) {
       case 'explain':
-        // ... (same as before)
         if ((isLoading || isFetchingNewQuiz) && !displayData?.explain) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading explanation...</span></div>;
         if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>; 
         return (
@@ -758,7 +723,7 @@ function App() {
                 <div className="p-4 space-y-4 text-gray-800"> 
                     <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
                     <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
-                    <div className="max-h-[45vh] sm:max-h-[50vh] overflow-y-auto space-y-3 pr-2 bg-gray-50 p-2 rounded-md"> {/* Scrollable and compact summary */}
+                    <div className="max-h-[45vh] sm:max-h-[50vh] overflow-y-auto space-y-3 pr-2 bg-gray-50 p-2 rounded-md"> 
                         {quizSet.map((quizString, index) => {
                             const parsedQuestion = parseQuizString(quizString);
                             if (!parsedQuestion) return <div key={index} className="text-red-500 text-sm p-2 bg-red-50 rounded">Error displaying question {index + 1}.</div>;
@@ -796,7 +761,7 @@ function App() {
                     </div>
                      <button 
                         onClick={handleFetchNewQuizSet}
-                        disabled={isFetchingNewQuiz || isLoading} // Disable while fetching new quiz or general loading
+                        disabled={isFetchingNewQuiz || isLoading} 
                         className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
                     >
                        {isFetchingNewQuiz ? <Loader2 className="animate-spin mr-2" size={18}/> : <PlusCircle size={18} className="mr-2" />}
@@ -814,9 +779,6 @@ function App() {
           return <div className="text-red-500 p-4">Error loading question. Please try refreshing or check console for parsing errors.</div>;
         }
         
-        const attemptForThisQuestion = quizProgress.find(p => p.question_index === currentQuizQuestionIndex);
-        const alreadyAnsweredThisQuestion = !!attemptForThisQuestion; // This should be false due to auto-advance
-
         return (
           <div className="p-4 space-y-4 text-gray-800"> 
             <p className="font-semibold text-lg text-gray-700">Question {currentQuizQuestionIndex + 1} of {quizSet.length}:</p>
@@ -826,7 +788,7 @@ function App() {
                 <button
                   key={opt.key}
                   onClick={() => !isQuizAttempted && handleQuizOptionSelect(opt.key, parsedQuestion.correctOptionKey, currentQuizQuestionIndex)}
-                  disabled={isQuizAttempted} // Disable options once an answer is selected for current question
+                  disabled={isQuizAttempted} 
                   className={`w-full text-left p-3 rounded-lg border transition-all duration-150 text-gray-700 
                     ${selectedQuizOption === opt.key ? (quizFeedback?.isCorrect ? 'bg-green-200 border-green-400 ring-2 ring-green-500' : 'bg-red-200 border-red-400 ring-2 ring-red-500') : 'bg-white hover:bg-gray-100 border-gray-300'}
                     disabled:opacity-70 disabled:cursor-not-allowed
@@ -836,13 +798,12 @@ function App() {
                 </button>
               ))}
             </div>
-            {isQuizAttempted && quizFeedback && ( // Show feedback immediately after selection
+            {isQuizAttempted && quizFeedback && ( 
               <div className={`p-2 rounded-md text-sm ${quizFeedback.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                 {quizFeedback.message}
                 {!quizFeedback.isCorrect && ` Correct answer was: ${parsedQuestion.correctOptionKey}`}
               </div>
             )}
-            {/* "Next Question" / "View Summary" button is REMOVED for auto-advance */}
              <div className="text-xs text-gray-500 mt-2">
                 Progress: {quizProgress.length} / {quizSet.length} answered. Score: {quizProgress.filter(p=>p.is_correct).length} correct.
             </div>
@@ -853,7 +814,6 @@ function App() {
     }
   };
   
-  // ... (renderProfileModal and renderAuthModal remain the same as v6)
   const renderProfileModal = () => {
     if (!showProfileModal || !currentUser) return null;
   

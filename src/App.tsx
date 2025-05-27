@@ -3,9 +3,7 @@ import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, CheckCircle, XCircle, 
 import './App.css';
 
 // --- Constants ---
-// USE YOUR DEPLOYED BACKEND URL HERE
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
-// const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'; // For local dev if using .env
 
 // --- Types ---
 interface UserProfile {
@@ -19,10 +17,10 @@ interface UserProfile {
 }
 
 interface WordHistoryEntry {
-  id: string; // sanitized_word_id
+  id: string; 
   word: string;
-  first_explored_at: string; // ISO Date string
-  last_explored_at: string; // ISO Date string
+  first_explored_at: string; 
+  last_explored_at: string; 
   is_favorite: boolean;
   modes_generated?: string[];
 }
@@ -31,37 +29,37 @@ interface StreakEntry {
   id: string;
   words: string[];
   score: number;
-  completed_at: string; // ISO Date string
+  completed_at: string; 
 }
 
 interface QuizAttempt {
   question_index: number;
   selected_option_key: string;
   is_correct: boolean;
-  timestamp: string; // ISO Date string
+  timestamp: string; 
 }
 
 interface WordContent {
   explain?: string;
   image?: string;
   fact?: string;
-  quiz?: string[]; // Array of quiz question strings
+  quiz?: string[]; 
   deep_dive?: string;
   is_favorite?: boolean;
   quiz_progress?: QuizAttempt[];
-  explicit_connections?: string[]; // Sub-topics from explanation
+  explicit_connections?: string[]; 
   modes_generated?: string[];
 }
 
 interface GeneratedContent {
-  [key: string]: WordContent; // Key is sanitized word
+  [key: string]: WordContent; 
 }
 
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep_dive';
 
 interface LiveStreak {
   score: number;
-  words: string[]; // Words in the current streak
+  words: string[]; 
 }
 
 interface ParsedQuizQuestion {
@@ -82,7 +80,7 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     return null;
   }
   const lines = quizStr.trim().split('\n');
-  if (lines.length < 6) { // Question, 4 options, Correct Answer
+  if (lines.length < 6) { 
     console.warn("Quiz string has too few lines:", lines.length, quizStr);
     return null;
   }
@@ -101,7 +99,7 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     if (match) {
       options.push({ key: match[1].toUpperCase(), text: match[2].trim() });
     } else {
-      const key = String.fromCharCode(64 + i); // A, B, C, D
+      const key = String.fromCharCode(64 + i); 
       const textContent = lines[i].trim().length > 3 ? lines[i].trim().substring(3).trim() : lines[i].trim();
       options.push({ key, text: textContent });
       console.warn(`Option line ${i} did not match regex, fallback parsing:`, lines[i]);
@@ -116,7 +114,6 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
      console.warn("Correct answer line prefix missing, fallback to line 5:", lines[5]);
   }
 
-
   if (options.length !== 4 || !correctOptionKey || !questionText) {
     console.warn("Could not parse quiz string fully:", quizStr, { questionText, options, correctOptionKey });
     return null; 
@@ -127,17 +124,12 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     if (foundOptByText) {
         correctOptionKey = foundOptByText.key;
     } else {
-        console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}. Defaulting to A or first valid option if possible.`);
-        // Fallback or error handling for invalid correctOptionKey
-        // correctOptionKey = options[0]?.key || 'A'; // Example fallback
+        console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}.`);
     }
   }
-
   return { questionText, options, correctOptionKey, originalString: quizStr };
 };
 
-
-// --- Main App Component ---
 function App() {
   const [inputValue, setInputValue] = useState<string>('');
   const [currentFocusWord, setCurrentFocusWord] = useState<string>(''); 
@@ -180,20 +172,19 @@ function App() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) {
-        if (response.status === 401 || response.status === 422) { // Unauthorized or Unprocessable Entity (invalid token)
+        if (response.status === 401 || response.status === 422) {
             console.warn("Token validation failed or token expired. Logging out.");
-            handleLogout(); // Logout if token is invalid
+            handleLogout(); 
             return;
         }
-        throw new Error('Failed to fetch profile, status: ' + response.status);
+        const errorData = await response.json().catch(() => ({ error: 'Failed to fetch profile' }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
       const data: UserProfile = await response.json();
       setCurrentUser(data);
     } catch (err) {
       console.error("Error fetching profile:", err);
-      if ((err as Error).message.includes('Token validation failed') || (err as Error).message.includes('401')) {
-        // Already handled by status check, but good to catch specific messages too
-      }
+      // setError("Could not fetch profile. " + (err as Error).message); // Avoid setting general error for this
     }
   };
 
@@ -218,9 +209,9 @@ function App() {
     setCurrentFocusWordSanitized('');
     setGeneratedContent({});
     setLiveStreak(null);
-    setError(null); // Clear any errors on logout
-    setShowAuthModal(false); // Ensure auth modal is closed
-    setShowProfileModal(false); // Ensure profile modal is closed
+    setError(null); 
+    setShowAuthModal(false); 
+    setShowProfileModal(false); 
   };
 
   const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false) => {
@@ -282,14 +273,14 @@ function App() {
           'Authorization': `Bearer ${authToken}`,
         },
         body: JSON.stringify({
-          word: wordToFetch,
+          word: wordToFetch.trim(), // Trim word before sending
           mode: 'explain', 
           refresh_cache: isRefreshClick,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "An unknown error occurred processing the request." }));
+        const errorData = await response.json().catch(() => ({ error: "An unknown error occurred." }));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
@@ -353,7 +344,7 @@ function App() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${authToken}`,
                 },
-                body: JSON.stringify({ word: currentFocusWord, mode: mode }),
+                body: JSON.stringify({ word: currentFocusWord.trim(), mode: mode }), // Trim word
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
@@ -397,7 +388,7 @@ function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ word: currentFocusWord }), // Backend toggles based on current state
+        body: JSON.stringify({ word: currentFocusWord.trim() }), // Trim word
       });
       if (showProfileModal && authToken) fetchUserProfile(authToken);
     } catch (err) {
@@ -455,7 +446,7 @@ function App() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`,
             },
-            body: JSON.stringify({ word: wordToReview, mode: 'explain' }), 
+            body: JSON.stringify({ word: wordToReview.trim(), mode: 'explain' }), // Trim word
         });
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for review: ${wordToReview}` }));
@@ -533,7 +524,7 @@ function App() {
           'Authorization': `Bearer ${authToken}`,
         },
         body: JSON.stringify({
-          word: wordBeingQuizzed,
+          word: wordBeingQuizzed.trim(), // Trim word
           question_index: questionIndex,
           selected_option_key: optionKey,
           is_correct: isCorrect,
@@ -593,8 +584,12 @@ function App() {
   const explanationHTML = { __html: currentDisplayWordData?.explain?.replace(/<click>(.*?)<\/click>/g, '<strong class="text-blue-500 hover:text-blue-700 cursor-pointer underline">$1</strong>') || '' };
 
   const renderContent = () => {
-    if (isLoading && !currentDisplayWordData?.[activeContentMode]) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading content...</span></div>; // Text color for loading
-    if (error && !currentDisplayWordData?.[activeContentMode]) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+    if (isLoading && !currentDisplayWordData?.[activeContentMode]) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading content...</span></div>;
+    if (error && !currentDisplayWordData?.[activeContentMode] && activeContentMode !== 'explain' && activeContentMode !== 'quiz') { 
+        // Only show general error if not specific to explain/quiz modes which have their own loading/error states within
+        return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+    }
+
 
     const displayData = currentDisplayWordData;
     if (!displayData && getDisplayWord()) return <div className="text-gray-500 p-4">Select a mode or generate content for "{getDisplayWord()}".</div>;
@@ -602,8 +597,10 @@ function App() {
 
     switch (activeContentMode) {
       case 'explain':
+        if (isLoading && !displayData?.explain) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading explanation...</span></div>;
+        if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
         return (
-          <div className="prose max-w-none p-1 text-gray-800" onClick={(e) => { // Ensure prose text is dark
+          <div className="prose max-w-none p-1 text-gray-800" onClick={(e) => { 
             const target = e.target as HTMLElement;
             if (target.tagName === 'STRONG' && target.classList.contains('text-blue-500')) {
               handleSubTopicClick(target.innerText);
@@ -628,6 +625,9 @@ function App() {
       case 'deep_dive':
         return <div className="prose max-w-none p-1 text-gray-800">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
       case 'quiz':
+        if (isLoading && !displayData?.quiz) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading quiz...</span></div>;
+        if (error && !displayData?.quiz) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+        
         const quizSet = displayData?.quiz;
         const quizProgress = displayData?.quiz_progress || [];
 
@@ -642,7 +642,7 @@ function App() {
             });
 
             return (
-                <div className="p-4 space-y-6 text-gray-800"> {/* Ensure text color for summary */}
+                <div className="p-4 space-y-6 text-gray-800"> 
                     <h3 className="text-xl font-semibold text-gray-700">Quiz Summary for "{getDisplayWord()}"</h3>
                     <p className="text-lg font-medium">Your Score: {correctCount} / {quizSet.length}</p>
                     {quizSet.map((quizString, index) => {
@@ -653,7 +653,7 @@ function App() {
                         const selectedOptionInfo = attempt ? parsedQuestion.options.find(opt => opt.key === attempt.selected_option_key) : null;
 
                         return (
-                            <div key={index} className="p-4 border rounded-lg shadow-sm bg-white"> {/* White background for each question summary */}
+                            <div key={index} className="p-4 border rounded-lg shadow-sm bg-white"> 
                                 <p className="font-semibold text-gray-800 mb-2">Q{index + 1}: {parsedQuestion.questionText}</p>
                                 <ul className="space-y-1">
                                     {parsedQuestion.options.map(opt => (
@@ -711,7 +711,7 @@ function App() {
         const alreadyAnsweredThisQuestion = !!attemptForThisQuestion;
 
         return (
-          <div className="p-4 space-y-4 text-gray-800"> {/* Ensure text color for active quiz */}
+          <div className="p-4 space-y-4 text-gray-800"> 
             <p className="font-semibold text-lg text-gray-700">Question {currentQuizQuestionIndex + 1} of {quizSet.length}:</p>
             <p className="text-gray-800">{parsedQuestion.questionText}</p>
             <div className="space-y-2">
@@ -766,7 +766,7 @@ function App() {
             {words.map(wh => (
               <li key={wh.id} 
                   onClick={() => handleWordSelectionFromProfile(wh.word)}
-                  className="p-1.5 hover:bg-gray-200 rounded cursor-pointer flex justify-between items-center text-gray-800"> {/* Text color for list items */}
+                  className="p-1.5 hover:bg-gray-200 rounded cursor-pointer flex justify-between items-center text-gray-800"> 
                 <span>{wh.word} <span className="text-xs text-gray-500">({new Date(wh.last_explored_at).toLocaleDateString()})</span></span>
                 {wh.is_favorite && <Heart size={14} className="text-red-500 fill-current" />}
               </li>
@@ -782,7 +782,7 @@ function App() {
         {streaks && streaks.length > 0 ? (
           <ul className="max-h-40 overflow-y-auto text-sm space-y-1">
             {streaks.map(streak => (
-              <li key={streak.id} className="p-1.5 hover:bg-gray-200 rounded text-gray-800"> {/* Text color for list items */}
+              <li key={streak.id} className="p-1.5 hover:bg-gray-200 rounded text-gray-800"> 
                 <span className="font-medium">Score {streak.score}:</span> {streak.words.map((w, i) => (
                   <span key={i} onClick={() => handleWordSelectionFromProfile(w)} className="cursor-pointer hover:underline">{w}</span>
                 )).reduce((prev, curr) => <>{prev} → {curr}</>)}
@@ -796,7 +796,7 @@ function App() {
   
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto text-gray-800"> {/* Default text color for modal */}
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto text-gray-800"> 
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold">User Profile</h3>
             <button onClick={() => setShowProfileModal(false)} className="text-gray-500 hover:text-gray-700">&times;</button>
@@ -818,23 +818,40 @@ function App() {
 
   const renderAuthModal = () => {
     if (!showAuthModal) return null;
+  
+    // Separate state for auth modal inputs to avoid conflicts
+    const [authInputUsername, setAuthInputUsername] = useState('');
+    const [authInputEmail, setAuthInputEmail] = useState('');
+    const [authInputPassword, setAuthInputPassword] = useState('');
+  
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-      const formData = new FormData(e.currentTarget);
-      // For login, use the 'email' field name for username/email input
-      // For signup, use 'username_signup' for username and 'email_signup' for email
-      const usernameOrEmail = formData.get('email_login') as string; 
-      const usernameSignup = formData.get('username_signup') as string;
-      const emailSignup = formData.get('email_signup') as string;
-      const password = formData.get('password') as string;
-      
-      const endpoint = authMode === 'login' ? '/login' : '/signup';
-      const payload = authMode === 'login' 
-        ? { email_or_username: usernameOrEmail, password } 
-        : { email: emailSignup, username: usernameSignup, password };
-
+      setError(null); // Clear previous general errors
+  
+      const trimmedPassword = authInputPassword.trim();
+      let endpoint = '';
+      let payload = {};
+  
+      if (authMode === 'login') {
+        const trimmedUsernameOrEmail = authInputUsername.trim(); // This field is used for username/email in login
+        if (!trimmedUsernameOrEmail || !trimmedPassword) {
+          setError("Username/Email and Password are required for login.");
+          return;
+        }
+        endpoint = '/login';
+        payload = { email_or_username: trimmedUsernameOrEmail, password: trimmedPassword };
+      } else { // signup
+        const trimmedUsername = authInputUsername.trim(); // This field is used for username in signup
+        const trimmedEmail = authInputEmail.trim();
+        if (!trimmedUsername || !trimmedEmail || !trimmedPassword) {
+          setError("Username, Email, and Password are required for signup.");
+          return;
+        }
+        endpoint = '/signup';
+        payload = { email: trimmedEmail, username: trimmedUsername, password: trimmedPassword };
+      }
+  
       setIsLoading(true); 
-      setError(null);
       console.log(`Attempting ${authMode} to: ${API_BASE_URL}${endpoint} with payload:`, payload);
       try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -844,40 +861,104 @@ function App() {
         });
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || `${authMode} failed`);
+          // Use error message from backend if available
+          throw new Error(data.error || `${authMode.charAt(0).toUpperCase() + authMode.slice(1)} failed. Status: ${response.status}`);
         }
-        handleAuthSuccess(data.access_token, data.user);
+        if (authMode === 'signup') {
+            alert("Signup successful! Please login."); // Simple alert for now
+            setAuthMode('login'); // Switch to login mode
+            setAuthInputUsername(''); // Clear fields
+            setAuthInputEmail('');
+            setAuthInputPassword('');
+        } else { // Login successful
+            handleAuthSuccess(data.access_token, data.user);
+        }
       } catch (err) {
-        setError("Auth failed: " + (err as Error).message); // More specific error
+        console.error("Auth error:", err);
+        setError((err as Error).message); 
       } finally {
         setIsLoading(false);
       }
     };
-
+  
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm text-gray-800"> {/* Default text color for modal */}
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm text-gray-800">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold">{authMode === 'login' ? 'Login' : 'Sign Up'}</h3>
-            <button onClick={() => { setShowAuthModal(false); setError(null);}} className="text-gray-500 hover:text-gray-700">&times;</button>
+            <button 
+              onClick={() => { 
+                setShowAuthModal(false); 
+                setError(null); 
+                setAuthInputUsername(''); 
+                setAuthInputEmail(''); 
+                setAuthInputPassword(''); 
+              }} 
+              className="text-gray-500 hover:text-gray-700"
+            >&times;</button>
           </div>
-          {error && <p className="text-red-500 text-sm mb-2 bg-red-100 p-2 rounded">{error}</p>}
+          {error && <p className="text-red-600 text-sm mb-3 bg-red-100 p-2 rounded-md border border-red-300">{error}</p>}
           <form onSubmit={handleSubmit} className="space-y-4">
             {authMode === 'signup' && (
               <>
-                <input type="text" name="username_signup" placeholder="Username" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
-                <input type="email" name="email_signup" placeholder="Email" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
+                <input 
+                  type="text" 
+                  name="username_signup" 
+                  placeholder="Username" 
+                  value={authInputUsername}
+                  onChange={(e) => setAuthInputUsername(e.target.value)}
+                  required 
+                  className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 
+                />
+                <input 
+                  type="email" 
+                  name="email_signup" 
+                  placeholder="Email" 
+                  value={authInputEmail}
+                  onChange={(e) => setAuthInputEmail(e.target.value)}
+                  required 
+                  className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 
+                />
               </>
             )}
             {authMode === 'login' && (
-                 <input type="text" name="email_login" placeholder="Username or Email" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
+                 <input 
+                    type="text" 
+                    name="email_login" 
+                    placeholder="Username or Email" 
+                    value={authInputUsername}
+                    onChange={(e) => setAuthInputUsername(e.target.value)}
+                    required 
+                    className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 
+                />
             )}
-            <input type="password" name="password" placeholder="Password" required className="w-full p-2 border rounded text-gray-900 placeholder-gray-500" />
-            <button type="submit" disabled={isLoading} className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 disabled:bg-blue-300">
+            <input 
+              type="password" 
+              name="password" 
+              placeholder="Password" 
+              value={authInputPassword}
+              onChange={(e) => setAuthInputPassword(e.target.value)}
+              required 
+              className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500" 
+            />
+            <button 
+              type="submit" 
+              disabled={isLoading} 
+              className="w-full bg-blue-500 text-white py-2.5 px-4 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 transition-colors duration-150 font-semibold"
+            >
               {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')}
             </button>
           </form>
-          <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="mt-4 text-sm text-blue-500 hover:underline">
+          <button 
+            onClick={() => {
+              setAuthMode(authMode === 'login' ? 'signup' : 'login'); 
+              setError(null); 
+              setAuthInputUsername(''); 
+              setAuthInputEmail(''); 
+              setAuthInputPassword('');
+            }} 
+            className="mt-4 text-sm text-blue-500 hover:underline w-full text-center"
+          >
             {authMode === 'login' ? "Need an account? Sign Up" : "Already have an account? Login"}
           </button>
         </div>
@@ -912,7 +993,7 @@ function App() {
                 <button onClick={handleLogout} title="Logout" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogOut size={20} /></button>
               </>
             ) : (
-              <button onClick={() => {setShowAuthModal(true); setAuthMode('login');}} title="Login" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogIn size={20} /></button>
+              <button onClick={() => {setShowAuthModal(true); setAuthMode('login'); setError(null);}} title="Login" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogIn size={20} /></button>
             )}
           </div>
         </header>
@@ -926,14 +1007,14 @@ function App() {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleGenerateExplanation(inputValue)}
               placeholder="Enter a word or concept..."
-              className="flex-grow p-3 rounded-lg bg-white/20 border border-white/30 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none placeholder-gray-300 text-white" // Ensure placeholder and text are visible
+              className="flex-grow p-3 rounded-lg bg-white/20 border border-white/30 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none placeholder-gray-300 text-white"
             />
             <button
               onClick={() => handleGenerateExplanation(inputValue)}
               disabled={isLoading || !inputValue.trim()}
               className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
-              {isLoading && !currentDisplayWordData ? <Loader2 className="animate-spin mr-2" size={20}/> : <BookOpen size={20} className="mr-2" />}
+              {isLoading && !currentDisplayWordData && inputValue.trim() ? <Loader2 className="animate-spin mr-2" size={20}/> : <BookOpen size={20} className="mr-2" />}
               Generate Explanation
             </button>
           </div>
@@ -961,7 +1042,7 @@ function App() {
           </div>
         )}
         
-        { (displayWord || error) && (
+        { (displayWord || (error && activeContentMode !== 'explain' && activeContentMode !== 'quiz')) && ( // Show container if there's a display word OR a general error
           <div className="bg-white/5 backdrop-blur-sm shadow-inner rounded-lg min-h-[200px]">
             <div className="flex flex-wrap items-center justify-between p-3 border-b border-white/20">
                 <div className="flex flex-wrap gap-1">
@@ -969,10 +1050,10 @@ function App() {
                         <button
                         key={modeInfo.id}
                         onClick={() => handleModeChange(modeInfo.id)}
-                        disabled={!displayWord}
+                        disabled={!displayWord && !error} // Disable if no word and no error (e.g. initial state)
                         className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center
                             ${activeContentMode === modeInfo.id ? 'bg-purple-500 text-white shadow-md' : 'bg-white/10 hover:bg-white/20 text-gray-200'}
-                            disabled:opacity-50 disabled:cursor-not-allowed`}
+                            ${(!displayWord && !error) ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                         <modeInfo.icon size={14} className="mr-1.5" /> {modeInfo.label}
                         </button>
@@ -985,7 +1066,7 @@ function App() {
                 )}
             </div>
             
-            <div className="p-2 sm:p-4 text-gray-800 bg-white rounded-b-lg"> {/* Content area background and text color */}
+            <div className="p-2 sm:p-4 text-gray-800 bg-white rounded-b-lg">
               {renderContent()}
             </div>
           </div>
@@ -1003,4 +1084,3 @@ function App() {
 }
 
 export default App;
-

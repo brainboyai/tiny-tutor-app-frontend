@@ -76,76 +76,103 @@ const sanitizeWordForId = (word: string): string => {
 };
 
 const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
-  if (!quizStr || typeof quizStr !== 'string') {
-    console.error("Invalid quiz string for parsing:", quizStr);
-    return null;
-  }
-  let cleanedQuizStr = quizStr.replace(/\u00A0/g, " ").replace(/\s\s+/g, ' ').trim();
-  
-  let lines = cleanedQuizStr.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  
-  if (lines.length > 0 && lines[0].match(/^(\*\*?)?Question\s*\d*:(\*\*?)?$/i)) {
-    lines.shift(); 
-    if (lines.length > 0 && lines[0].trim() === '') {
-        lines.shift();
-    }
-  }
-  lines = lines.filter(line => line.trim().length > 0);
-
-  if (lines.length < 6) { 
-    console.warn("Quiz string has too few content lines after cleaning:", lines.length, "Original:", quizStr, "Cleaned lines:", lines);
-    return null;
-  }
-  const questionText = lines[0].replace(/^Question:\s*/i, '').trim();
-  const options: { key: string; text: string }[] = [];
-  const optionRegex = /^\s*([A-D])\s*\)\s*(.*)/i; 
-  let correctOptionKey = '';
-
-  for (let i = 1; i <= 4; i++) {
-    if (!lines[i]) {
-        console.warn("Missing option line for quiz:", i, "Original:", quizStr, "Cleaned lines:", lines);
+    if (!quizStr || typeof quizStr !== 'string') {
+        console.error("Invalid quiz string for parsing:", quizStr);
         return null;
     }
-    const match = lines[i].match(optionRegex);
-    if (match && match[1] && match[2] !== undefined) { 
-      options.push({ key: match[1].toUpperCase(), text: match[2].trim() });
-    } else {
-      const keyGuess = String.fromCharCode(64 + i); 
-      const textContent = lines[i].trim().startsWith(`${keyGuess})`) ? lines[i].trim().substring(3).trim() : lines[i].trim();
-      options.push({ key: keyGuess, text: textContent });
-      console.warn(`Option line ${i} ("${lines[i]}") did not match regex, fallback parsing used.`);
-    }
-  }
-  
-  let correctAnswerLine = lines.find(line => line.toLowerCase().includes('correct answer:'));
-  if (!correctAnswerLine && lines[5]) { 
-      correctAnswerLine = lines[5];
-  }
 
-  if (correctAnswerLine) {
-    const correctMatch = correctAnswerLine.match(/(?:Correct Answer:\s*|^\s*)([A-D])(?:[.)]?\s*.*)?$/i);
-    if (correctMatch && correctMatch[1]) {
-      correctOptionKey = correctMatch[1].toUpperCase();
-    } else {
-        console.warn("Could not extract correct option key from line:", correctAnswerLine);
-    }
-  }
+    let cleanedQuizStr = quizStr.replace(/\u00A0/g, " ").replace(/\s\s+/g, ' ').trim();
+    let rawLines = cleanedQuizStr.split('\n').map(line => line.trim()).filter(line => line.length > 0);
 
-  if (options.length !== 4 || !correctOptionKey || !questionText) {
-    console.warn("Could not parse quiz string fully after cleaning:", "Original:", quizStr, "Cleaned:", lines, { questionText, options, correctOptionKey });
-    return null; 
-  }
-  
-  if (!options.find(opt => opt.key === correctOptionKey)) {
-    const foundOptByText = options.find(opt => opt.text.toLowerCase() === correctOptionKey.toLowerCase());
-    if (foundOptByText) {
-        correctOptionKey = foundOptByText.key;
-    } else {
-        console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}.`);
+    // Attempt to find the question line, removing prefixes like "Question X:" or "**Question X:**"
+    let questionText = "";
+    let questionLineIndex = -1;
+    for (let i = 0; i < rawLines.length; i++) {
+        const qMatch = rawLines[i].match(/^(?:(?:\*\*?)?Question\s*\d*:?(?:\*\*?)?\s*)?(.*)/i);
+        if (qMatch && qMatch[1] && qMatch[1].trim().length > 0) {
+            questionText = qMatch[1].trim();
+            questionLineIndex = i;
+            break;
+        }
     }
-  }
-  return { questionText, options, correctOptionKey, originalString: quizStr };
+
+    if (!questionText) {
+        console.warn("Could not identify question text. Original:", quizStr, "Lines:", rawLines);
+        return null;
+    }
+
+    // Lines after the identified question line
+    const remainingLines = rawLines.slice(questionLineIndex + 1);
+    
+    const options: { key: string; text: string }[] = [];
+    const optionRegex = /^\s*([A-D])\s*[.)]?\s*(.*)/i; // Made parenthesis optional, added optional dot
+    let correctOptionKey = '';
+    let linesConsumedForOptions = 0;
+
+    for (const line of remainingLines) {
+        if (options.length >= 4) break; // Stop if we have 4 options
+        const match = line.match(optionRegex);
+        if (match && match[1] && match[2] !== undefined) {
+            options.push({ key: match[1].toUpperCase(), text: match[2].trim() });
+            linesConsumedForOptions++;
+        } else if (options.length > 0 && options.length < 4) {
+            // If we started finding options and this line doesn't match,
+            // it might be a multi-line option text. Append to previous option.
+            // This is a basic heuristic and might need refinement.
+            // options[options.length - 1].text += ` ${line.trim()}`;
+            // For now, let's assume options are single lines for simplicity after initial regex failure.
+             console.warn(`Line "${line}" did not match option regex and not appending to previous.`)
+        }
+    }
+    
+    // Find correct answer line from what's left or from all remaining lines
+    const linesForCorrectAnswer = remainingLines.slice(linesConsumedForOptions);
+    let correctAnswerLine = linesForCorrectAnswer.find(line => line.toLowerCase().includes('correct answer:'));
+    if (!correctAnswerLine && linesForCorrectAnswer.length > 0) {
+        // If not found by keyword, check the first line after options (common pattern)
+        // Or, if the last option itself contains "Correct Answer:"
+        const lastOptionLine = remainingLines[linesConsumedForOptions -1]; // Last line processed as an option
+        if(lastOptionLine && lastOptionLine.toLowerCase().includes('correct answer:')) {
+            correctAnswerLine = lastOptionLine;
+        } else if (linesForCorrectAnswer[0]) {
+             correctAnswerLine = linesForCorrectAnswer[0]; // Assume it's the next line
+        }
+    }
+
+
+    if (correctAnswerLine) {
+        const correctMatch = correctAnswerLine.match(/(?:Correct Answer:\s*|^\s*)([A-D])(?:[.)]?\s*.*)?$/i);
+        if (correctMatch && correctMatch[1]) {
+            correctOptionKey = correctMatch[1].toUpperCase();
+        } else {
+             // If "Correct Answer: X" is part of an option line, try to extract from there
+            const embeddedCorrectMatch = correctAnswerLine.match(/\b([A-D])\s*\)\s*.*\bCorrect Answer:\s*([A-D])\b/i);
+            if(embeddedCorrectMatch && embeddedCorrectMatch[2]) {
+                correctOptionKey = embeddedCorrectMatch[2].toUpperCase();
+            } else {
+                 const simpleKeyMatch = correctAnswerLine.match(/\b([A-D])\b$/i); // Just a letter at the end
+                 if (simpleKeyMatch && simpleKeyMatch[1]) correctOptionKey = simpleKeyMatch[1].toUpperCase();
+                 else console.warn("Could not extract correct option key from line:", correctAnswerLine);
+            }
+        }
+    }
+
+    if (options.length !== 4) {
+        console.warn("Did not find 4 options. Found:", options.length, "Original:", quizStr, "Lines:", rawLines, "Options:", options);
+        return null;
+    }
+    if (!correctOptionKey) console.warn("Correct option key not found. Original:", quizStr);
+    if (!questionText) console.warn("Question text not found. Original:", quizStr);
+
+
+    if (!questionText || options.length !== 4 || !correctOptionKey) {
+        console.warn("Failed to parse quiz string fully. Q:", questionText, "Opts:", options.length, "Key:", correctOptionKey, "Orig:", quizStr);
+        return null;
+    }
+
+    return { questionText, options, correctOptionKey, originalString: quizStr };
 };
+
 
 function App() {
   const [inputValue, setInputValue] = useState<string>('');
@@ -179,12 +206,10 @@ function App() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Derived states for display
   const displayWord = isReviewingStreakWord ? wordForReview : currentFocusWord;
   const displayWordSanitized = sanitizeWordForId(displayWord);
   const currentWordDataForDisplay = generatedContent[displayWordSanitized]; 
   const explanationHtmlForDisplay = { __html: currentWordDataForDisplay?.explain?.replace(/<click>(.*?)<\/click>/g, '<strong class="text-blue-500 hover:text-blue-700 cursor-pointer underline">$1</strong>') || '' };
-
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -249,9 +274,14 @@ function App() {
     setAuthInputPassword('');
   };
 
-  const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false) => {
-    if (liveStreak && liveStreak.score >= 2 && authToken) {
-      console.log(`Attempting to save streak to: ${API_BASE_URL}/save_streak`);
+  const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false, newWord?: string) => {
+    // End streak if:
+    // 1. Forced (logout, new primary search that is NOT part of the current streak review)
+    // 2. A new word is provided and it's different from the last word in the current streak (and not reviewing)
+    const shouldEnd = forceEnd || (newWord && liveStreak && liveStreak.words.length > 0 && liveStreak.words[liveStreak.words.length -1].toLowerCase() !== newWord.toLowerCase() && !isReviewingStreakWord);
+
+    if (liveStreak && liveStreak.score >= 2 && shouldEnd) {
+      console.log(`Attempting to save streak (Score: ${liveStreak.score}) to: ${API_BASE_URL}/save_streak. Reason: ${forceEnd ? 'forceEnd' : `new word ${newWord}`}`);
       try {
         await fetch(`${API_BASE_URL}/save_streak`, {
           method: 'POST',
@@ -265,10 +295,10 @@ function App() {
         console.error('Failed to save streak:', err);
       }
     }
-    if (forceEnd || (liveStreak && liveStreak.score < 2)) {
+    if (shouldEnd || (liveStreak && liveStreak.score < 2 && forceEnd)) { // Also clear short streaks if forced
       setLiveStreak(null);
     }
-  }, [liveStreak, authToken]);
+  }, [liveStreak, authToken, isReviewingStreakWord]);
 
   const handleGenerateExplanation = async (
     wordToFetch: string,
@@ -276,7 +306,7 @@ function App() {
     isRefreshClick: boolean = false, 
     isProfileWordClick: boolean = false,
     targetMode: ContentMode = 'explain',
-    isReviewFetch: boolean = false 
+    isReviewContextFetch: boolean = false // Renamed from isReviewFetch for clarity
   ) => {
     if (!wordToFetch.trim()) {
       setError("Please enter a word.");
@@ -289,11 +319,8 @@ function App() {
       return;
     }
 
-    if (targetMode === 'quiz' && isRefreshClick) {
-        setIsFetchingNewQuiz(true); 
-    } else {
-        setIsLoading(true);
-    }
+    const effectiveLoadingSetter = (targetMode === 'quiz' && isRefreshClick) ? setIsFetchingNewQuiz : setIsLoading;
+    effectiveLoadingSetter(true);
     setError(null); 
     setAuthError(null); 
     
@@ -303,13 +330,13 @@ function App() {
         setIsQuizAttempted(false); 
     }
 
-    const isNewPrimaryWordSearch = !isSubTopicClick && !isRefreshClick && !isProfileWordClick && !isReviewFetch;
-
-    if (isNewPrimaryWordSearch || (isProfileWordClick && !isReviewFetch)) {
-      await endCurrentStreakIfNeeded(true); 
+    // Determine if this action should end the current streak
+    const isNewPrimarySearchNotReview = !isSubTopicClick && !isRefreshClick && !isProfileWordClick && !isReviewContextFetch;
+    if (isNewPrimarySearchNotReview || (isProfileWordClick && !isReviewContextFetch)) {
+        await endCurrentStreakIfNeeded(true, wordToFetch);
     }
     
-    console.log(`Generating content for "${wordToFetch}", mode "${targetMode}", refresh: ${isRefreshClick} from: ${API_BASE_URL}/generate_explanation`);
+    console.log(`Generating content for "${wordToFetch}", mode "${targetMode}", refresh: ${isRefreshClick}, reviewFetch: ${isReviewContextFetch}`);
     try {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
@@ -333,7 +360,7 @@ function App() {
       const contentToStore = data.full_cache || data; 
       const wordIdForStateUpdate = sanitizeWordForId(data.word); 
 
-      if (!isReviewFetch) { 
+      if (!isReviewContextFetch) { 
         setCurrentFocusWord(data.word); 
       }
       
@@ -344,7 +371,7 @@ function App() {
             ...contentToStore, 
             is_favorite: data.is_favorite !== undefined ? data.is_favorite : existingWordData.is_favorite,
         };
-        if (targetMode === 'quiz' && (isRefreshClick || !existingWordData.quiz || existingWordData.quiz?.join('') !== contentToStore.quiz?.join(''))) {
+        if (targetMode === 'quiz' && (isRefreshClick || !existingWordData.quiz || (contentToStore.quiz && existingWordData.quiz?.join('') !== contentToStore.quiz?.join('')))) {
             console.log("New quiz data received or quiz refreshed, resetting quiz_progress for word:", data.word);
             newWordData.quiz_progress = []; 
         }
@@ -354,7 +381,7 @@ function App() {
         };
       });
 
-      if (!isReviewFetch) { 
+      if (!isReviewContextFetch) { 
         setActiveContentMode(targetMode); 
       }
       
@@ -365,22 +392,29 @@ function App() {
           setQuizFeedback(null);
       }
 
-      if (!isSubTopicClick && !isProfileWordClick && !isReviewFetch) { 
+      if (!isSubTopicClick && !isProfileWordClick && !isReviewContextFetch) { 
         setInputValue(''); 
       }
-      if (!isReviewFetch) { 
-        setIsReviewingStreakWord(false); 
-        setWordForReview('');
+      if (!isReviewContextFetch) { 
+        // Only reset review state if this wasn't a fetch *for* a review
+        if(isReviewingStreakWord && wordForReview.toLowerCase() !== data.word.toLowerCase()){
+            // If the main focus changed while reviewing, end review.
+            setIsReviewingStreakWord(false);
+            setWordForReview('');
+        } else if (!isReviewingStreakWord) {
+            // If not reviewing, ensure it's clear
+            setWordForReview('');
+        }
       }
 
-      if (isSubTopicClick && liveStreak && !isReviewFetch) {
+      if (isSubTopicClick && liveStreak && !isReviewContextFetch) {
         if (liveStreak.words[liveStreak.words.length - 1]?.toLowerCase() !== wordToFetch.toLowerCase()) {
           setLiveStreak(prev => ({
             score: (prev?.score || 0) + 1,
             words: [...(prev?.words || []), data.word],
           }));
         }
-      } else if ((isNewPrimaryWordSearch || isProfileWordClick) && !isReviewFetch) {
+      } else if (isNewPrimarySearchNotReview || (isProfileWordClick && !isReviewContextFetch)) {
         setLiveStreak({ score: 1, words: [data.word] });
       }
 
@@ -405,11 +439,11 @@ function App() {
     }
   };
   
-  const handleModeChange = async (mode: ContentMode) => {
+  const handleModeChange = (mode: ContentMode) => {
     const wordInFocusForModeChange = displayWord; 
     const sanitizedWordInFocusForModeChange = sanitizeWordForId(wordInFocusForModeChange);
 
-    setActiveContentMode(mode);
+    setActiveContentMode(mode); // Set active mode immediately
     if (mode !== 'quiz') { 
         setSelectedQuizOption(null);
         setQuizFeedback(null);
@@ -428,14 +462,18 @@ function App() {
         )
     ) {
         console.log(`Mode change to "${mode}" for "${wordInFocusForModeChange}", content missing or quiz empty. Fetching...`);
+        // Pass isReviewingStreakWord as the isReviewContextFetch flag
         handleGenerateExplanation(wordInFocusForModeChange, false, false, false, mode, isReviewingStreakWord);
     } else if (mode === 'quiz' && currentDataForWordInFocus?.quiz && currentDataForWordInFocus.quiz.length > 0) {
+        // If switching to quiz and data exists, ensure UI is reset for the current question index
         setIsQuizAttempted(false);
         setSelectedQuizOption(null);
         setQuizFeedback(null);
+        // The useEffect for currentQuizQuestionIndex will set the correct index based on progress
     }
   };
 
+  // ... (rest of the functions: handleToggleFavorite, handleSubTopicClick, handleRefreshContent, handleWordSelectionFromProfile, handleStreakWordClick)
   const handleToggleFavorite = async () => {
     const wordToToggle = displayWord;
     const sanitizedWordToToggle = displayWordSanitized;
@@ -474,19 +512,25 @@ function App() {
   };
 
   const handleSubTopicClick = (subTopic: string) => {
+    // When a sub-topic is clicked, it becomes the new primary focus, ending review.
+    setIsReviewingStreakWord(false);
+    setWordForReview('');
     setInputValue(subTopic); 
     handleGenerateExplanation(subTopic, true, false, false, 'explain');
   };
 
   const handleRefreshContent = () => {
-    const wordToRefresh = displayWord;
+    const wordToRefresh = displayWord; // This correctly gets currentFocusWord or wordForReview
     if (wordToRefresh) {
+      // Pass isReviewingStreakWord to maintain context if refreshing reviewed content
       handleGenerateExplanation(wordToRefresh, false, true, false, activeContentMode, isReviewingStreakWord);
     }
   };
   
   const handleWordSelectionFromProfile = (word: string) => {
     setShowProfileModal(false); 
+    setIsReviewingStreakWord(false); // Selecting from profile starts a new focus
+    setWordForReview('');
     setInputValue(word); 
     handleGenerateExplanation(word, false, false, true, 'explain');
   };
@@ -508,10 +552,12 @@ function App() {
       setQuizFeedback(null);
       setIsQuizAttempted(false);
     } else {
+      // Fetch explain content for the review word, maintaining review context
       handleGenerateExplanation(word, false, false, false, 'explain', true); 
     }
   };
-
+  
+  // useEffect for determining current quiz question index or summary view
   useEffect(() => { 
     const currentSanitizedDisplayWord = displayWordSanitized; 
 
@@ -532,10 +578,15 @@ function App() {
             if (currentQuizQuestionIndex !== targetQuestionIndex) {
                 setCurrentQuizQuestionIndex(targetQuestionIndex);
             }
+            // Always reset attempt status and feedback when the question index might change
+            // or when entering quiz mode for a word.
             setSelectedQuizOption(null);
             setQuizFeedback(null);
             setIsQuizAttempted(false); 
+            // console.log(`Quiz Index Effect: Word "${displayWord}", Target Idx: ${targetQuestionIndex}, isAttempted: false`);
+
         } else if (!wordData?.quiz || wordData.quiz.length === 0) {
+            // No quiz questions available for this word (yet or at all)
             if (currentQuizQuestionIndex !== 0) setCurrentQuizQuestionIndex(0);
             setSelectedQuizOption(null);
             setQuizFeedback(null);
@@ -544,6 +595,7 @@ function App() {
     }
   }, [activeContentMode, displayWord, displayWordSanitized, generatedContent, currentQuizQuestionIndex]); 
 
+  // useEffect for auto-advancing quiz after an answer
   useEffect(() => { 
     if (activeContentMode === 'quiz' && isQuizAttempted && quizFeedback) { 
         const currentSanitizedDisplayWordForEffect = displayWordSanitized; 
@@ -554,12 +606,13 @@ function App() {
             const progress = wordData.quiz_progress; 
             
             const timer = setTimeout(() => {
+                // The other useEffect will reset UI states when currentQuizQuestionIndex changes
                 if (progress.length >= quizQuestions.length) {
-                    if (currentQuizQuestionIndex !== quizQuestions.length) {
+                    if (currentQuizQuestionIndex !== quizQuestions.length) { // Avoid redundant state set
                         setCurrentQuizQuestionIndex(quizQuestions.length); 
                     }
                 } else {
-                    if (currentQuizQuestionIndex !== progress.length) {
+                    if (currentQuizQuestionIndex !== progress.length) { // Avoid redundant state set
                         setCurrentQuizQuestionIndex(progress.length); 
                     }
                 }
@@ -821,21 +874,23 @@ function App() {
   
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto text-gray-800"> 
-          <div className="flex justify-between items-center mb-4">
+        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden"> {/* Added flex flex-col and overflow-hidden */}
+          <div className="flex justify-between items-center mb-4 flex-shrink-0"> {/* flex-shrink-0 for header */}
             <h3 className="text-xl font-semibold">User Profile</h3>
             <button onClick={() => setShowProfileModal(false)} className="text-gray-500 hover:text-gray-700">&times;</button>
           </div>
-          <p><strong>Username:</strong> {currentUser.username}</p>
-          <p><strong>Email:</strong> {currentUser.email || 'N/A'}</p>
-          <p><strong>Account Tier:</strong> {currentUser.tier || 'Standard'}</p>
-          <p className="mb-4"><strong>Total Words Explored:</strong> {currentUser.total_words_explored || 0}</p>
-          
-          {renderWordList("All Explored Words", currentUser.explored_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
-          {renderWordList("Favorite Words", currentUser.favorite_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
-          {renderStreakList(currentUser.streak_history?.sort((a,b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()))}
-          
-          <button onClick={() => setShowProfileModal(false)} className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">Close</button>
+          <div className="mb-4 p-2 bg-indigo-50 rounded-lg shadow-sm flex-shrink-0"> {/* User details also flex-shrink-0 */}
+            <p><strong>Username:</strong> {currentUser.username}</p>
+            <p><strong>Email:</strong> {currentUser.email || 'N/A'}</p>
+            <p><strong>Account Tier:</strong> {currentUser.tier || 'Standard'}</p>
+            <p><strong>Total Words Explored:</strong> {currentUser.total_words_explored || 0}</p>
+          </div>
+          <div className="flex-grow overflow-y-auto space-y-3 pr-1"> {/* This div will scroll */}
+            {renderWordList("All Explored Words", currentUser.explored_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
+            {renderWordList("Favorite Words", currentUser.favorite_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
+            {renderStreakList(currentUser.streak_history?.sort((a,b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()))}
+          </div>
+          <button onClick={() => setShowProfileModal(false)} className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 flex-shrink-0">Close</button> {/* flex-shrink-0 for button */}
         </div>
       </div>
     );

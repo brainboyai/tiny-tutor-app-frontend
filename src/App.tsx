@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, ChevronLeft, ChevronRight, CheckCircle, XCircle, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain } from 'lucide-react';
+import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, CheckCircle, XCircle, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain } from 'lucide-react';
 import './App.css'; // Assuming some base styles might be here
 // import './index.css'; // Tailwind base is usually in main.tsx or index.html
 
@@ -111,22 +111,17 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
 
   if (options.length !== 4 || !correctOptionKey || !questionText) {
     console.warn("Could not parse quiz string fully:", quizStr, { questionText, options, correctOptionKey });
-    return null; // Or handle partial parsing if desired
+    return null; 
   }
   
-  // Validate correctOptionKey
   if (!options.find(opt => opt.key === correctOptionKey)) {
-    // Attempt to infer correct key if it's just the text
     const foundOptByText = options.find(opt => opt.text.toLowerCase() === correctOptionKey.toLowerCase());
     if (foundOptByText) {
         correctOptionKey = foundOptByText.key;
     } else {
         console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}`);
-        // Default to first option or handle error
-        // correctOptionKey = options[0]?.key || 'A'; 
     }
   }
-
 
   return { questionText, options, correctOptionKey, originalString: quizStr };
 };
@@ -166,7 +161,6 @@ function App() {
     const token = localStorage.getItem('authToken');
     if (token) {
       setAuthToken(token);
-      // Potentially fetch user profile here if token exists
       fetchUserProfile(token);
     }
   }, []);
@@ -182,9 +176,8 @@ function App() {
       setCurrentUser(data);
     } catch (err) {
       console.error("Error fetching profile:", err);
-      // handle token expiry or invalid token, e.g., logout
       if ((err as Error).message.includes('Failed to fetch profile') || (err as Error).message.includes('401')) {
-        handleLogout(); // Or specific token error handling
+        handleLogout(); 
       }
     }
   };
@@ -195,14 +188,14 @@ function App() {
     if (userDetails) {
       setCurrentUser(userDetails);
     } else {
-      fetchUserProfile(token); // Fetch profile if not provided
+      fetchUserProfile(token); 
     }
     setShowAuthModal(false);
-    setError(null); // Clear previous auth errors
+    setError(null); 
   };
 
   const handleLogout = () => {
-    endCurrentStreakIfNeeded(true); // End streak on logout
+    endCurrentStreakIfNeeded(true); 
     localStorage.removeItem('authToken');
     setAuthToken(null);
     setCurrentUser(null);
@@ -210,14 +203,11 @@ function App() {
     setCurrentFocusWordSanitized('');
     setGeneratedContent({});
     setLiveStreak(null);
-    // Reset other relevant states
   };
 
   // --- Streak Management ---
   const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false) => {
     if (liveStreak && liveStreak.score >= 2 && authToken) {
-      // Only save if score is 2 or more.
-      // 'forceEnd' implies the streak is definitely over (e.g. new word typed, logout)
       try {
         await fetch(`${API_BASE_URL}/save_streak`, {
           method: 'POST',
@@ -227,13 +217,11 @@ function App() {
           },
           body: JSON.stringify({ words: liveStreak.words, score: liveStreak.score }),
         });
-        // console.log('Streak saved:', liveStreak.words.join(' -> '));
       } catch (err) {
         console.error('Failed to save streak:', err);
       }
     }
     if (forceEnd || (liveStreak && liveStreak.score < 2)) {
-      // If forced, or if streak was too short to save, clear it.
       setLiveStreak(null);
     }
   }, [liveStreak, authToken]);
@@ -244,7 +232,7 @@ function App() {
     wordToFetch: string,
     isSubTopicClick: boolean = false,
     isRefreshClick: boolean = false,
-    isProfileWordClick: boolean = false // True if word is from profile/history
+    isProfileWordClick: boolean = false 
   ) => {
     if (!wordToFetch.trim()) {
       setError("Please enter a word.");
@@ -262,18 +250,13 @@ function App() {
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttempted(false);
-    // setCurrentQuizQuestionIndex(0); // This will be handled by the useEffect for quiz index
 
-    const sanitizedWord = sanitizeWordForId(wordToFetch);
     const isNewPrimaryWordSearch = !isSubTopicClick && !isRefreshClick && !isProfileWordClick;
 
     if (isNewPrimaryWordSearch || isProfileWordClick) {
-      await endCurrentStreakIfNeeded(true); // End previous streak if starting a new one
+      await endCurrentStreakIfNeeded(true); 
     }
     
-    // If it's a sub-topic click and there's an active streak, continue it.
-    // Otherwise, if it's a new word (from input or profile), a new streak of 1 will be set after fetch.
-
     try {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
@@ -283,7 +266,7 @@ function App() {
         },
         body: JSON.stringify({
           word: wordToFetch,
-          mode: 'explain', // Always fetch 'explain' initially, backend caches other modes
+          mode: 'explain', 
           refresh_cache: isRefreshClick,
         }),
       });
@@ -294,26 +277,25 @@ function App() {
       }
 
       const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-      const contentToStore = data.full_cache || data; // Backend might return full_cache
+      const contentToStore = data.full_cache || data; 
+      const sanitizedWordId = sanitizeWordForId(data.word);
 
-      setCurrentFocusWord(data.word); // Use word from response for consistent casing
-      setCurrentFocusWordSanitized(sanitizeWordForId(data.word));
+      setCurrentFocusWord(data.word); 
+      setCurrentFocusWordSanitized(sanitizedWordId);
       setGeneratedContent(prev => ({
         ...prev,
-        [sanitizeWordForId(data.word)]: {
-          ...prev[sanitizeWordForId(data.word)], // Preserve existing modes not in this fetch
+        [sanitizedWordId]: {
+          ...prev[sanitizedWordId], 
           ...contentToStore,
-          is_favorite: data.is_favorite, // Ensure favorite status is updated
+          is_favorite: data.is_favorite, 
         },
       }));
-      setActiveContentMode('explain'); // Default to explain view
-      setInputValue(''); // Clear input field
-      setIsReviewingStreakWord(false); // No longer reviewing if new content generated
+      setActiveContentMode('explain'); 
+      setInputValue(''); 
+      setIsReviewingStreakWord(false); 
       setWordForReview('');
 
-      // Streak Logic Update
       if (isSubTopicClick && liveStreak) {
-        // Check if the sub-topic is already the last word in the streak to prevent duplicates
         if (liveStreak.words[liveStreak.words.length - 1]?.toLowerCase() !== wordToFetch.toLowerCase()) {
           setLiveStreak(prev => ({
             score: (prev?.score || 0) + 1,
@@ -321,10 +303,8 @@ function App() {
           }));
         }
       } else if (isNewPrimaryWordSearch || isProfileWordClick) {
-        // Start a new streak of 1 for a brand new search or profile word click
         setLiveStreak({ score: 1, words: [data.word] });
       }
-      // If it's a refresh, the streak is maintained (or ended if user typed new word before refresh)
 
     } catch (err) {
       console.error("Error generating content:", err);
@@ -339,11 +319,8 @@ function App() {
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttempted(false);
-    // setCurrentQuizQuestionIndex(0); // Let useEffect handle this based on progress
 
     const currentWordData = generatedContent[currentFocusWordSanitized];
-    // If mode data isn't present and it's not 'explain' (which is fetched initially)
-    // or if quiz data is missing when switching to quiz mode
     if (
         currentFocusWordSanitized && 
         (!currentWordData || !currentWordData[mode] || (mode === 'quiz' && !currentWordData.quiz)) &&
@@ -385,7 +362,6 @@ function App() {
   const handleToggleFavorite = async () => {
     if (!authToken || !currentFocusWordSanitized) return;
     const currentIsFavorite = generatedContent[currentFocusWordSanitized]?.is_favorite || false;
-    // Optimistic update
     setGeneratedContent(prev => ({
       ...prev,
       [currentFocusWordSanitized]: {
@@ -403,11 +379,9 @@ function App() {
         },
         body: JSON.stringify({ word: currentFocusWord }),
       });
-      // If profile is open, refresh it
-      if (showProfileModal) fetchUserProfile(authToken);
+      if (showProfileModal && authToken) fetchUserProfile(authToken);
     } catch (err) {
       console.error("Error toggling favorite:", err);
-      // Revert optimistic update on error
       setGeneratedContent(prev => ({
         ...prev,
         [currentFocusWordSanitized]: {
@@ -420,7 +394,7 @@ function App() {
   };
 
   const handleSubTopicClick = (subTopic: string) => {
-    setInputValue(subTopic); // Set input value for clarity, though not strictly needed for generation
+    setInputValue(subTopic); 
     handleGenerateExplanation(subTopic, true);
   };
 
@@ -431,27 +405,21 @@ function App() {
   };
   
   const handleWordSelectionFromProfile = (word: string) => {
-    setShowProfileModal(false); // Close profile modal
-    setInputValue(word); // Optional: update input field
-    // This will end current streak and start a new one with score 1
+    setShowProfileModal(false); 
+    setInputValue(word); 
     handleGenerateExplanation(word, false, false, true);
   };
 
   const handleStreakWordClick = (word: string) => {
-    if (word.toLowerCase() === (isReviewingStreakWord ? wordForReview : currentFocusWord).toLowerCase()) return; // Avoid reloading same word
+    if (word.toLowerCase() === (isReviewingStreakWord ? wordForReview : currentFocusWord).toLowerCase()) return; 
 
     setIsReviewingStreakWord(true);
-    setWordForReview(word); // This is the word whose content we want to show
+    setWordForReview(word); 
     
     const sanitizedReviewWord = sanitizeWordForId(word);
-    // Check if content for this word is already loaded
     if (generatedContent[sanitizedReviewWord]?.explain) {
-      setActiveContentMode('explain'); // Switch to explain or keep current mode? Let's default to explain.
-      // Quiz index for the reviewed word will be set by the useEffect
+      setActiveContentMode('explain'); 
     } else {
-      // Fetch content for the review word if not available (it should be, as it's from a streak)
-      // This scenario implies the word was in a streak but its content isn't in current session's generatedContent
-      // This might happen if app was refreshed. We should fetch its 'explain' at least.
       handleFetchContentForReview(word);
     }
   };
@@ -466,7 +434,7 @@ function App() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`,
             },
-            body: JSON.stringify({ word: wordToReview, mode: 'explain' }), // Fetch explain by default
+            body: JSON.stringify({ word: wordToReview, mode: 'explain' }), 
         });
         if (!response.ok) throw new Error(`Failed to fetch content for review: ${wordToReview}`);
         const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
@@ -486,42 +454,33 @@ function App() {
 
   // --- Quiz Logic ---
   useEffect(() => {
-    // This effect sets the current quiz question index based on progress
-    // when the quiz mode becomes active or when the quiz content/progress for the current/reviewed word changes.
     const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
     const sanitizedWordInFocus = sanitizeWordForId(wordInFocus);
 
     if (activeContentMode === 'quiz' && sanitizedWordInFocus && generatedContent[sanitizedWordInFocus]?.quiz) {
         const wordData = generatedContent[sanitizedWordInFocus];
-        const quizQuestions = wordData.quiz!; // Assert non-null as per condition
+        const quizQuestions = wordData.quiz!; 
         const progress = wordData.quiz_progress || [];
 
         if (quizQuestions.length > 0) {
             if (progress.length >= quizQuestions.length) {
-                setCurrentQuizQuestionIndex(quizQuestions.length); // All answered, indicates summary view
+                setCurrentQuizQuestionIndex(quizQuestions.length); 
             } else {
-                setCurrentQuizQuestionIndex(progress.length); // Next unanswered question
+                setCurrentQuizQuestionIndex(progress.length); 
             }
         } else {
-            setCurrentQuizQuestionIndex(0); // No questions (e.g., still loading or empty quiz set)
+            setCurrentQuizQuestionIndex(0); 
         }
-        // Reset feedback for the new question/summary
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
-
-    } else if (activeContentMode !== 'quiz') {
-        // Optional: Reset quiz state if navigating away from quiz mode for the current focus
-        // This depends on desired UX. For now, let's not reset, so if user quickly toggles back, they resume.
-        // However, the above useEffect will correctly set the index when they return to 'quiz' mode.
     }
   }, [
       activeContentMode, 
       currentFocusWord, 
       wordForReview, 
       isReviewingStreakWord, 
-      generatedContent, // More specific dependencies would be generatedContent[sanitizedWordInFocus]?.quiz & .quiz_progress
-      // Using generatedContent directly to simplify, but can be optimized if causing perf issues
+      generatedContent, 
   ]);
 
 
@@ -532,21 +491,18 @@ function App() {
     if (!authToken || !sanitizedWordBeingQuizzed) return;
 
     const currentAttempts = generatedContent[sanitizedWordBeingQuizzed]?.quiz_progress || [];
-    // Avoid duplicate saves for the same question index
     if (currentAttempts.find(att => att.question_index === questionIndex)) {
         console.warn("Attempt for this question already saved.");
-        // Proceed to next question if already attempted
         const quizQuestions = generatedContent[sanitizedWordBeingQuizzed]?.quiz;
         if (quizQuestions) {
              if (currentQuizQuestionIndex < quizQuestions.length -1 ) {
                 setCurrentQuizQuestionIndex(prev => prev + 1);
              } else {
-                setCurrentQuizQuestionIndex(quizQuestions.length); // Go to summary
+                setCurrentQuizQuestionIndex(quizQuestions.length); 
              }
         }
         return;
     }
-
 
     try {
       const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
@@ -565,7 +521,6 @@ function App() {
       if (!response.ok) throw new Error('Failed to save quiz attempt');
       const data: { message: string, quiz_progress: QuizAttempt[] } = await response.json();
 
-      // Update local state with the new progress from backend
       setGeneratedContent(prev => ({
         ...prev,
         [sanitizedWordBeingQuizzed]: {
@@ -573,23 +528,19 @@ function App() {
           quiz_progress: data.quiz_progress,
         },
       }));
-      // The useEffect for quiz index will then pick up this change and advance the question or go to summary.
-      // No need to manually call setCurrentQuizQuestionIndex here if the effect is robust.
-
     } catch (err) {
       console.error("Error saving quiz attempt:", err);
       setError("Failed to save your answer. Please try again.");
-      // Potentially revert optimistic UI changes if any were made
     }
   };
 
   const handleQuizOptionSelect = (optionKey: string, correctKey: string, questionIdx: number) => {
-    if (isQuizAttempted) return; // Prevent re-answering if feedback is shown
+    if (isQuizAttempted) return; 
 
     const isCorrect = optionKey === correctKey;
     setSelectedQuizOption(optionKey);
     setQuizFeedback({ message: isCorrect ? "Correct!" : "Incorrect.", isCorrect });
-    setIsQuizAttempted(true); // Mark as attempted to show feedback and "Next" button
+    setIsQuizAttempted(true); 
 
     handleSaveQuizAttempt(questionIdx, optionKey, isCorrect);
   };
@@ -598,9 +549,6 @@ function App() {
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttempted(false);
-    // The useEffect watching quiz_progress will set the new currentQuizQuestionIndex
-    // after handleSaveQuizAttempt updates generatedContent.
-    // If we need to force it because save is async and effect might not catch up quick enough:
     const wordBeingQuizzed = isReviewingStreakWord ? wordForReview : currentFocusWord;
     const sanitizedWordBeingQuizzed = sanitizeWordForId(wordBeingQuizzed);
     const currentWordData = generatedContent[sanitizedWordBeingQuizzed];
@@ -609,7 +557,7 @@ function App() {
         if (progressLength < currentWordData.quiz.length) {
             setCurrentQuizQuestionIndex(progressLength);
         } else {
-            setCurrentQuizQuestionIndex(currentWordData.quiz.length); // Go to summary
+            setCurrentQuizQuestionIndex(currentWordData.quiz.length); 
         }
     }
   };
@@ -666,7 +614,6 @@ function App() {
           return <div className="p-4 text-gray-500">No quiz available for this topic yet. Try generating content first.</div>;
         }
         
-        // Summary View
         if (currentQuizQuestionIndex >= quizSet.length) {
             let correctCount = 0;
             quizProgress.forEach(attempt => {
@@ -713,18 +660,15 @@ function App() {
                     })}
                      <button 
                         onClick={() => {
-                            // Reset progress for this word to allow re-take
-                            // This is an example, actual re-take might need backend support to clear progress or start new attempt set
-                            const sanitizedWord = getDisplayWordSanitized();
+                            const sanitizedWordToReset = getDisplayWordSanitized();
                             setGeneratedContent(prev => ({
                                 ...prev,
-                                [sanitizedWord]: {
-                                    ...prev[sanitizedWord],
-                                    quiz_progress: [], // Clears local progress
+                                [sanitizedWordToReset]: {
+                                    ...prev[sanitizedWordToReset],
+                                    quiz_progress: [], 
                                 }
                             }));
-                            setCurrentQuizQuestionIndex(0); // Go to first question
-                            // Ideally, also call a backend endpoint to reset quiz_progress for this word if persistence is strict
+                            setCurrentQuizQuestionIndex(0); 
                             alert("Quiz progress reset locally. You can retake the quiz now. For permanent reset, backend changes would be needed.");
                         }}
                         className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150"
@@ -735,7 +679,6 @@ function App() {
             );
         }
         
-        // Active Question View
         const currentQuestionString = quizSet[currentQuizQuestionIndex];
         const parsedQuestion = parseQuizString(currentQuestionString);
 
@@ -743,7 +686,6 @@ function App() {
           return <div className="text-red-500 p-4">Error loading question. Please try refreshing.</div>;
         }
         
-        // Check if this specific question has been answered in the progress
         const attemptForThisQuestion = quizProgress.find(p => p.question_index === currentQuizQuestionIndex);
         const alreadyAnsweredThisQuestion = !!attemptForThisQuestion;
 
@@ -796,7 +738,7 @@ function App() {
   const renderProfileModal = () => {
     if (!showProfileModal || !currentUser) return null;
   
-    const renderWordList = (title: string, words: WordHistoryEntry[] | undefined, isFavoriteList: boolean = false) => (
+    const renderWordList = (title: string, words: WordHistoryEntry[] | undefined) => (
       <div className="mb-4">
         <h4 className="font-semibold text-gray-700 mb-1">{title} ({words?.length || 0})</h4>
         {words && words.length > 0 ? (
@@ -845,7 +787,7 @@ function App() {
           <p className="mb-4"><strong>Total Words Explored:</strong> {currentUser.total_words_explored || 0}</p>
           
           {renderWordList("All Explored Words", currentUser.explored_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
-          {renderWordList("Favorite Words", currentUser.favorite_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()), true)}
+          {renderWordList("Favorite Words", currentUser.favorite_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
           {renderStreakList(currentUser.streak_history?.sort((a,b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()))}
           
           <button onClick={() => setShowProfileModal(false)} className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">Close</button>
@@ -856,18 +798,17 @@ function App() {
 
   const renderAuthModal = () => {
     if (!showAuthModal) return null;
-    // Basic Auth Modal (can be componentized)
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const formData = new FormData(e.currentTarget);
       const email = formData.get('email') as string;
-      const username = formData.get('username') as string; // For signup
+      const username = formData.get('username') as string; 
       const password = formData.get('password') as string;
       
       const endpoint = authMode === 'login' ? '/login' : '/signup';
       const payload = authMode === 'login' ? { email_or_username: email, password } : { email, username, password };
 
-      setIsLoading(true); // Use general loading or specific auth loading
+      setIsLoading(true); 
       setError(null);
       try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -940,7 +881,7 @@ function App() {
             {currentUser && <span className="text-sm">Hi, {currentUser.username}!</span>}
             {authToken ? (
               <>
-                <button onClick={() => { fetchUserProfile(authToken); setShowProfileModal(true);}} title="Profile" className="p-2 rounded-full hover:bg-white/20 transition-colors"><User size={20} /></button>
+                <button onClick={() => { if(authToken) fetchUserProfile(authToken); setShowProfileModal(true);}} title="Profile" className="p-2 rounded-full hover:bg-white/20 transition-colors"><User size={20} /></button>
                 <button onClick={handleLogout} title="Logout" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogOut size={20} /></button>
               </>
             ) : (

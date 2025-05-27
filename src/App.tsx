@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, CheckCircle, XCircle, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain } from 'lucide-react';
+import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, CheckCircle, XCircle, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react'; // Added PlusCircle
 import './App.css';
 
 // --- Constants ---
@@ -79,59 +79,42 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     console.error("Invalid quiz string for parsing:", quizStr);
     return null;
   }
-
-  // Clean up lines: trim, remove empty lines, and potential "Question X:" prefixes
   let lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
-  // Remove common "Question X:" or "**Question X:**" prefixes if they are on their own line
-  if (lines.length > 0 && lines[0].match(/^(\*\*?)?Question\s*\d+:(\*\*?)?$/i)) {
-    lines.shift(); // Remove the "Question X:" line
-    // If the next line is empty after removing the prefix, remove it too
+  if (lines.length > 0 && lines[0].match(/^(\*\*?)?Question\s*\d*:(\*\*?)?$/i)) {
+    lines.shift(); 
     if (lines.length > 0 && lines[0].trim() === '') {
         lines.shift();
     }
   }
-  
-  // Further filter empty lines that might have been left or were part of original formatting
   lines = lines.filter(line => line.trim().length > 0);
-
   if (lines.length < 6) { 
-    console.warn("Quiz string has too few content lines after cleaning:", lines.length, "Original string:", quizStr, "Cleaned lines:", lines);
+    console.warn("Quiz string has too few content lines after cleaning:", lines.length, "Original:", quizStr, "Cleaned:", lines);
     return null;
   }
-
-  const questionText = lines[0].replace(/^Question:\s*/i, '').trim(); // Question is now expected at lines[0]
+  const questionText = lines[0].replace(/^Question:\s*/i, '').trim();
   const options: { key: string; text: string }[] = [];
-  const optionRegex = /^\s*([A-D])\)\s*(.*)/i; // Allow leading spaces before option key
+  const optionRegex = /^\s*([A-D])\)\s*(.*)/i; 
   let correctOptionKey = '';
-
-  // Options are expected from lines[1] to lines[4]
   for (let i = 1; i <= 4; i++) {
     if (!lines[i]) {
-        console.warn("Missing option line for quiz:", i, "Original string:", quizStr, "Cleaned lines:", lines);
+        console.warn("Missing option line for quiz:", i, "Original:", quizStr, "Cleaned:", lines);
         return null;
     }
     const match = lines[i].match(optionRegex);
-    if (match && match[1] && match[2] !== undefined) { // Ensure match[2] is captured
+    if (match && match[1] && match[2] !== undefined) { 
       options.push({ key: match[1].toUpperCase(), text: match[2].trim() });
     } else {
-      // Fallback if regex fails but line exists, assuming it's an option
-      // This fallback is risky if formatting is very inconsistent
-      const key = String.fromCharCode(64 + (i - 1) + 1); // A, B, C, D based on loop
+      const key = String.fromCharCode(64 + (i - 1) + 1); 
       const textContent = lines[i].trim().startsWith(`${key})`) ? lines[i].trim().substring(3).trim() : lines[i].trim();
       options.push({ key, text: textContent });
       console.warn(`Option line ${i} did not match regex, fallback parsing:`, lines[i]);
     }
   }
-  
-  // Correct answer is expected at lines[5] or as a line starting with "Correct Answer:"
   let correctAnswerLine = lines.find(line => line.toLowerCase().includes('correct answer:'));
-  if (!correctAnswerLine && lines[5]) { // If not found by keyword, check line 5
+  if (!correctAnswerLine && lines[5]) { 
       correctAnswerLine = lines[5];
   }
-
   if (correctAnswerLine) {
-    // Try to extract from "Correct Answer: X" or just "X"
     const correctMatch = correctAnswerLine.match(/(?:Correct Answer:\s*|^\s*)([A-D])(?:[.)]?\s*.*)?$/i);
     if (correctMatch && correctMatch[1]) {
       correctOptionKey = correctMatch[1].toUpperCase();
@@ -139,28 +122,22 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
         console.warn("Could not extract correct option key from line:", correctAnswerLine);
     }
   }
-
-
   if (options.length !== 4 || !correctOptionKey || !questionText) {
-    console.warn("Could not parse quiz string fully after cleaning:", "Original string:", quizStr, "Cleaned lines:", lines, { questionText, options, correctOptionKey });
+    console.warn("Could not parse quiz string fully after cleaning:", "Original:", quizStr, "Cleaned:", lines, { questionText, options, correctOptionKey });
     return null; 
   }
-  
   if (!options.find(opt => opt.key === correctOptionKey)) {
     const foundOptByText = options.find(opt => opt.text.toLowerCase() === correctOptionKey.toLowerCase());
     if (foundOptByText) {
         correctOptionKey = foundOptByText.key;
     } else {
         console.warn(`Correct option key "${correctOptionKey}" not found in options for: ${questionText}.`);
-        // Potentially mark as invalid or default if necessary
-        // return null; // Or handle error more gracefully
     }
   }
   return { questionText, options, correctOptionKey, originalString: quizStr };
 };
 
 function App() {
-  // Main App State
   const [inputValue, setInputValue] = useState<string>('');
   const [currentFocusWord, setCurrentFocusWord] = useState<string>(''); 
   const [currentFocusWordSanitized, setCurrentFocusWordSanitized] = useState<string>('');
@@ -169,7 +146,6 @@ function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null); 
 
-  // Auth State
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
@@ -282,7 +258,8 @@ function App() {
     wordToFetch: string,
     isSubTopicClick: boolean = false,
     isRefreshClick: boolean = false,
-    isProfileWordClick: boolean = false 
+    isProfileWordClick: boolean = false,
+    targetMode: ContentMode = 'explain' // Allow specifying target mode
   ) => {
     if (!wordToFetch.trim()) {
       setError("Please enter a word.");
@@ -298,9 +275,14 @@ function App() {
     setIsLoading(true);
     setError(null); 
     setAuthError(null); 
-    setSelectedQuizOption(null);
-    setQuizFeedback(null);
-    setIsQuizAttempted(false);
+    
+    // Only reset quiz specific states if the target mode is quiz or if it's a new primary word search
+    if (targetMode === 'quiz' || (!isSubTopicClick && !isRefreshClick && !isProfileWordClick)) {
+        setSelectedQuizOption(null);
+        setQuizFeedback(null);
+        setIsQuizAttempted(false);
+    }
+
 
     const isNewPrimaryWordSearch = !isSubTopicClick && !isRefreshClick && !isProfileWordClick;
 
@@ -308,7 +290,7 @@ function App() {
       await endCurrentStreakIfNeeded(true); 
     }
     
-    console.log(`Generating explanation for "${wordToFetch}" from: ${API_BASE_URL}/generate_explanation`);
+    console.log(`Generating content for "${wordToFetch}", mode "${targetMode}" from: ${API_BASE_URL}/generate_explanation`);
     try {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
@@ -318,8 +300,8 @@ function App() {
         },
         body: JSON.stringify({
           word: wordToFetch.trim(), 
-          mode: 'explain', 
-          refresh_cache: isRefreshClick,
+          mode: targetMode, 
+          refresh_cache: isRefreshClick, // Use refresh_cache for quiz regeneration too
         }),
       });
 
@@ -334,16 +316,31 @@ function App() {
 
       setCurrentFocusWord(data.word); 
       setCurrentFocusWordSanitized(sanitizedWordId);
-      setGeneratedContent(prev => ({
-        ...prev,
-        [sanitizedWordId]: {
-          ...prev[sanitizedWordId], 
-          ...contentToStore,
-          is_favorite: data.is_favorite, 
-        },
-      }));
-      setActiveContentMode('explain'); 
-      setInputValue(''); 
+      
+      setGeneratedContent(prev => {
+        const newWordContent = {
+            ...prev[sanitizedWordId], 
+            ...contentToStore,
+            is_favorite: data.is_favorite,
+        };
+        // If new quiz data came, reset progress for this word
+        if (targetMode === 'quiz' && contentToStore.quiz) {
+            newWordContent.quiz_progress = [];
+        }
+        return {
+            ...prev,
+            [sanitizedWordId]: newWordContent,
+        };
+      });
+
+      setActiveContentMode(targetMode); 
+      if (targetMode === 'quiz') {
+          setCurrentQuizQuestionIndex(0); // Start new quiz from first question
+      }
+
+      if (!isSubTopicClick && !isProfileWordClick) { // Don't clear input if it's a sub-topic or profile click
+        setInputValue(''); 
+      }
       setIsReviewingStreakWord(false); 
       setWordForReview('');
 
@@ -365,18 +362,39 @@ function App() {
       setIsLoading(false);
     }
   };
+
+  const handleFetchNewQuizSet = () => {
+    const wordForNewQuiz = getDisplayWord();
+    if (wordForNewQuiz && authToken) {
+        console.log(`Fetching new quiz set for "${wordForNewQuiz}"`);
+        // Call handleGenerateExplanation, specifically asking for quiz and forcing refresh
+        handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
+    } else if (!authToken) {
+        setShowAuthModal(true);
+        setAuthMode('login');
+        setAuthError("Please log in to get more questions.");
+    }
+  };
   
   const handleModeChange = async (mode: ContentMode) => {
     setActiveContentMode(mode);
-    setSelectedQuizOption(null);
-    setQuizFeedback(null);
-    setIsQuizAttempted(false);
+    // Reset quiz-specific UI states if not switching to quiz or if quiz data already exists and is fine
+    if (mode !== 'quiz') {
+        setSelectedQuizOption(null);
+        setQuizFeedback(null);
+        setIsQuizAttempted(false);
+    }
+
 
     const currentWordData = generatedContent[currentFocusWordSanitized];
+    // Fetch if mode data is missing OR if it's quiz mode and quiz array is missing/empty
     if (
         currentFocusWordSanitized && 
-        (!currentWordData || !currentWordData[mode] || (mode === 'quiz' && !currentWordData.quiz)) &&
-        authToken
+        authToken &&
+        (!currentWordData || 
+         !currentWordData[mode] || 
+         (mode === 'quiz' && (!currentWordData.quiz || currentWordData.quiz.length === 0))
+        )
     ) {
         setIsLoading(true);
         setError(null);
@@ -405,15 +423,26 @@ function App() {
                     is_favorite: data.is_favorite !== undefined ? data.is_favorite : prev[currentFocusWordSanitized]?.is_favorite,
                 },
             }));
+            if (mode === 'quiz' && contentToStore.quiz) {
+                setCurrentQuizQuestionIndex(0); // Reset to first question of newly fetched quiz
+                setSelectedQuizOption(null);
+                setQuizFeedback(null);
+                setIsQuizAttempted(false);
+            }
+
         } catch (err) {
             console.error(`Error fetching ${mode}:`, err);
             setError((err as Error).message);
         } finally {
             setIsLoading(false);
         }
+    } else if (mode === 'quiz' && currentWordData?.quiz && currentWordData.quiz.length > 0) {
+        // If switching to quiz and data exists, ensure current question index is reset based on progress
+        // This is handled by the useEffect for currentQuizQuestionIndex
     }
   };
 
+  // ... (keep handleToggleFavorite, handleSubTopicClick, handleRefreshContent, handleWordSelectionFromProfile, handleStreakWordClick, handleFetchContentForReview as they are)
   const handleToggleFavorite = async () => {
     if (!authToken || !currentFocusWordSanitized) return;
     const currentIsFavorite = generatedContent[currentFocusWordSanitized]?.is_favorite || false;
@@ -450,19 +479,20 @@ function App() {
 
   const handleSubTopicClick = (subTopic: string) => {
     setInputValue(subTopic); 
-    handleGenerateExplanation(subTopic, true);
+    handleGenerateExplanation(subTopic, true, false, false, 'explain');
   };
 
   const handleRefreshContent = () => {
     if (currentFocusWord) {
-      handleGenerateExplanation(currentFocusWord, false, true);
+      // Refresh current active mode, if it's quiz, it will use refresh_cache: true by default
+      handleGenerateExplanation(currentFocusWord, false, true, false, activeContentMode);
     }
   };
   
   const handleWordSelectionFromProfile = (word: string) => {
     setShowProfileModal(false); 
     setInputValue(word); 
-    handleGenerateExplanation(word, false, false, true);
+    handleGenerateExplanation(word, false, false, true, 'explain');
   };
 
   const handleStreakWordClick = (word: string) => {
@@ -509,6 +539,7 @@ function App() {
         setIsLoading(false);
     }
   };
+
 
   useEffect(() => {
     const wordInFocus = isReviewingStreakWord ? wordForReview : currentFocusWord;
@@ -670,8 +701,7 @@ function App() {
         return <div className="prose max-w-none p-1 text-gray-800">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
       case 'quiz':
         if (isLoading && !displayData?.quiz) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading quiz...</span></div>;
-        // Use authError for quiz-specific loading errors if needed, or general 'error'
-        const quizSpecificError = error && !displayData?.quiz; // Check if general error applies and quiz data is missing
+        const quizSpecificError = error && !displayData?.quiz; 
         if (quizSpecificError) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
         
         const quizSet = displayData?.quiz;
@@ -688,59 +718,52 @@ function App() {
             });
 
             return (
-                <div className="p-4 space-y-6 text-gray-800"> 
-                    <h3 className="text-xl font-semibold text-gray-700">Quiz Summary for "{getDisplayWord()}"</h3>
-                    <p className="text-lg font-medium">Your Score: {correctCount} / {quizSet.length}</p>
-                    {quizSet.map((quizString, index) => {
-                        const parsedQuestion = parseQuizString(quizString);
-                        if (!parsedQuestion) return <div key={index} className="text-red-500">Error displaying question {index + 1}. Data might be malformed.</div>;
-                        
-                        const attempt = quizProgress.find(p => p.question_index === index);
-                        const selectedOptionInfo = attempt ? parsedQuestion.options.find(opt => opt.key === attempt.selected_option_key) : null;
+                <div className="p-4 space-y-4 text-gray-800"> 
+                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
+                    <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
+                    <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-2"> {/* Scrollable and compact summary */}
+                        {quizSet.map((quizString, index) => {
+                            const parsedQuestion = parseQuizString(quizString);
+                            if (!parsedQuestion) return <div key={index} className="text-red-500 text-sm p-2 bg-red-50 rounded">Error displaying question {index + 1}.</div>;
+                            
+                            const attempt = quizProgress.find(p => p.question_index === index);
+                            const selectedOptionInfo = attempt ? parsedQuestion.options.find(opt => opt.key === attempt.selected_option_key) : null;
 
-                        return (
-                            <div key={index} className="p-4 border rounded-lg shadow-sm bg-white"> 
-                                <p className="font-semibold text-gray-800 mb-2">Q{index + 1}: {parsedQuestion.questionText}</p>
-                                <ul className="space-y-1">
-                                    {parsedQuestion.options.map(opt => (
-                                        <li key={opt.key} className={`p-2 rounded-md border text-sm text-gray-700 
-                                            ${opt.key === parsedQuestion.correctOptionKey ? 'bg-green-100 border-green-300 font-medium' : ''}
-                                            ${attempt && opt.key === attempt.selected_option_key && opt.key !== parsedQuestion.correctOptionKey ? 'bg-red-100 border-red-300' : ''}
-                                            ${attempt && opt.key === attempt.selected_option_key ? 'ring-2 ring-offset-1' : ''}
-                                            ${opt.key === parsedQuestion.correctOptionKey ? 'ring-green-500' : (attempt && opt.key === attempt.selected_option_key ? 'ring-red-500' : 'ring-transparent')}
-                                        `}>
-                                            ({opt.key}) {opt.text}
-                                            {opt.key === parsedQuestion.correctOptionKey && <CheckCircle size={16} className="inline ml-2 text-green-600" />}
-                                            {attempt && opt.key === attempt.selected_option_key && opt.key !== parsedQuestion.correctOptionKey && <XCircle size={16} className="inline ml-2 text-red-600" />}
-                                        </li>
-                                    ))}
-                                </ul>
-                                {attempt && !attempt.is_correct && (
-                                    <p className="mt-2 text-xs text-gray-600">Your answer: ({attempt.selected_option_key}) {selectedOptionInfo?.text}. Correct: ({parsedQuestion.correctOptionKey})</p>
-                                )}
-                                 {attempt && attempt.is_correct && (
-                                    <p className="mt-2 text-xs text-green-700">You answered correctly: ({attempt.selected_option_key})</p>
-                                )}
-                                {!attempt && <p className="mt-2 text-xs text-orange-500">Not attempted in this session.</p>}
-                            </div>
-                        );
-                    })}
+                            return (
+                                <div key={index} className="p-3 border rounded-lg shadow-sm bg-white"> 
+                                    <p className="font-semibold text-gray-700 text-sm mb-1">Q{index + 1}: {parsedQuestion.questionText}</p>
+                                    <ul className="space-y-1 text-xs">
+                                        {parsedQuestion.options.map(opt => (
+                                            <li key={opt.key} className={`p-1.5 rounded border 
+                                                ${opt.key === parsedQuestion.correctOptionKey ? 'bg-green-50 border-green-200 font-medium text-green-700' : 'text-gray-600'}
+                                                ${attempt && opt.key === attempt.selected_option_key && opt.key !== parsedQuestion.correctOptionKey ? 'bg-red-50 border-red-200 text-red-700' : ''}
+                                                ${attempt && opt.key === attempt.selected_option_key ? 'ring-1' : ''}
+                                                ${opt.key === parsedQuestion.correctOptionKey ? 'ring-green-400' : (attempt && opt.key === attempt.selected_option_key ? 'ring-red-400' : 'ring-transparent')}
+                                            `}>
+                                                ({opt.key}) {opt.text}
+                                                {opt.key === parsedQuestion.correctOptionKey && <CheckCircle size={12} className="inline ml-1 text-green-500" />}
+                                                {attempt && opt.key === attempt.selected_option_key && opt.key !== parsedQuestion.correctOptionKey && <XCircle size={12} className="inline ml-1 text-red-500" />}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    {attempt && !attempt.is_correct && (
+                                        <p className="mt-1 text-xs text-gray-500">Your answer: ({attempt.selected_option_key}) {selectedOptionInfo?.text}. Correct: ({parsedQuestion.correctOptionKey})</p>
+                                    )}
+                                    {attempt && attempt.is_correct && (
+                                        <p className="mt-1 text-xs text-green-600">You answered correctly: ({attempt.selected_option_key})</p>
+                                    )}
+                                    {!attempt && <p className="mt-1 text-xs text-orange-400">Not attempted.</p>}
+                                </div>
+                            );
+                        })}
+                    </div>
                      <button 
-                        onClick={() => {
-                            const sanitizedWordToReset = getDisplayWordSanitized();
-                            setGeneratedContent(prev => ({
-                                ...prev,
-                                [sanitizedWordToReset]: {
-                                    ...prev[sanitizedWordToReset],
-                                    quiz_progress: [], 
-                                }
-                            }));
-                            setCurrentQuizQuestionIndex(0); 
-                            alert("Quiz progress reset locally. You can retake the quiz now. For permanent reset, backend changes would be needed.");
-                        }}
-                        className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150"
+                        onClick={handleFetchNewQuizSet}
+                        disabled={isLoading}
+                        className="w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
                     >
-                        Retake Quiz for "{getDisplayWord()}"
+                       {isLoading ? <Loader2 className="animate-spin mr-2" size={18}/> : <PlusCircle size={18} className="mr-2" />}
+                        More Questions for "{getDisplayWord()}"
                     </button>
                 </div>
             );
@@ -1045,12 +1068,12 @@ function App() {
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleGenerateExplanation(inputValue)}
+              onKeyPress={(e) => e.key === 'Enter' && handleGenerateExplanation(inputValue, false, false, false, 'explain')}
               placeholder="Enter a word or concept..."
               className="flex-grow p-3 rounded-lg bg-white/20 border border-white/30 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none placeholder-gray-300 text-white"
             />
             <button
-              onClick={() => handleGenerateExplanation(inputValue)}
+              onClick={() => handleGenerateExplanation(inputValue, false, false, false, 'explain')}
               disabled={isLoading || !inputValue.trim()}
               className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >

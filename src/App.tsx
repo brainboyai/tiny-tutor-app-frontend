@@ -71,7 +71,7 @@ interface ParsedQuizQuestion {
 
 // --- Helper Functions ---
 const sanitizeWordForId = (word: string): string => {
-  if (!word) return "empty_word_input"; // Handle empty or null input gracefully
+  if (!word) return "empty_word_input"; 
   return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
 
@@ -150,7 +150,6 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
 function App() {
   const [inputValue, setInputValue] = useState<string>('');
   const [currentFocusWord, setCurrentFocusWord] = useState<string>(''); 
-  // currentFocusWordSanitized is derived, not direct state: const currentFocusWordSanitized = sanitizeWordForId(currentFocusWord);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent>({});
   const [activeContentMode, setActiveContentMode] = useState<ContentMode>('explain');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -180,12 +179,10 @@ function App() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Derived states for display - these replace getDisplayWord and getDisplayWordSanitized
   const displayWord = isReviewingStreakWord ? wordForReview : currentFocusWord;
   const displayWordSanitized = sanitizeWordForId(displayWord);
-  const currentWordDataForDisplay = generatedContent[displayWordSanitized]; // Replaces currentDisplayWordData
+  const currentWordDataForDisplay = generatedContent[displayWordSanitized]; 
   const explanationHtmlForDisplay = { __html: currentWordDataForDisplay?.explain?.replace(/<click>(.*?)<\/click>/g, '<strong class="text-blue-500 hover:text-blue-700 cursor-pointer underline">$1</strong>') || '' };
-
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
@@ -239,7 +236,6 @@ function App() {
     setAuthToken(null);
     setCurrentUser(null);
     setCurrentFocusWord('');
-    // currentFocusWordSanitized will update via displayWordSanitized
     setGeneratedContent({});
     setLiveStreak(null);
     setError(null); 
@@ -337,7 +333,6 @@ function App() {
 
       if (!isReviewFetch) { 
         setCurrentFocusWord(data.word); 
-        // currentFocusWordSanitized will update via displayWordSanitized
       }
       
       setGeneratedContent(prev => {
@@ -516,11 +511,11 @@ function App() {
   };
 
   useEffect(() => { 
-    const wordInFocusForEffect = displayWord;
-    const sanitizedWordInFocusForEffect = displayWordSanitized;
+    const currentDisplayWord = displayWord; // Use the derived constant
+    const currentSanitizedDisplayWord = displayWordSanitized; // Use the derived constant
 
-    if (activeContentMode === 'quiz' && sanitizedWordInFocusForEffect) {
-        const wordData = generatedContent[sanitizedWordInFocusForEffect];
+    if (activeContentMode === 'quiz' && currentSanitizedDisplayWord) {
+        const wordData = generatedContent[currentSanitizedDisplayWord];
         
         if (wordData?.quiz && wordData.quiz.length > 0) {
             const quizQuestions = wordData.quiz;
@@ -550,9 +545,9 @@ function App() {
 
   useEffect(() => { 
     if (activeContentMode === 'quiz' && isQuizAttempted && quizFeedback) { 
-        const wordInFocusForEffect = displayWord;
-        const sanitizedWordInFocusForEffect = displayWordSanitized;
-        const wordData = generatedContent[sanitizedWordInFocusForEffect];
+        const currentDisplayWordForEffect = displayWord; // Use derived constant
+        const currentSanitizedDisplayWordForEffect = displayWordSanitized; // Use derived constant
+        const wordData = generatedContent[currentSanitizedDisplayWordForEffect];
 
         if (wordData?.quiz && wordData.quiz_progress) { 
             const quizQuestions = wordData.quiz;
@@ -630,7 +625,7 @@ function App() {
   const renderContent = () => {
     const generalErrorToDisplay = error && activeContentMode !== 'explain' && activeContentMode !== 'quiz';
     const currentWordForDisplay = displayWord; 
-    const displayDataForRender = currentWordDataForDisplay; // Use the derived constant
+    const displayDataForRender = currentWordDataForDisplay; 
 
     if ((isLoading || isFetchingNewQuiz) && (!displayDataForRender || !displayDataForRender[activeContentMode])) {
         return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading {activeContentMode}...</span></div>;
@@ -654,7 +649,7 @@ function App() {
               handleSubTopicClick(target.innerText);
             }
           }}>
-            <div dangerouslySetInnerHTML={explanationHtmlForDisplay} /> {/* Use derived constant */}
+            <div dangerouslySetInnerHTML={explanationHtmlForDisplay} /> 
             {displayDataForRender?.explain && (
               <button
                 onClick={handleRefreshContent}
@@ -686,7 +681,7 @@ function App() {
         
         if (currentQuizQuestionIndex >= quizSet.length) { // SUMMARY VIEW
             let correctCount = 0;
-            quizProgress.forEach((attempt: QuizAttempt) => { // Added type for attempt
+            quizProgress.forEach((attempt: QuizAttempt) => { 
                 if (attempt.is_correct) correctCount++;
             });
 
@@ -695,11 +690,11 @@ function App() {
                     <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{currentWordForDisplay}"</h3>
                     <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
                     <div className="max-h-[45vh] sm:max-h-[50vh] overflow-y-auto space-y-3 pr-2 bg-gray-50 p-2 rounded-md"> 
-                        {quizSet.map((quizString: string, index: number) => { // Added types
+                        {quizSet.map((quizString: string, index: number) => { 
                             const parsedQuestion = parseQuizString(quizString);
                             if (!parsedQuestion) return <div key={index} className="text-red-500 text-sm p-2 bg-red-50 rounded">Error displaying question {index + 1}.</div>;
                             
-                            const attempt = quizProgress.find((p: QuizAttempt) => p.question_index === index); // Added type
+                            const attempt = quizProgress.find((p: QuizAttempt) => p.question_index === index); 
                             const selectedOptionInfo = attempt ? parsedQuestion.options.find(opt => opt.key === attempt.selected_option_key) : null;
 
                             return (
@@ -990,7 +985,16 @@ function App() {
     );
   };
 
-  const isFavoriteCurrent = currentWordDataForDisplay?.is_favorite || false; // Use derived constant
+  // Define contentModes here, within the App component's scope
+  const contentModes: { id: ContentMode, label: string, icon: React.ElementType }[] = [
+    { id: 'explain', label: 'Explain', icon: MessageSquare },
+    { id: 'quiz', label: 'Quiz', icon: HelpCircle },
+    { id: 'fact', label: 'Fact', icon: Brain },
+    { id: 'image', label: 'Image', icon: ImageIcon },
+    { id: 'deep_dive', label: 'Deep Dive', icon: FileText },
+  ];
+
+  const isFavoriteCurrent = currentWordDataForDisplay?.is_favorite || false;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-gray-100 flex flex-col items-center p-4 font-sans">
@@ -1060,7 +1064,7 @@ function App() {
           <div className="bg-white/5 backdrop-blur-sm shadow-inner rounded-lg min-h-[200px]">
             <div className="flex flex-wrap items-center justify-between p-3 border-b border-white/20">
                 <div className="flex flex-wrap gap-1">
-                    {contentModes.map(modeInfo => (
+                    {contentModes.map((modeInfo: { id: ContentMode, label: string, icon: React.ElementType }) => ( // Added type for modeInfo
                         <button
                         key={modeInfo.id}
                         onClick={() => handleModeChange(modeInfo.id)}

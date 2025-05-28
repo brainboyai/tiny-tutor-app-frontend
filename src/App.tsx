@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react';
+import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react'; // Removed CheckCircle, XCircle
 import './App.css';
 
 // --- Constants ---
@@ -80,62 +80,82 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     console.error("Invalid quiz string for parsing:", quizStr);
     return null;
   }
-  // Enhanced parsing logic to be more robust
+
   const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  
+  if (lines.length < 3) { // Basic check: needs at least a question, one option, and a correct answer line.
+      console.warn("Quiz string has too few lines after cleaning:", lines.length, "Original:", quizStr);
+      return null;
+  }
+
   let questionText = '';
   const options: { key: string; text: string }[] = [];
   let correctOptionKey = '';
 
-  // Find question text (often the first non-empty line, might need adjustment based on actual format)
-  if (lines.length > 0) {
-    // Remove potential "Question X:" prefix
-    questionText = lines[0].replace(/^(\*\*?)?(Question\s*\d*:\s*)?(\*\*?)?/i, '').trim();
+  const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i; // Matches "Question X:", "**Question X:**", etc.
+  const optionRegex = /^\s*([A-D])\s*[.)]?\s*(.*)/i;
+  const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.,]?\s*.*)?$/i; // Handles optional comma
+
+  let potentialQuestionTextLines: string[] = [];
+  let lineIndex = 0;
+
+  // Attempt to identify and skip a standalone header line
+  if (lineIndex < lines.length && lines[lineIndex].match(questionHeaderRegex) && lines[lineIndex].replace(questionHeaderRegex, '').trim().length === 0) {
+      console.log("Found standalone header:", lines[lineIndex]);
+      lineIndex++; // Move to the next line, expecting it to be the question text
   }
 
-  // Find options (typically lines starting with A), B), C), D))
-  const optionRegex = /^\s*([A-D])\s*[.)]?\s*(.*)/i;
-  lines.forEach(line => {
-    const match = line.match(optionRegex);
-    if (match && match[1] && match[2] !== undefined) {
-      options.push({ key: match[1].toUpperCase(), text: match[2].trim() });
-    }
-  });
-
-  // Find correct answer (often a line like "Correct Answer: C" or just "C")
-  const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.)]?.*)?$/i;
-  // Also check for lines that are just a single letter option, possibly marked as correct
-  const singleLetterCorrectRegex = /^\s*([A-D])\s*(\(Correct\))?$/i;
-
-  for (const line of lines) {
+  // Process lines for question, options, and correct answer
+  for (; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    const optionMatch = line.match(optionRegex);
     const correctMatch = line.match(correctAnswerRegex);
-    if (correctMatch && correctMatch[1]) {
-      correctOptionKey = correctMatch[1].toUpperCase();
-      break;
-    }
-    const singleLetterMatch = line.match(singleLetterCorrectRegex);
-    // If line is "C (Correct)" or just "C" and options are already parsed, this might be the key
-    if (singleLetterMatch && singleLetterMatch[1] && options.length === 4) {
-        // Check if this line is likely the correct answer indicator rather than an option itself
-        if (!options.find(opt => opt.text.trim() === singleLetterMatch[1])) {
-            correctOptionKey = singleLetterMatch[1].toUpperCase();
-            break;
+
+    if (optionMatch && optionMatch[1] && optionMatch[2] !== undefined) {
+      if (options.length < 4) {
+        options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
+      }
+    } else if (correctMatch && correctMatch[1]) {
+      if (!correctOptionKey) { // Take the first valid correct answer found
+        correctOptionKey = correctMatch[1].toUpperCase();
+      }
+    } else if (!line.match(questionHeaderRegex) || line.replace(questionHeaderRegex, '').trim().length > 0) {
+        // If it's not a header-only line, not an option, not a correct answer line,
+        // it's part of the question text.
+        const textPart = line.replace(questionHeaderRegex, '').trim(); // Remove header if question text is on same line
+        if (textPart.length > 0) {
+            potentialQuestionTextLines.push(textPart);
         }
     }
   }
   
-  // Basic validation
+  // Consolidate question text (usually the first significant non-header/option/answer line)
+  if (potentialQuestionTextLines.length > 0) {
+      questionText = potentialQuestionTextLines.join(' '); // Join if it spanned multiple lines, though typically one.
+                                                        // For the given format, usually potentialQuestionTextLines[0] is enough.
+      if (potentialQuestionTextLines.length > 1) {
+        // If multiple lines were collected, it's likely the first one is the main question.
+        // This can be refined if questions genuinely span multiple lines often.
+        questionText = potentialQuestionTextLines[0];
+      }
+  }
+
+
   if (!questionText || options.length !== 4 || !correctOptionKey) {
-    console.warn("Could not parse quiz string fully:", { questionText, optionsCount: options.length, correctOptionKey, original: quizStr, lines });
+    console.warn("Could not parse quiz string fully (v3):", {
+      questionText,
+      optionsCount: options.length,
+      optionsCollected: options,
+      correctOptionKey,
+      original: quizStr,
+      processedLines: lines,
+      potentialQuestionTextLines
+    });
     return null;
   }
-  // Ensure correctOptionKey is one of the parsed option keys
+
   if (!options.find(opt => opt.key === correctOptionKey)) {
-      console.warn(`Correct option key "${correctOptionKey}" not found in parsed options for: ${questionText}. Options:`, options);
-      // Attempt to find by text if key is mismatched (e.g. backend sends full text as key)
-      const foundByText = options.find(opt => opt.text.toLowerCase().includes(correctOptionKey.toLowerCase()));
-      if (foundByText) correctOptionKey = foundByText.key;
-      else return null; // Still not found
+    console.warn(`Correct option key "${correctOptionKey}" not found in parsed options (v3). Options:`, options, "Question:", questionText);
+    return null;
   }
 
   return { questionText, options, correctOptionKey, originalString: quizStr };
@@ -170,7 +190,7 @@ function App() {
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState<number>(0);
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
-  const [isQuizAttemptedThisQuestion, setIsQuizAttemptedThisQuestion] = useState<boolean>(false); // Renamed for clarity
+  const [isQuizAttemptedThisQuestion, setIsQuizAttemptedThisQuestion] = useState<boolean>(false); 
 
   const inputRef = useRef<HTMLInputElement>(null);
   const autoAdvanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -179,7 +199,6 @@ function App() {
   const getDisplayWord = useCallback(() => isReviewingStreakWord ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
   const getDisplayWordSanitized = useCallback(() => sanitizeWordForId(getDisplayWord()), [getDisplayWord]);
 
-  // Clear auto-advance timeout on unmount or when dependencies change
   useEffect(() => {
     return () => {
       if (autoAdvanceTimeoutRef.current) {
@@ -252,7 +271,6 @@ function App() {
     setAuthInputPassword('');
     setIsReviewingStreakWord(false);
     setWordForReview('');
-    // Reset quiz states on logout
     setCurrentQuizQuestionIndex(0);
     setSelectedQuizOption(null);
     setQuizFeedback(null);
@@ -281,7 +299,6 @@ function App() {
     }
   }, [liveStreak, authToken]);
   
-  // Fully reset quiz state for a word
   const resetQuizStateForWord = (wordId: string) => {
     console.log(`Resetting quiz state for word ID: ${wordId}`);
     setCurrentQuizQuestionIndex(0);
@@ -292,8 +309,6 @@ function App() {
         clearTimeout(autoAdvanceTimeoutRef.current);
         autoAdvanceTimeoutRef.current = null;
     }
-    // Also ensure quiz_progress in generatedContent is cleared for this word
-    // This is typically done when new quiz data is fetched.
   };
 
   const handleGenerateExplanation = async (
@@ -318,11 +333,10 @@ function App() {
     setError(null);
     setAuthError(null);
     
-    const wordIdForReset = sanitizeWordForId(wordToFetch); // Use the word being fetched for reset context
+    const wordIdForReset = sanitizeWordForId(wordToFetch); 
 
-    // If targeting quiz mode, or if it's a refresh for the quiz mode, reset quiz state
     if (targetMode === 'quiz' || (isRefreshClick && activeContentMode === 'quiz')) {
-        resetQuizStateForWord(wordIdForReset); // Reset before fetching new quiz
+        resetQuizStateForWord(wordIdForReset); 
     }
 
 
@@ -368,15 +382,13 @@ function App() {
       setGeneratedContent(prev => {
         const newWordContent: WordContent = {
             ...(prev[sanitizedFetchedWordId] || {}), 
-            ...contentToStore, // This will overwrite quiz with new questions if present in contentToStore
+            ...contentToStore, 
             is_favorite: data.is_favorite, 
         };
-        // CRITICAL: If new quiz questions are fetched, quiz_progress MUST be reset.
         if (targetMode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
             console.log(`New quiz data received for "${dataWord}". Resetting quiz_progress.`);
             newWordContent.quiz_progress = [];
         } else if (targetMode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
-            // If quiz mode was requested but no questions came, ensure progress is also empty.
             newWordContent.quiz_progress = [];
         }
         return {
@@ -387,8 +399,6 @@ function App() {
 
       setActiveContentMode(targetMode);
       
-      // If quiz mode was targeted, ensure all UI states for quiz are reset again AFTER data is set.
-      // The useEffect watching generatedContent will also handle this.
       if (targetMode === 'quiz') {
           resetQuizStateForWord(sanitizedFetchedWordId);
       }
@@ -417,13 +427,10 @@ function App() {
     }
   };
   
-  // This function is for the "More Questions" button on the summary page
   const handleFetchNewQuizSet = () => {
     const wordForNewQuiz = getDisplayWord();
     if (wordForNewQuiz && authToken) {
         console.log(`Fetching new quiz set for "${wordForNewQuiz}" via "More Questions" button.`);
-        // Ensure full reset before fetching new quiz questions.
-        // handleGenerateExplanation will call resetQuizStateForWord internally for targetMode 'quiz'.
         handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
     } else if (!authToken) {
         setShowAuthModal(true);
@@ -437,9 +444,8 @@ function App() {
     const wordInFocus = getDisplayWord();
     const sanitizedWordInFocus = getDisplayWordSanitized();
 
-    // Reset quiz specific UI states if not switching to quiz or if word changes
     if (mode !== 'quiz') {
-        resetQuizStateForWord(sanitizedWordInFocus); // Reset if moving away from quiz
+        resetQuizStateForWord(sanitizedWordInFocus); 
     }
 
 
@@ -486,7 +492,6 @@ function App() {
                     ...contentToStore,
                     is_favorite: data.is_favorite !== undefined ? data.is_favorite : existingWordContent.is_favorite,
                 };
-                // If fetching for quiz mode and new questions arrive, reset progress for this word.
                 if (mode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
                     console.log(`New quiz data received for "${wordInFocus}" during mode change. Resetting quiz_progress.`);
                     updatedWordContent.quiz_progress = [];
@@ -500,7 +505,7 @@ function App() {
             });
 
             if (mode === 'quiz') {
-                resetQuizStateForWord(sanitizedWordInFocus); // Reset quiz UI state after new quiz data is set
+                resetQuizStateForWord(sanitizedWordInFocus); 
             }
 
         } catch (err) {
@@ -510,7 +515,6 @@ function App() {
             setIsLoading(false);
         }
     } else if (mode === 'quiz') {
-        // If switching to quiz mode and data already exists, still ensure UI state is fresh
         resetQuizStateForWord(sanitizedWordInFocus);
     }
   };
@@ -565,7 +569,6 @@ function App() {
   const handleRefreshContent = () => {
     const wordToRefresh = getDisplayWord();
     if (wordToRefresh) {
-      // If refreshing quiz, ensure full reset logic is hit
       if (activeContentMode === 'quiz') {
           console.log(`Refreshing quiz for "${wordToRefresh}". This will fetch new questions.`);
           handleGenerateExplanation(wordToRefresh, false, true, false, 'quiz');
@@ -589,8 +592,6 @@ function App() {
     setIsReviewingStreakWord(true);
     setWordForReview(word);
     const sanitizedReviewWord = sanitizeWordForId(word);
-
-    // Reset quiz UI state when switching to review a word, even if it's not quiz mode yet
     resetQuizStateForWord(sanitizedReviewWord);
 
 
@@ -640,17 +641,14 @@ function App() {
     }
   };
 
-  // This useEffect is crucial for initializing/resetting quiz view when data changes
   useEffect(() => {
     const wordId = getDisplayWordSanitized();
     if (activeContentMode === 'quiz' && wordId && generatedContent[wordId]?.quiz) {
         console.log(`Quiz mode active for ${wordId}. Quiz data available. Resetting/Initializing quiz view.`);
         const wordData = generatedContent[wordId];
-        const quizQuestions = wordData.quiz!; // Should be the new questions
-        const progress = wordData.quiz_progress || []; // Should be [] for a new quiz set
+        const quizQuestions = wordData.quiz!; 
+        const progress = wordData.quiz_progress || []; 
 
-        // Determine the current question index based on *newly reset* progress
-        // If progress is empty (new quiz), index should be 0.
         const newQuestionIndex = progress.length; 
 
         console.log(`useEffect for quiz: wordId=${wordId}, quizQuestions.length=${quizQuestions.length}, progress.length=${progress.length}, calculated newQuestionIndex=${newQuestionIndex}`);
@@ -660,9 +658,7 @@ function App() {
         setQuizFeedback(null);
         setIsQuizAttemptedThisQuestion(false);
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-
-        // If there's already progress for this specific question (e.g. navigating back/forth if that was a feature)
-        // This part is less relevant if progress is always reset for a new quiz set.
+        
         const attemptForCurrentQuestion = progress.find(p => p.question_index === newQuestionIndex);
         if(attemptForCurrentQuestion && (newQuestionIndex < quizQuestions.length)){
             setSelectedQuizOption(attemptForCurrentQuestion.selected_option_key);
@@ -670,11 +666,8 @@ function App() {
                 message: attemptForCurrentQuestion.is_correct ? "Correct!" : "Incorrect.", 
                 isCorrect: attemptForCurrentQuestion.is_correct 
             });
-            setIsQuizAttemptedThisQuestion(true); // Mark as attempted if loaded from progress
+            setIsQuizAttemptedThisQuestion(true); 
         }
-    } else if (activeContentMode !== 'quiz' && wordId) {
-        // If not in quiz mode, ensure any lingering quiz UI state is cleared
-        // resetQuizStateForWord(wordId); // This might be too aggressive if user just switches tabs
     }
   }, [activeContentMode, getDisplayWordSanitized, generatedContent]);
 
@@ -684,12 +677,7 @@ function App() {
     const sanitizedWordBeingQuizzed = getDisplayWordSanitized();
 
     if (!authToken || !sanitizedWordBeingQuizzed) return;
-
-    const currentAttempts = generatedContent[sanitizedWordBeingQuizzed]?.quiz_progress || [];
-    if (currentAttempts.find(att => att.question_index === questionIndex)) {
-        console.warn("Attempt for this question already saved in frontend state. Backend will handle deduplication if necessary.");
-        // Do not return; allow backend to be the source of truth or handle duplicates.
-    }
+    
     console.log(`Saving quiz attempt for "${wordBeingQuizzed}" to: ${API_BASE_URL}/save_quiz_attempt`);
     try {
       const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
@@ -711,16 +699,14 @@ function App() {
       }
       const data: { message: string, quiz_progress: QuizAttempt[] } = await response.json();
 
-      // Update frontend state with the latest progress from the backend
       setGeneratedContent(prev => ({
         ...prev,
         [sanitizedWordBeingQuizzed]: {
           ...(prev[sanitizedWordBeingQuizzed] || {}),
-          quiz_progress: data.quiz_progress, // Use progress from backend
+          quiz_progress: data.quiz_progress, 
         },
       }));
 
-      // After successful save and state update, trigger auto-advance
       if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
       autoAdvanceTimeoutRef.current = setTimeout(() => {
         handleNextQuestion();
@@ -729,25 +715,22 @@ function App() {
     } catch (err) {
       console.error("Error saving quiz attempt:", err);
       setError("Failed to save your answer. " + (err as Error).message);
-      // If save fails, do we still auto-advance? For now, no. User might need to retry or see error.
       if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
     }
   };
 
   const handleQuizOptionSelect = (optionKey: string, correctKey: string, questionIdx: number) => {
-    if (isQuizAttemptedThisQuestion) return; // Prevent re-answering if already attempted (before auto-advance)
+    if (isQuizAttemptedThisQuestion) return; 
 
     const isCorrect = optionKey === correctKey;
     setSelectedQuizOption(optionKey);
     setQuizFeedback({ message: isCorrect ? "Correct!" : "Incorrect.", isCorrect });
     setIsQuizAttemptedThisQuestion(true);
-
-    // Save attempt (which will then trigger auto-advance on success)
     handleSaveQuizAttempt(questionIdx, optionKey, isCorrect);
   };
 
   const handleNextQuestion = () => {
-    if (autoAdvanceTimeoutRef.current) { // Clear any pending timeout if manually advancing
+    if (autoAdvanceTimeoutRef.current) { 
         clearTimeout(autoAdvanceTimeoutRef.current);
         autoAdvanceTimeoutRef.current = null;
     }
@@ -757,10 +740,7 @@ function App() {
 
     if(currentWordData?.quiz && currentWordData.quiz_progress) {
         const quizSet = currentWordData.quiz;
-        const progress = currentWordData.quiz_progress; // Use the latest progress
-
-        // The next question index is simply the current length of progress,
-        // as progress array stores 0-indexed attempts.
+        const progress = currentWordData.quiz_progress; 
         const nextQuestionToShowIndex = progress.length;
         
         console.log(`handleNextQuestion: quizSet.length=${quizSet.length}, progress.length=${progress.length}, nextQuestionToShowIndex=${nextQuestionToShowIndex}`);
@@ -771,16 +751,14 @@ function App() {
             setQuizFeedback(null);
             setIsQuizAttemptedThisQuestion(false);
         } else {
-            // All questions answered, move to summary by setting index to quizSet.length
             setCurrentQuizQuestionIndex(quizSet.length);
-            setSelectedQuizOption(null); // Clear selection for summary view
-            setQuizFeedback(null); // Clear feedback for summary view
-            setIsQuizAttemptedThisQuestion(false); // No question is "attempted" on summary
+            setSelectedQuizOption(null); 
+            setQuizFeedback(null); 
+            setIsQuizAttemptedThisQuestion(false); 
         }
     } else {
         console.warn("handleNextQuestion called but quiz data or progress is missing.");
-        // Potentially reset to a safe state or show an error
-        setCurrentQuizQuestionIndex(0); // Default to first question or summary if quizSet is also empty
+        setCurrentQuizQuestionIndex(0); 
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttemptedThisQuestion(false);
@@ -807,7 +785,6 @@ function App() {
 
     switch (activeContentMode) {
       case 'explain':
-        // ... (explain, fact, image, deep_dive cases remain largely the same)
         if (isLoading && !displayData?.explain && displayWordStr) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading explanation...</span></div>;
         if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
         return (
@@ -846,20 +823,18 @@ function App() {
         const quizSpecificError = error && !displayData?.quiz;
         if (quizSpecificError) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
 
-        const quizSet = displayData?.quiz; // This should be the new set of questions
-        const quizProgress = displayData?.quiz_progress || []; // This should be [] for a new quiz
+        const quizSet = displayData?.quiz; 
+        const quizProgress = displayData?.quiz_progress || []; 
 
         if (!quizSet || quizSet.length === 0) {
           return <div className="p-4 text-gray-500">No quiz available for "{displayWordStr}" yet. Try generating it or refreshing.</div>;
         }
         
-                        console.log(`Render Quiz: currentQuizQuestionIndex=${currentQuizQuestionIndex}, quizSet.length=${quizSet.length}, quizProgress.length=${quizProgress.length}`);
+        console.log(`Render Quiz: currentQuizQuestionIndex=${currentQuizQuestionIndex}, quizSet.length=${quizSet.length}, quizProgress.length=${quizProgress.length}`);
 
-
-        // Quiz Summary View
         if (currentQuizQuestionIndex >= quizSet.length) { 
             let correctCount = 0;
-            quizProgress.forEach(attempt => { // Iterate over the latest progress
+            quizProgress.forEach(attempt => { 
                 if (attempt.is_correct) correctCount++;
             });
 
@@ -867,22 +842,21 @@ function App() {
                 <div className="p-4 space-y-4 text-gray-800">
                     <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
                     <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
-                    {/* Compacted Summary List */}
                     <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                         {quizSet.map((quizString, index) => {
                             const parsedQuestion = parseQuizString(quizString);
-                            if (!parsedQuestion) return <div key={index} className="text-red-500 text-xs p-1.5 bg-red-50 rounded">Error displaying summary for question {index + 1}.</div>;
+                            if (!parsedQuestion) return <div key={index} className="text-red-500 text-xs p-1.5 bg-red-50 rounded">Error displaying summary for question {index + 1}. Original: <pre className="text-xs whitespace-pre-wrap break-all">{quizString}</pre></div>;
 
                             const attempt = quizProgress.find(p => p.question_index === index);
                             const correctOptText = parsedQuestion.options.find(o => o.key === parsedQuestion.correctOptionKey)?.text || 'N/A';
                             
                             return (
                                 <div key={index} className={`p-2.5 border rounded-lg shadow-sm text-xs ${attempt?.is_correct ? 'bg-green-50 border-green-200' : (attempt ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200')}`}>
-                                    <p className="font-semibold text-gray-700 mb-1 truncate">Q{index + 1}: {parsedQuestion.questionText}</p>
+                                    <p className="font-semibold text-gray-700 mb-1 truncate" title={parsedQuestion.questionText}>Q{index + 1}: {parsedQuestion.questionText.substring(0,50)}{parsedQuestion.questionText.length > 50 ? '...' : ''}</p>
                                     {attempt ? (
                                         <>
                                             <p>Your Answer: <span className="font-medium">({attempt.selected_option_key})</span> - {attempt.is_correct ? <span className="text-green-700 font-semibold">Correct</span> : <span className="text-red-700 font-semibold">Incorrect</span>}</p>
-                                            {!attempt.is_correct && <p>Correct: <span className="font-medium">({parsedQuestion.correctOptionKey})</span> {correctOptText.substring(0,30)}...</p>}
+                                            {!attempt.is_correct && <p>Correct: <span className="font-medium">({parsedQuestion.correctOptionKey})</span> {correctOptText.substring(0,30)}{correctOptText.length > 30 ? '...' : ''}</p>}
                                         </>
                                     ) : (
                                         <p className="text-orange-500">Not attempted. Correct: ({parsedQuestion.correctOptionKey})</p>
@@ -892,7 +866,7 @@ function App() {
                         })}
                     </div>
                      <button
-                        onClick={handleFetchNewQuizSet} // This is the "Regenerate Quiz" / "More Questions"
+                        onClick={handleFetchNewQuizSet} 
                         disabled={isLoading}
                         className="w-full mt-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
                     >
@@ -903,15 +877,13 @@ function App() {
             );
         }
 
-        // Quiz Question View
         const currentQuestionString = quizSet[currentQuizQuestionIndex];
         const parsedQuestion = parseQuizString(currentQuestionString);
 
         if (!parsedQuestion) {
-          return <div className="text-red-500 p-4">Error loading question. Please try refreshing. Original string: <pre className="text-xs whitespace-pre-wrap">{currentQuestionString}</pre></div>;
+          return <div className="text-red-500 p-4">Error loading question. Please try refreshing. Original string: <pre className="text-xs whitespace-pre-wrap break-all">{currentQuestionString}</pre></div>;
         }
         
-        // Note: hasThisQuestionBeenAnswered is effectively isQuizAttemptedThisQuestion for the current question view
         return (
           <div className="p-4 space-y-4 text-gray-800">
             <p className="font-semibold text-lg text-gray-700">Question {currentQuizQuestionIndex + 1} of {quizSet.length}:</p>
@@ -921,13 +893,13 @@ function App() {
                 <button
                   key={opt.key}
                   onClick={() => handleQuizOptionSelect(opt.key, parsedQuestion.correctOptionKey, currentQuizQuestionIndex)}
-                  disabled={isQuizAttemptedThisQuestion} // Disable all options once one is selected for this question
+                  disabled={isQuizAttemptedThisQuestion} 
                   className={`w-full text-left p-3 rounded-lg border transition-all duration-150 text-gray-700
                     ${(selectedQuizOption === opt.key && isQuizAttemptedThisQuestion) ? 
                         (quizFeedback?.isCorrect ? 'bg-green-200 border-green-400 ring-2 ring-green-500' : 'bg-red-200 border-red-400 ring-2 ring-red-500')
                         : 'bg-white hover:bg-gray-100 border-gray-300'
                     }
-                    ${(isQuizAttemptedThisQuestion && opt.key === parsedQuestion.correctOptionKey && selectedQuizOption !== opt.key) ? 'border-green-500 border-2 animate-pulse-border-green' : ''} // Highlight correct if wrong one chosen
+                    ${(isQuizAttemptedThisQuestion && opt.key === parsedQuestion.correctOptionKey && selectedQuizOption !== opt.key) ? 'border-green-500 border-2 animate-pulse-border-green' : ''} 
                     disabled:opacity-70 disabled:cursor-not-allowed
                   `}
                 >
@@ -941,8 +913,6 @@ function App() {
                 {!quizFeedback.isCorrect && ` Correct answer was: ${parsedQuestion.correctOptionKey}`}
               </div>
             )}
-            {/* Button for "Next Question" / "View Summary" is removed due to auto-advance */}
-            {/* If manual advance is desired, it can be re-added here, conditional on isQuizAttemptedThisQuestion */}
              <div className="text-xs text-gray-500 mt-2">
                 Progress: {quizProgress.filter(p => p.question_index < currentQuizQuestionIndex).length + (isQuizAttemptedThisQuestion ? 1: 0)} / {quizSet.length} answered.
                 Score: {quizProgress.filter(p=>p.is_correct).length} correct.
@@ -954,7 +924,6 @@ function App() {
     }
   };
 
-  // ... (renderProfileModal and renderAuthModal remain largely the same)
   const renderProfileModal = () => {
     if (!showProfileModal || !currentUser) return null;
 

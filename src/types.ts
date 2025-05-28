@@ -1,4 +1,4 @@
-/ src/types.ts
+// src/types.ts
 
 // --- User and Profile Related Types ---
 export interface UserProfile {

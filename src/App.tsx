@@ -44,7 +44,7 @@ interface WordContent {
   explain?: string;
   image?: string;
   fact?: string;
-  quiz?: string[]; // Array of quiz question strings
+  quiz?: string[];
   deep_dive?: string;
   is_favorite?: boolean;
   quiz_progress?: QuizAttempt[];
@@ -53,7 +53,7 @@ interface WordContent {
 }
 
 interface GeneratedContent {
-  [key: string]: WordContent; // Key is sanitized word
+  [key: string]: WordContent;
 }
 
 type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep_dive';
@@ -83,8 +83,8 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
 
   const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line.length > 0);
   if (lines.length < 3) {
-      console.warn("Quiz string has too few lines after cleaning:", lines.length, "Original:", quizStr);
-      return null;
+    console.warn("Quiz string has too few lines after cleaning:", lines.length, "Original:", quizStr);
+    return null;
   }
 
   let questionText = '';
@@ -94,16 +94,14 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
 
   const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i;
   const optionRegex = /^\s*([A-D])\s*[.)]?\s*(.*)/i;
-  // Regex to find "Correct Answer: X" or "Answer: X" or "Correct: X", allowing optional comma/period after X
   const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.,]?\s*.*)?$/i;
 
 
   let currentLineIndex = 0;
 
-  // Skip standalone header line(s) if they are truly standalone (no actual question text on them)
   while (currentLineIndex < lines.length &&
-         lines[currentLineIndex].match(questionHeaderRegex) &&
-         lines[currentLineIndex].replace(questionHeaderRegex, '').trim().length === 0) {
+    lines[currentLineIndex].match(questionHeaderRegex) &&
+    lines[currentLineIndex].replace(questionHeaderRegex, '').trim().length === 0) {
     console.log("Skipping standalone header:", lines[currentLineIndex]);
     currentLineIndex++;
   }
@@ -114,18 +112,13 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     const correctMatch = line.match(correctAnswerRegex);
 
     if (optionMatch && options.length < 4) {
-      // It's an option
       options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
     } else if (correctMatch && !correctOptionKey) {
-      // It's the correct answer line
       correctOptionKey = correctMatch[1].toUpperCase();
     } else if (!questionTextFound &&
-               !line.match(optionRegex) && // Double check it's not an option
-               !line.match(correctAnswerRegex) // Double check it's not a correct answer line
-              ) {
-      // This is likely the question text.
-      // It could be on the same line as a header (e.g., "Question 1: What is X?")
-      // or on a line after a standalone header.
+      !line.match(optionRegex) &&
+      !line.match(correctAnswerRegex)
+    ) {
       const potentialQuestion = line.replace(questionHeaderRegex, '').trim();
       if (potentialQuestion.length > 0) {
         questionText = potentialQuestion;
@@ -183,7 +176,8 @@ function App() {
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState<number>(0);
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
-  const [isQuizAttemptedThisQuestion, setIsQuizAttemptedThisQuestion] = useState<boolean>(false); 
+  const [isQuizAttemptedThisQuestion, setIsQuizAttemptedThisQuestion] = useState<boolean>(false);
+  const [forceResetWordOnNextSave, setForceResetWordOnNextSave] = useState<string | null>(null); // For quiz regeneration workaround
 
   const inputRef = useRef<HTMLInputElement>(null);
   const autoAdvanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -218,9 +212,9 @@ function App() {
       });
       if (!response.ok) {
         if (response.status === 401 || response.status === 422) {
-            console.warn("Token validation failed or token expired. Logging out.");
-            handleLogout();
-            return;
+          console.warn("Token validation failed or token expired. Logging out.");
+          handleLogout();
+          return;
         }
         const errorData = await response.json().catch(() => ({ error: 'Failed to fetch profile' }));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
@@ -268,6 +262,7 @@ function App() {
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttemptedThisQuestion(false);
+    setForceResetWordOnNextSave(null);
     if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
   };
 
@@ -291,7 +286,7 @@ function App() {
       setLiveStreak(null);
     }
   }, [liveStreak, authToken]);
-  
+
   const resetQuizStateForWord = (wordId: string) => {
     console.log(`Resetting quiz state for word ID: ${wordId}`);
     setCurrentQuizQuestionIndex(0);
@@ -299,8 +294,8 @@ function App() {
     setQuizFeedback(null);
     setIsQuizAttemptedThisQuestion(false);
     if (autoAdvanceTimeoutRef.current) {
-        clearTimeout(autoAdvanceTimeoutRef.current);
-        autoAdvanceTimeoutRef.current = null;
+      clearTimeout(autoAdvanceTimeoutRef.current);
+      autoAdvanceTimeoutRef.current = null;
     }
   };
 
@@ -325,11 +320,11 @@ function App() {
     setIsLoading(true);
     setError(null);
     setAuthError(null);
-    
-    const wordIdForReset = sanitizeWordForId(wordToFetch); 
+
+    const wordIdForReset = sanitizeWordForId(wordToFetch);
 
     if (targetMode === 'quiz' || (isRefreshClick && activeContentMode === 'quiz')) {
-        resetQuizStateForWord(wordIdForReset); 
+      resetQuizStateForWord(wordIdForReset);
     }
 
 
@@ -337,10 +332,10 @@ function App() {
 
     if (isNewPrimaryWordSearch || isProfileWordClick) {
       await endCurrentStreakIfNeeded(true);
-      setIsReviewingStreakWord(false); 
+      setIsReviewingStreakWord(false);
       setWordForReview('');
     }
-    
+
     console.log(`Generating content for "${wordToFetch}", mode "${targetMode}" from: ${API_BASE_URL}/generate_explanation`);
     try {
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -362,7 +357,7 @@ function App() {
       }
 
       const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-      const dataWord = data.word; 
+      const dataWord = data.word;
       const contentToStore = data.full_cache || data;
       const sanitizedFetchedWordId = sanitizeWordForId(dataWord);
 
@@ -371,34 +366,39 @@ function App() {
       } else if (isSubTopicClick) {
         setCurrentFocusWord(dataWord);
       }
-      
+
       setGeneratedContent(prev => {
         const newWordContent: WordContent = {
-            ...(prev[sanitizedFetchedWordId] || {}), 
-            ...contentToStore, 
-            is_favorite: data.is_favorite, 
+          ...(prev[sanitizedFetchedWordId] || {}),
+          ...contentToStore,
+          is_favorite: data.is_favorite,
         };
         if (targetMode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
-            console.log(`New quiz data received for "${dataWord}". Resetting quiz_progress.`);
-            newWordContent.quiz_progress = [];
+          console.log(`New quiz data received for "${dataWord}". Resetting quiz_progress.`);
+          newWordContent.quiz_progress = [];
         } else if (targetMode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
-            newWordContent.quiz_progress = [];
+          newWordContent.quiz_progress = [];
         }
         return {
-            ...prev,
-            [sanitizedFetchedWordId]: newWordContent,
+          ...prev,
+          [sanitizedFetchedWordId]: newWordContent,
         };
       });
 
       setActiveContentMode(targetMode);
-      
+
       if (targetMode === 'quiz') {
-          resetQuizStateForWord(sanitizedFetchedWordId);
+        // If it was a quiz refresh, mark it for special handling on the next save
+        if (isRefreshClick) {
+          console.log(`Quiz for "${sanitizedFetchedWordId}" was refreshed. Flagging for progress override on next save.`);
+          setForceResetWordOnNextSave(sanitizedFetchedWordId);
+        }
+        resetQuizStateForWord(sanitizedFetchedWordId);
       }
 
 
-      if (!isSubTopicClick && !isProfileWordClick) { 
-        setInputValue(''); 
+      if (!isSubTopicClick && !isProfileWordClick) {
+        setInputValue('');
       }
 
       if (isSubTopicClick && liveStreak) {
@@ -419,96 +419,105 @@ function App() {
       setIsLoading(false);
     }
   };
-  
+
   const handleFetchNewQuizSet = () => {
     const wordForNewQuiz = getDisplayWord();
     if (wordForNewQuiz && authToken) {
-        console.log(`Fetching new quiz set for "${wordForNewQuiz}" via "More Questions" button.`);
-        handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
+      console.log(`Fetching new quiz set for "${wordForNewQuiz}" via "More Questions" button.`);
+      // The handleGenerateExplanation will set the forceResetWordOnNextSave flag if isRefreshClick is true for quiz mode
+      handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
     } else if (!authToken) {
-        setShowAuthModal(true);
-        setAuthMode('login');
-        setAuthError("Please log in to get more questions.");
+      setShowAuthModal(true);
+      setAuthMode('login');
+      setAuthError("Please log in to get more questions.");
     }
   };
-  
+
   const handleModeChange = async (mode: ContentMode) => {
     setActiveContentMode(mode);
     const wordInFocus = getDisplayWord();
     const sanitizedWordInFocus = getDisplayWordSanitized();
 
     if (mode !== 'quiz') {
-        resetQuizStateForWord(sanitizedWordInFocus); 
+      resetQuizStateForWord(sanitizedWordInFocus);
+      setForceResetWordOnNextSave(null); // Clear flag if moving away from quiz
     }
 
 
-    if (!wordInFocus) { 
-        if (!getDisplayWord()) { 
-            setError("Please search for a word first or select a word from your history/streak.");
-        }
-        return;
+    if (!wordInFocus) {
+      if (!getDisplayWord()) {
+        setError("Please search for a word first or select a word from your history/streak.");
+      }
+      return;
     }
 
     const currentWordDataForModeCheck = generatedContent[sanitizedWordInFocus];
-    
+
     if (
-        authToken &&
-        sanitizedWordInFocus && 
-        (!currentWordDataForModeCheck ||
-         !currentWordDataForModeCheck[mode] ||
-         (mode === 'quiz' && (!currentWordDataForModeCheck.quiz || currentWordDataForModeCheck.quiz.length === 0))
-        )
+      authToken &&
+      sanitizedWordInFocus &&
+      (!currentWordDataForModeCheck ||
+        !currentWordDataForModeCheck[mode] ||
+        (mode === 'quiz' && (!currentWordDataForModeCheck.quiz || currentWordDataForModeCheck.quiz.length === 0))
+      )
     ) {
-        setIsLoading(true);
-        setError(null);
-        console.log(`Fetching content for mode "${mode}" for word "${wordInFocus}" from: ${API_BASE_URL}/generate_explanation`); 
-        try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
-                body: JSON.stringify({ word: wordInFocus.trim(), mode: mode }), 
-            });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-            }
-            const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-            const contentToStore = data.full_cache || data;
-
-            setGeneratedContent(prev => {
-                const existingWordContent = prev[sanitizedWordInFocus] || {};
-                const updatedWordContent: WordContent = {
-                    ...existingWordContent,
-                    ...contentToStore,
-                    is_favorite: data.is_favorite !== undefined ? data.is_favorite : existingWordContent.is_favorite,
-                };
-                if (mode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
-                    console.log(`New quiz data received for "${wordInFocus}" during mode change. Resetting quiz_progress.`);
-                    updatedWordContent.quiz_progress = [];
-                } else if (mode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
-                    updatedWordContent.quiz_progress = [];
-                }
-                return {
-                    ...prev,
-                    [sanitizedWordInFocus]: updatedWordContent,
-                };
-            });
-
-            if (mode === 'quiz') {
-                resetQuizStateForWord(sanitizedWordInFocus); 
-            }
-
-        } catch (err) {
-            console.error(`Error fetching ${mode} for ${wordInFocus}:`, err); 
-            setError((err as Error).message);
-        } finally {
-            setIsLoading(false);
+      setIsLoading(true);
+      setError(null);
+      console.log(`Fetching content for mode "${mode}" for word "${wordInFocus}" from: ${API_BASE_URL}/generate_explanation`);
+      try {
+        const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ word: wordInFocus.trim(), mode: mode }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
+        const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
+        const contentToStore = data.full_cache || data;
+
+        setGeneratedContent(prev => {
+          const existingWordContent = prev[sanitizedWordInFocus] || {};
+          const updatedWordContent: WordContent = {
+            ...existingWordContent,
+            ...contentToStore,
+            is_favorite: data.is_favorite !== undefined ? data.is_favorite : existingWordContent.is_favorite,
+          };
+          if (mode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
+            console.log(`New quiz data received for "${wordInFocus}" during mode change. Resetting quiz_progress.`);
+            updatedWordContent.quiz_progress = [];
+            // If fetching quiz for the first time (not a refresh), flag it.
+            setForceResetWordOnNextSave(sanitizedWordInFocus);
+          } else if (mode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
+            updatedWordContent.quiz_progress = [];
+          }
+          return {
+            ...prev,
+            [sanitizedWordInFocus]: updatedWordContent,
+          };
+        });
+
+        if (mode === 'quiz') {
+          resetQuizStateForWord(sanitizedWordInFocus);
+        }
+
+      } catch (err) {
+        console.error(`Error fetching ${mode} for ${wordInFocus}:`, err);
+        setError((err as Error).message);
+      } finally {
+        setIsLoading(false);
+      }
     } else if (mode === 'quiz') {
-        resetQuizStateForWord(sanitizedWordInFocus);
+      // If switching to quiz mode and data already exists, but it might be stale or from a previous session
+      console.log(`Switching to quiz mode for "${sanitizedWordInFocus}", ensuring it's treated as a fresh instance if no progress.`);
+      if (!currentWordDataForModeCheck?.quiz_progress || currentWordDataForModeCheck.quiz_progress.length === 0) {
+        setForceResetWordOnNextSave(sanitizedWordInFocus);
+      }
+      resetQuizStateForWord(sanitizedWordInFocus);
     }
   };
 
@@ -519,11 +528,11 @@ function App() {
     if (!authToken || !sanitizedWordToFavorite) return;
 
     const currentIsFavorite = generatedContent[sanitizedWordToFavorite]?.is_favorite || false;
-    
+
     setGeneratedContent(prev => ({
       ...prev,
       [sanitizedWordToFavorite]: {
-        ...(prev[sanitizedWordToFavorite] || { word: wordToFavorite } as WordContent), 
+        ...(prev[sanitizedWordToFavorite] || { word: wordToFavorite } as WordContent),
         is_favorite: !currentIsFavorite,
       }
     }));
@@ -553,9 +562,10 @@ function App() {
   };
 
   const handleSubTopicClick = (subTopic: string) => {
-    setIsReviewingStreakWord(false); 
+    setIsReviewingStreakWord(false);
     setWordForReview('');
-    setInputValue(subTopic); 
+    setInputValue(subTopic);
+    setForceResetWordOnNextSave(null); // Clear flag when navigating via subtopic
     handleGenerateExplanation(subTopic, true, false, false, 'explain');
   };
 
@@ -563,29 +573,33 @@ function App() {
     const wordToRefresh = getDisplayWord();
     if (wordToRefresh) {
       if (activeContentMode === 'quiz') {
-          console.log(`Refreshing quiz for "${wordToRefresh}". This will fetch new questions.`);
-          handleGenerateExplanation(wordToRefresh, false, true, false, 'quiz');
+        console.log(`Refreshing quiz for "${wordToRefresh}". This will fetch new questions and flag for progress override.`);
+        // `handleGenerateExplanation` with isRefreshClick=true and targetMode='quiz' will set the flag
+        handleGenerateExplanation(wordToRefresh, false, true, false, 'quiz');
       } else {
-          handleGenerateExplanation(wordToRefresh, false, true, false, activeContentMode);
+        setForceResetWordOnNextSave(null); // Clear flag if refreshing non-quiz content
+        handleGenerateExplanation(wordToRefresh, false, true, false, activeContentMode);
       }
     }
   };
-  
+
   const handleWordSelectionFromProfile = (word: string) => {
     setShowProfileModal(false);
     setInputValue(word);
+    setForceResetWordOnNextSave(null); // Clear flag
     handleGenerateExplanation(word, false, false, true, 'explain');
   };
 
   const handleStreakWordClick = (word: string) => {
     const currentDisplayWord = getDisplayWord();
     if (word.toLowerCase() === currentDisplayWord.toLowerCase()) {
-        return;
+      return;
     }
     setIsReviewingStreakWord(true);
     setWordForReview(word);
     const sanitizedReviewWord = sanitizeWordForId(word);
     resetQuizStateForWord(sanitizedReviewWord);
+    setForceResetWordOnNextSave(null); // Clear flag
 
 
     if (generatedContent[sanitizedReviewWord]?.explain) {
@@ -601,66 +615,66 @@ function App() {
     setError(null);
     console.log(`Fetching 'explain' content for review word "${wordToReview}" from: ${API_BASE_URL}/generate_explanation`);
     try {
-        const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`,
-            },
-            body: JSON.stringify({ word: wordToReview.trim(), mode: 'explain' }),
-        });
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for review: ${wordToReview}` }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-        const contentToStore = data.full_cache || data;
-        const sanitizedReviewedWordId = sanitizeWordForId(data.word);
+      const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ word: wordToReview.trim(), mode: 'explain' }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for review: ${wordToReview}` }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
+      const contentToStore = data.full_cache || data;
+      const sanitizedReviewedWordId = sanitizeWordForId(data.word);
 
-        setGeneratedContent(prev => ({
-            ...prev,
-            [sanitizedReviewedWordId]: {
-                ...(prev[sanitizedReviewedWordId] || {}),
-                ...contentToStore,
-                is_favorite: data.is_favorite !== undefined ? data.is_favorite : prev[sanitizedReviewedWordId]?.is_favorite,
-            },
-        }));
-        setActiveContentMode('explain');
+      setGeneratedContent(prev => ({
+        ...prev,
+        [sanitizedReviewedWordId]: {
+          ...(prev[sanitizedReviewedWordId] || {}),
+          ...contentToStore,
+          is_favorite: data.is_favorite !== undefined ? data.is_favorite : prev[sanitizedReviewedWordId]?.is_favorite,
+        },
+      }));
+      setActiveContentMode('explain');
     } catch (err) {
-        console.error(`Error fetching 'explain' for review word ${wordToReview}:`, err);
-        setError((err as Error).message);
+      console.error(`Error fetching 'explain' for review word ${wordToReview}:`, err);
+      setError((err as Error).message);
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     const wordId = getDisplayWordSanitized();
     if (activeContentMode === 'quiz' && wordId && generatedContent[wordId]?.quiz) {
-        console.log(`Quiz mode active for ${wordId}. Quiz data available. Resetting/Initializing quiz view.`);
-        const wordData = generatedContent[wordId];
-        const quizQuestions = wordData.quiz!; 
-        const progress = wordData.quiz_progress || []; 
+      console.log(`Quiz mode active for ${wordId}. Quiz data available. Resetting/Initializing quiz view.`);
+      const wordData = generatedContent[wordId];
+      const quizQuestions = wordData.quiz!;
+      const progress = wordData.quiz_progress || [];
 
-        const newQuestionIndex = progress.length; 
+      const newQuestionIndex = progress.length;
 
-        console.log(`useEffect for quiz: wordId=${wordId}, quizQuestions.length=${quizQuestions.length}, progress.length=${progress.length}, calculated newQuestionIndex=${newQuestionIndex}`);
+      console.log(`useEffect for quiz: wordId=${wordId}, quizQuestions.length=${quizQuestions.length}, progress.length=${progress.length}, calculated newQuestionIndex=${newQuestionIndex}`);
 
-        setCurrentQuizQuestionIndex(newQuestionIndex);
-        setSelectedQuizOption(null);
-        setQuizFeedback(null);
-        setIsQuizAttemptedThisQuestion(false);
-        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-        
-        const attemptForCurrentQuestion = progress.find(p => p.question_index === newQuestionIndex);
-        if(attemptForCurrentQuestion && (newQuestionIndex < quizQuestions.length)){
-            setSelectedQuizOption(attemptForCurrentQuestion.selected_option_key);
-            setQuizFeedback({ 
-                message: attemptForCurrentQuestion.is_correct ? "Correct!" : "Incorrect.", 
-                isCorrect: attemptForCurrentQuestion.is_correct 
-            });
-            setIsQuizAttemptedThisQuestion(true); 
-        }
+      setCurrentQuizQuestionIndex(newQuestionIndex);
+      setSelectedQuizOption(null);
+      setQuizFeedback(null);
+      setIsQuizAttemptedThisQuestion(false);
+      if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+
+      const attemptForCurrentQuestion = progress.find(p => p.question_index === newQuestionIndex);
+      if (attemptForCurrentQuestion && (newQuestionIndex < quizQuestions.length)) {
+        setSelectedQuizOption(attemptForCurrentQuestion.selected_option_key);
+        setQuizFeedback({
+          message: attemptForCurrentQuestion.is_correct ? "Correct!" : "Incorrect.",
+          isCorrect: attemptForCurrentQuestion.is_correct
+        });
+        setIsQuizAttemptedThisQuestion(true);
+      }
     }
   }, [activeContentMode, getDisplayWordSanitized, generatedContent]);
 
@@ -670,7 +684,7 @@ function App() {
     const sanitizedWordBeingQuizzed = getDisplayWordSanitized();
 
     if (!authToken || !sanitizedWordBeingQuizzed) return;
-    
+
     console.log(`Saving quiz attempt for "${wordBeingQuizzed}" to: ${API_BASE_URL}/save_quiz_attempt`);
     try {
       const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
@@ -692,13 +706,28 @@ function App() {
       }
       const data: { message: string, quiz_progress: QuizAttempt[] } = await response.json();
 
-      setGeneratedContent(prev => ({
-        ...prev,
-        [sanitizedWordBeingQuizzed]: {
-          ...(prev[sanitizedWordBeingQuizzed] || {}),
-          quiz_progress: data.quiz_progress, 
-        },
-      }));
+      setGeneratedContent(prev => {
+        let finalQuizProgress = data.quiz_progress;
+
+        if (sanitizedWordBeingQuizzed === forceResetWordOnNextSave) {
+          console.log(`Applying forced progress reset for first save of regenerated quiz for ${sanitizedWordBeingQuizzed}`);
+          finalQuizProgress = [{
+            question_index: questionIndex,
+            selected_option_key: optionKey,
+            is_correct: isCorrect,
+            timestamp: new Date().toISOString()
+          }];
+          setForceResetWordOnNextSave(null);
+        }
+
+        return {
+          ...prev,
+          [sanitizedWordBeingQuizzed]: {
+            ...(prev[sanitizedWordBeingQuizzed] || {}),
+            quiz_progress: finalQuizProgress,
+          },
+        };
+      });
 
       if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
       autoAdvanceTimeoutRef.current = setTimeout(() => {
@@ -713,7 +742,7 @@ function App() {
   };
 
   const handleQuizOptionSelect = (optionKey: string, correctKey: string, questionIdx: number) => {
-    if (isQuizAttemptedThisQuestion) return; 
+    if (isQuizAttemptedThisQuestion) return;
 
     const isCorrect = optionKey === correctKey;
     setSelectedQuizOption(optionKey);
@@ -723,38 +752,38 @@ function App() {
   };
 
   const handleNextQuestion = () => {
-    if (autoAdvanceTimeoutRef.current) { 
-        clearTimeout(autoAdvanceTimeoutRef.current);
-        autoAdvanceTimeoutRef.current = null;
+    if (autoAdvanceTimeoutRef.current) {
+      clearTimeout(autoAdvanceTimeoutRef.current);
+      autoAdvanceTimeoutRef.current = null;
     }
 
     const wordBeingQuizzedSanitized = getDisplayWordSanitized();
     const currentWordData = generatedContent[wordBeingQuizzedSanitized];
 
-    if(currentWordData?.quiz && currentWordData.quiz_progress) {
-        const quizSet = currentWordData.quiz;
-        const progress = currentWordData.quiz_progress; 
-        const nextQuestionToShowIndex = progress.length;
-        
-        console.log(`handleNextQuestion: quizSet.length=${quizSet.length}, progress.length=${progress.length}, nextQuestionToShowIndex=${nextQuestionToShowIndex}`);
+    if (currentWordData?.quiz && currentWordData.quiz_progress) {
+      const quizSet = currentWordData.quiz;
+      const progress = currentWordData.quiz_progress;
+      const nextQuestionToShowIndex = progress.length;
 
-        if (nextQuestionToShowIndex < quizSet.length) {
-            setCurrentQuizQuestionIndex(nextQuestionToShowIndex);
-            setSelectedQuizOption(null);
-            setQuizFeedback(null);
-            setIsQuizAttemptedThisQuestion(false);
-        } else {
-            setCurrentQuizQuestionIndex(quizSet.length);
-            setSelectedQuizOption(null); 
-            setQuizFeedback(null); 
-            setIsQuizAttemptedThisQuestion(false); 
-        }
-    } else {
-        console.warn("handleNextQuestion called but quiz data or progress is missing.");
-        setCurrentQuizQuestionIndex(0); 
+      console.log(`handleNextQuestion: quizSet.length=${quizSet.length}, progress.length=${progress.length}, nextQuestionToShowIndex=${nextQuestionToShowIndex}`);
+
+      if (nextQuestionToShowIndex < quizSet.length) {
+        setCurrentQuizQuestionIndex(nextQuestionToShowIndex);
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttemptedThisQuestion(false);
+      } else {
+        setCurrentQuizQuestionIndex(quizSet.length);
+        setSelectedQuizOption(null);
+        setQuizFeedback(null);
+        setIsQuizAttemptedThisQuestion(false);
+      }
+    } else {
+      console.warn("handleNextQuestion called but quiz data or progress is missing.");
+      setCurrentQuizQuestionIndex(0);
+      setSelectedQuizOption(null);
+      setQuizFeedback(null);
+      setIsQuizAttemptedThisQuestion(false);
     }
   };
 
@@ -768,7 +797,7 @@ function App() {
 
     if (isLoading && !currentDisplayWordData?.[activeContentMode] && displayWordStr) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading {activeContentMode} for "{displayWordStr}"...</span></div>;
     if (generalErrorToDisplay && !currentDisplayWordData?.[activeContentMode]) {
-        return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+      return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
     }
 
     const displayData = currentDisplayWordData;
@@ -816,58 +845,58 @@ function App() {
         const quizSpecificError = error && !displayData?.quiz;
         if (quizSpecificError) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
 
-        const quizSet = displayData?.quiz; 
-        const quizProgress = displayData?.quiz_progress || []; 
+        const quizSet = displayData?.quiz;
+        const quizProgress = displayData?.quiz_progress || [];
 
         if (!quizSet || quizSet.length === 0) {
           return <div className="p-4 text-gray-500">No quiz available for "{displayWordStr}" yet. Try generating it or refreshing.</div>;
         }
-        
+
         console.log(`Render Quiz: currentQuizQuestionIndex=${currentQuizQuestionIndex}, quizSet.length=${quizSet.length}, quizProgress.length=${quizProgress.length}`);
 
-        if (currentQuizQuestionIndex >= quizSet.length) { 
-            let correctCount = 0;
-            quizProgress.forEach(attempt => { 
-                if (attempt.is_correct) correctCount++;
-            });
+        if (currentQuizQuestionIndex >= quizSet.length) {
+          let correctCount = 0;
+          quizProgress.forEach(attempt => {
+            if (attempt.is_correct) correctCount++;
+          });
 
-            return (
-                <div className="p-4 space-y-4 text-gray-800">
-                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
-                    <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
-                    <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                        {quizSet.map((quizString, index) => {
-                            const parsedQuestion = parseQuizString(quizString);
-                            if (!parsedQuestion) return <div key={index} className="text-red-500 text-xs p-1.5 bg-red-50 rounded">Error displaying summary for question {index + 1}. Original: <pre className="text-xs whitespace-pre-wrap break-all">{quizString}</pre></div>;
+          return (
+            <div className="p-4 space-y-4 text-gray-800">
+              <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
+              <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
+              <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {quizSet.map((quizString, index) => {
+                  const parsedQuestion = parseQuizString(quizString);
+                  if (!parsedQuestion) return <div key={index} className="text-red-500 text-xs p-1.5 bg-red-50 rounded">Error displaying summary for question {index + 1}. Original: <pre className="text-xs whitespace-pre-wrap break-all">{quizString}</pre></div>;
 
-                            const attempt = quizProgress.find(p => p.question_index === index);
-                            const correctOptText = parsedQuestion.options.find(o => o.key === parsedQuestion.correctOptionKey)?.text || 'N/A';
-                            
-                            return (
-                                <div key={index} className={`p-2.5 border rounded-lg shadow-sm text-xs ${attempt?.is_correct ? 'bg-green-50 border-green-200' : (attempt ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200')}`}>
-                                    <p className="font-semibold text-gray-700 mb-1 truncate" title={parsedQuestion.questionText}>Q{index + 1}: {parsedQuestion.questionText.substring(0,50)}{parsedQuestion.questionText.length > 50 ? '...' : ''}</p>
-                                    {attempt ? (
-                                        <>
-                                            <p>Your Answer: <span className="font-medium">({attempt.selected_option_key})</span> - {attempt.is_correct ? <span className="text-green-700 font-semibold">Correct</span> : <span className="text-red-700 font-semibold">Incorrect</span>}</p>
-                                            {!attempt.is_correct && <p>Correct: <span className="font-medium">({parsedQuestion.correctOptionKey})</span> {correctOptText.substring(0,30)}{correctOptText.length > 30 ? '...' : ''}</p>}
-                                        </>
-                                    ) : (
-                                        <p className="text-orange-500">Not attempted. Correct: ({parsedQuestion.correctOptionKey})</p>
-                                    )}
-                                </div>
-                            );
-                        })}
+                  const attempt = quizProgress.find(p => p.question_index === index);
+                  const correctOptText = parsedQuestion.options.find(o => o.key === parsedQuestion.correctOptionKey)?.text || 'N/A';
+
+                  return (
+                    <div key={index} className={`p-2.5 border rounded-lg shadow-sm text-xs ${attempt?.is_correct ? 'bg-green-50 border-green-200' : (attempt ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200')}`}>
+                      <p className="font-semibold text-gray-700 mb-1 truncate" title={parsedQuestion.questionText}>Q{index + 1}: {parsedQuestion.questionText.substring(0, 50)}{parsedQuestion.questionText.length > 50 ? '...' : ''}</p>
+                      {attempt ? (
+                        <>
+                          <p>Your Answer: <span className="font-medium">({attempt.selected_option_key})</span> - {attempt.is_correct ? <span className="text-green-700 font-semibold">Correct</span> : <span className="text-red-700 font-semibold">Incorrect</span>}</p>
+                          {!attempt.is_correct && <p>Correct: <span className="font-medium">({parsedQuestion.correctOptionKey})</span> {correctOptText.substring(0, 30)}{correctOptText.length > 30 ? '...' : ''}</p>}
+                        </>
+                      ) : (
+                        <p className="text-orange-500">Not attempted. Correct: ({parsedQuestion.correctOptionKey})</p>
+                      )}
                     </div>
-                     <button
-                        onClick={handleFetchNewQuizSet} 
-                        disabled={isLoading}
-                        className="w-full mt-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
-                    >
-                       {isLoading ? <Loader2 className="animate-spin mr-2" size={18}/> : <PlusCircle size={18} className="mr-2" />}
-                        More Questions for "{getDisplayWord()}"
-                    </button>
-                </div>
-            );
+                  );
+                })}
+              </div>
+              <button
+                onClick={handleFetchNewQuizSet}
+                disabled={isLoading}
+                className="w-full mt-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
+              >
+                {isLoading ? <Loader2 className="animate-spin mr-2" size={18} /> : <PlusCircle size={18} className="mr-2" />}
+                More Questions for "{getDisplayWord()}"
+              </button>
+            </div>
+          );
         }
 
         const currentQuestionString = quizSet[currentQuizQuestionIndex];
@@ -876,7 +905,7 @@ function App() {
         if (!parsedQuestion) {
           return <div className="text-red-500 p-4">Error loading question. Please try refreshing. Original string: <pre className="text-xs whitespace-pre-wrap break-all">{currentQuestionString}</pre></div>;
         }
-        
+
         return (
           <div className="p-4 space-y-4 text-gray-800">
             <p className="font-semibold text-lg text-gray-700">Question {currentQuizQuestionIndex + 1} of {quizSet.length}:</p>
@@ -886,11 +915,11 @@ function App() {
                 <button
                   key={opt.key}
                   onClick={() => handleQuizOptionSelect(opt.key, parsedQuestion.correctOptionKey, currentQuizQuestionIndex)}
-                  disabled={isQuizAttemptedThisQuestion} 
+                  disabled={isQuizAttemptedThisQuestion}
                   className={`w-full text-left p-3 rounded-lg border transition-all duration-150 text-gray-700
-                    ${(selectedQuizOption === opt.key && isQuizAttemptedThisQuestion) ? 
-                        (quizFeedback?.isCorrect ? 'bg-green-200 border-green-400 ring-2 ring-green-500' : 'bg-red-200 border-red-400 ring-2 ring-red-500')
-                        : 'bg-white hover:bg-gray-100 border-gray-300'
+                    ${(selectedQuizOption === opt.key && isQuizAttemptedThisQuestion) ?
+                      (quizFeedback?.isCorrect ? 'bg-green-200 border-green-400 ring-2 ring-green-500' : 'bg-red-200 border-red-400 ring-2 ring-red-500')
+                      : 'bg-white hover:bg-gray-100 border-gray-300'
                     }
                     ${(isQuizAttemptedThisQuestion && opt.key === parsedQuestion.correctOptionKey && selectedQuizOption !== opt.key) ? 'border-green-500 border-2 animate-pulse-border-green' : ''} 
                     disabled:opacity-70 disabled:cursor-not-allowed
@@ -900,15 +929,15 @@ function App() {
                 </button>
               ))}
             </div>
-            {isQuizAttemptedThisQuestion && quizFeedback && ( 
+            {isQuizAttemptedThisQuestion && quizFeedback && (
               <div className={`p-2 rounded-md text-sm ${quizFeedback.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                 {quizFeedback.message}
                 {!quizFeedback.isCorrect && ` Correct answer was: ${parsedQuestion.correctOptionKey}`}
               </div>
             )}
-             <div className="text-xs text-gray-500 mt-2">
-                Progress: {quizProgress.filter(p => p.question_index < currentQuizQuestionIndex).length + (isQuizAttemptedThisQuestion ? 1: 0)} / {quizSet.length} answered.
-                Score: {quizProgress.filter(p=>p.is_correct).length} correct.
+            <div className="text-xs text-gray-500 mt-2">
+              Progress: {quizProgress.filter(p => p.question_index < currentQuizQuestionIndex).length + (isQuizAttemptedThisQuestion ? 1 : 0)} / {quizSet.length} answered.
+              Score: {quizProgress.filter(p => p.is_correct).length} correct.
             </div>
           </div>
         );
@@ -927,8 +956,8 @@ function App() {
           <ul className="max-h-40 overflow-y-auto text-sm space-y-1 custom-scrollbar">
             {words.map(wh => (
               <li key={wh.id}
-                  onClick={() => handleWordSelectionFromProfile(wh.word)}
-                  className="p-1.5 hover:bg-gray-200 rounded cursor-pointer flex justify-between items-center text-gray-800">
+                onClick={() => handleWordSelectionFromProfile(wh.word)}
+                className="p-1.5 hover:bg-gray-200 rounded cursor-pointer flex justify-between items-center text-gray-800">
                 <span>{wh.word} <span className="text-xs text-gray-500">({new Date(wh.last_explored_at).toLocaleDateString()})</span></span>
                 {wh.is_favorite && <Heart size={14} className="text-red-500 fill-current" />}
               </li>
@@ -968,9 +997,9 @@ function App() {
           <p><strong>Account Tier:</strong> {currentUser.tier || 'Standard'}</p>
           <p className="mb-4"><strong>Total Words Explored:</strong> {currentUser.total_words_explored || 0}</p>
 
-          {renderWordList("All Explored Words", currentUser.explored_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
-          {renderWordList("Favorite Words", currentUser.favorite_words?.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
-          {renderStreakList(currentUser.streak_history?.sort((a,b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()))}
+          {renderWordList("All Explored Words", currentUser.explored_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
+          {renderWordList("Favorite Words", currentUser.favorite_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
+          {renderStreakList(currentUser.streak_history?.sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()))}
 
           <button onClick={() => setShowProfileModal(false)} className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">Close</button>
         </div>
@@ -985,8 +1014,8 @@ function App() {
       e.preventDefault();
       setAuthError(null);
 
-      const currentAuthInputUsername = authInputUsername.trim(); 
-      const currentAuthInputEmail = authInputEmail.trim(); 
+      const currentAuthInputUsername = authInputUsername.trim();
+      const currentAuthInputEmail = authInputEmail.trim();
       const currentAuthInputPassword = authInputPassword.trim();
 
       let endpoint = '';
@@ -999,7 +1028,7 @@ function App() {
         }
         endpoint = '/login';
         payload = { email_or_username: currentAuthInputUsername, password: currentAuthInputPassword };
-      } else { 
+      } else {
         if (!currentAuthInputUsername || !currentAuthInputEmail || !currentAuthInputPassword) {
           setAuthError("Username, Email, and Password are required for signup.");
           return;
@@ -1021,13 +1050,13 @@ function App() {
           throw new Error(data.error || `${authMode.charAt(0).toUpperCase() + authMode.slice(1)} failed. Status: ${response.status}`);
         }
         if (authMode === 'signup') {
-            setAuthMode('login');
-            setAuthInputUsername(currentAuthInputUsername); 
-            setAuthInputEmail(''); 
-            setAuthInputPassword('');
-            setAuthError("Signup successful! Please login with your new credentials.");
-        } else { 
-            handleAuthSuccess(data.access_token, data.user);
+          setAuthMode('login');
+          setAuthInputUsername(currentAuthInputUsername);
+          setAuthInputEmail('');
+          setAuthInputPassword('');
+          setAuthError("Signup successful! Please login with your new credentials.");
+        } else {
+          handleAuthSuccess(data.access_token, data.user);
         }
       } catch (err) {
         console.error("Auth error:", err);
@@ -1080,16 +1109,16 @@ function App() {
               </>
             )}
             {authMode === 'login' && (
-                 <input
-                    type="text"
-                    name="username_login" 
-                    autoComplete="username"
-                    placeholder="Username or Email"
-                    value={authInputUsername}
-                    onChange={(e) => setAuthInputUsername(e.target.value)}
-                    required
-                    className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500"
-                />
+              <input
+                type="text"
+                name="username_login"
+                autoComplete="username"
+                placeholder="Username or Email"
+                value={authInputUsername}
+                onChange={(e) => setAuthInputUsername(e.target.value)}
+                required
+                className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500"
+              />
             )}
             <input
               type="password"
@@ -1112,7 +1141,7 @@ function App() {
           <button
             onClick={() => {
               setAuthMode(authMode === 'login' ? 'signup' : 'login');
-              setAuthError(null); 
+              setAuthError(null);
               setAuthInputUsername('');
               setAuthInputEmail('');
               setAuthInputPassword('');
@@ -1135,8 +1164,8 @@ function App() {
     { id: 'explain', label: 'Explain', icon: MessageSquare },
     { id: 'quiz', label: 'Quiz', icon: HelpCircle },
     { id: 'fact', label: 'Fact', icon: Brain },
-    { id: 'image', label: 'Image', icon: ImageIcon }, 
-    { id: 'deep_dive', label: 'Deep Dive', icon: FileText }, 
+    { id: 'image', label: 'Image', icon: ImageIcon },
+    { id: 'deep_dive', label: 'Deep Dive', icon: FileText },
   ];
 
   return (
@@ -1150,11 +1179,11 @@ function App() {
             {currentUser && <span className="text-sm">Hi, {currentUser.username}!</span>}
             {authToken ? (
               <>
-                <button onClick={() => { if(authToken) fetchUserProfile(authToken); setShowProfileModal(true);}} title="Profile" className="p-2 rounded-full hover:bg-white/20 transition-colors"><User size={20} /></button>
+                <button onClick={() => { if (authToken) fetchUserProfile(authToken); setShowProfileModal(true); }} title="Profile" className="p-2 rounded-full hover:bg-white/20 transition-colors"><User size={20} /></button>
                 <button onClick={handleLogout} title="Logout" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogOut size={20} /></button>
               </>
             ) : (
-              <button onClick={() => {setShowAuthModal(true); setAuthMode('login'); setAuthError(null);}} title="Login" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogIn size={20} /></button>
+              <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); setAuthError(null); }} title="Login" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogIn size={20} /></button>
             )}
           </div>
         </header>
@@ -1175,7 +1204,7 @@ function App() {
               disabled={isLoading || !inputValue.trim()}
               className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
-              {isLoading && !currentDisplayWordData && inputValue.trim() ? <Loader2 className="animate-spin mr-2" size={20}/> : <BookOpen size={20} className="mr-2" />}
+              {isLoading && !currentDisplayWordData && inputValue.trim() ? <Loader2 className="animate-spin mr-2" size={20} /> : <BookOpen size={20} className="mr-2" />}
               Generate Explanation
             </button>
           </div>
@@ -1203,35 +1232,35 @@ function App() {
           </div>
         )}
 
-        { (displayWord || (error && activeContentMode !== 'explain' && activeContentMode !== 'quiz') || authError ) && (
+        {(displayWord || (error && activeContentMode !== 'explain' && activeContentMode !== 'quiz') || authError) && (
           <div className="bg-white/5 backdrop-blur-sm shadow-inner rounded-lg min-h-[200px]">
             <div className="flex flex-wrap items-center justify-between p-3 border-b border-white/20">
-                <div className="flex flex-wrap gap-1">
-                    {contentModes.map(modeInfo => (
-                        <button
-                        key={modeInfo.id}
-                        onClick={() => handleModeChange(modeInfo.id)}
-                        disabled={!displayWord && !error && !authError && !isLoading} 
-                        className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center
+              <div className="flex flex-wrap gap-1">
+                {contentModes.map(modeInfo => (
+                  <button
+                    key={modeInfo.id}
+                    onClick={() => handleModeChange(modeInfo.id)}
+                    disabled={!displayWord && !error && !authError && !isLoading}
+                    className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center
                             ${activeContentMode === modeInfo.id ? 'bg-purple-500 text-white shadow-md' : 'bg-white/10 hover:bg-white/20 text-gray-200'}
                             ${(!displayWord && !error && !authError) ? 'opacity-50 cursor-not-allowed' : ''}
                             ${isLoading ? 'opacity-70 cursor-wait' : ''} 
                             `}
-                        >
-                        <modeInfo.icon size={14} className="mr-1.5" /> {modeInfo.label}
-                        </button>
-                    ))}
-                </div>
-                {displayWord && (
-                    <button 
-                      onClick={handleToggleFavorite} 
-                      title={isFavoriteCurrent ? "Remove from favorites" : "Add to favorites"} 
-                      className="p-2 rounded-full hover:bg-white/20 transition-colors disabled:opacity-50"
-                      disabled={isLoading} 
-                    >
-                        <Heart size={20} className={`${isFavoriteCurrent ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
-                    </button>
-                )}
+                  >
+                    <modeInfo.icon size={14} className="mr-1.5" /> {modeInfo.label}
+                  </button>
+                ))}
+              </div>
+              {displayWord && (
+                <button
+                  onClick={handleToggleFavorite}
+                  title={isFavoriteCurrent ? "Remove from favorites" : "Add to favorites"}
+                  className="p-2 rounded-full hover:bg-white/20 transition-colors disabled:opacity-50"
+                  disabled={isLoading}
+                >
+                  <Heart size={20} className={`${isFavoriteCurrent ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
+                </button>
+              )}
             </div>
 
             <div className="p-2 sm:p-4 text-gray-800 bg-white rounded-b-lg">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react';
+import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle, Award, TrendingUp, List, Star, Mail, ShieldCheck, CalendarDays } from 'lucide-react'; // Added more icons
 import './App.css';
 
 // --- Constants ---
@@ -15,6 +15,7 @@ interface UserProfile {
   explored_words?: WordHistoryEntry[];
   favorite_words?: WordHistoryEntry[];
   streak_history?: StreakEntry[];
+  created_at?: string; // Assuming backend might provide this
 }
 
 interface WordHistoryEntry {
@@ -145,13 +146,11 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     return null;
   }
 
-  // Check if the identified correctOptionKey is actually present in the unique keys of parsed options
   const uniqueParsedOptionKeys = Array.from(new Set(options.map(opt => opt.key)));
   if (!uniqueParsedOptionKeys.includes(correctOptionKey)) {
     console.warn(`Correct option key "${correctOptionKey}" not found among unique parsed option keys (v7). Unique Parsed Keys:`, uniqueParsedOptionKeys, "All Parsed Options:", options.map(o => o.key), "Question:", questionText, "Original String:", quizStr);
     return null;
   }
-  // Further check: ensure the option text for the correct key is not empty (basic sanity)
   const correctOptionObject = options.find(opt => opt.key === correctOptionKey);
   if (!correctOptionObject || !correctOptionObject.text.trim()) {
     console.warn(`Correct option object for key "${correctOptionKey}" is invalid or has empty text (v7).`, "Question:", questionText);
@@ -333,7 +332,6 @@ function App() {
 
     const sanitizedWordToFetchId = sanitizeWordForId(wordToFetch);
 
-    // Set loading true FIRST, then clear data to ensure loading UI shows
     setIsLoading(true);
     setError(null);
     setAuthError(null);
@@ -477,7 +475,6 @@ function App() {
         (mode === 'quiz' && (!currentWordDataForModeCheck.quiz || currentWordDataForModeCheck.quiz.length === 0))
       )
     ) {
-      // Set loading and clear old quiz data if fetching for quiz mode
       setIsLoading(true);
       if (mode === 'quiz') {
         console.log(`Fetching quiz for "${sanitizedWordInFocus}" first time or due to missing data. Clearing UI quiz questions.`);
@@ -713,18 +710,16 @@ function App() {
         }),
       });
       if (!response.ok) {
-        // Check for CORS error specifically if possible, or just general failure
-        const responseText = await response.text(); // Try to get more info
+        const responseText = await response.text();
         console.error("Backend save_quiz_attempt failed. Status:", response.status, "Response Text:", responseText);
         if (response.status === 0 || response.type === 'opaque' || responseText.includes("CORS")) {
           setError("Failed to save answer: Network or CORS error. Please check server logs and CORS setup for /save_quiz_attempt.");
         } else {
-          const errorData = JSON.parse(responseText || "{}"); // Try to parse if JSON
+          const errorData = JSON.parse(responseText || "{}");
           throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
-        return; // Stop processing if backend save fails
+        return;
       }
-      // const data: { message: string, quiz_progress: QuizAttempt[] } = await response.json(); // Backend data not used for progress update
 
       const newAttempt: QuizAttempt = {
         question_index: questionIndex,
@@ -759,8 +754,7 @@ function App() {
 
     } catch (err) {
       console.error("Error in handleSaveQuizAttempt (fetch or subsequent logic):", err);
-      // If error was already set by failed fetch, don't overwrite with generic one.
-      if (!error) { // Check if error state is already set from the fetch block
+      if (!error) {
         setError("Failed to save your answer. " + (err as Error).message);
       }
       if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
@@ -840,6 +834,7 @@ function App() {
 
     switch (activeContentMode) {
       case 'explain':
+        // ... (explain, fact, image, deep_dive cases remain largely the same)
         if (isLoading && !displayData?.explain && displayWordStr) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading explanation...</span></div>;
         if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
         return (
@@ -889,6 +884,7 @@ function App() {
 
         console.log(`Render Quiz: currentQuizQuestionIndex=${currentQuizQuestionIndex}, quizSet.length=${quizSet.length}, quizProgress.length=${quizProgress.length}`);
 
+        // Quiz Summary View
         if (currentQuizQuestionIndex >= quizSet.length) {
           let correctCount = 0;
           quizProgress.forEach(attempt => {
@@ -899,24 +895,29 @@ function App() {
             <div className="p-4 space-y-4 text-gray-800">
               <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
               <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
-              <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+              <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar"> {/* Increased max-h slightly */}
                 {quizSet.map((quizString, index) => {
                   const parsedQuestion = parseQuizString(quizString);
-                  if (!parsedQuestion) return <div key={index} className="text-red-500 text-xs p-1.5 bg-red-50 rounded">Error displaying summary for question {index + 1}. Original: <pre className="text-xs whitespace-pre-wrap break-all">{quizString}</pre></div>;
+                  if (!parsedQuestion) return <div key={index} className="text-red-500 text-sm p-2 bg-red-50 rounded-md">Error displaying summary for question {index + 1}. <details><summary className="text-xs cursor-pointer">Details</summary><pre className="text-xs whitespace-pre-wrap break-all mt-1 p-1 bg-red-100">{quizString}</pre></details></div>;
 
                   const attempt = quizProgress.find(p => p.question_index === index);
-                  const correctOptText = parsedQuestion.options.find(o => o.key === parsedQuestion.correctOptionKey)?.text || 'N/A';
+                  const userSelectedOption = attempt ? parsedQuestion.options.find(o => o.key === attempt.selected_option_key) : null;
+                  const correctOption = parsedQuestion.options.find(o => o.key === parsedQuestion.correctOptionKey);
 
                   return (
-                    <div key={index} className={`p-2.5 border rounded-lg shadow-sm text-xs ${attempt?.is_correct ? 'bg-green-50 border-green-200' : (attempt ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200')}`}>
-                      <p className="font-semibold text-gray-700 mb-1 truncate" title={parsedQuestion.questionText}>Q{index + 1}: {parsedQuestion.questionText.substring(0, 50)}{parsedQuestion.questionText.length > 50 ? '...' : ''}</p>
+                    <div key={index} className={`p-3 border rounded-lg shadow-sm text-sm ${attempt?.is_correct ? 'bg-green-50 border-green-300' : (attempt ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-300')}`}>
+                      <p className="font-semibold text-gray-800 mb-1.5">Q{index + 1}: {parsedQuestion.questionText}</p>
                       {attempt ? (
                         <>
-                          <p>Your Answer: <span className="font-medium">({attempt.selected_option_key})</span> - {attempt.is_correct ? <span className="text-green-700 font-semibold">Correct</span> : <span className="text-red-700 font-semibold">Incorrect</span>}</p>
-                          {!attempt.is_correct && <p>Correct: <span className="font-medium">({parsedQuestion.correctOptionKey})</span> {correctOptText.substring(0, 30)}{correctOptText.length > 30 ? '...' : ''}</p>}
+                          <p className="text-xs">Your Answer: <span className={`font-medium ${attempt.is_correct ? 'text-green-700' : 'text-red-700'}`}>({attempt.selected_option_key}) {userSelectedOption?.text || 'N/A'}</span>
+                            {attempt.is_correct ? <span className="text-green-700 font-semibold ml-1">(Correct)</span> : <span className="text-red-700 font-semibold ml-1">(Incorrect)</span>}
+                          </p>
+                          {!attempt.is_correct && correctOption && (
+                            <p className="text-xs mt-1">Correct Answer: <span className="font-medium text-green-700">({correctOption.key}) {correctOption.text}</span></p>
+                          )}
                         </>
                       ) : (
-                        <p className="text-orange-500">Not attempted. Correct: ({parsedQuestion.correctOptionKey})</p>
+                        <p className="text-xs text-orange-600">Not attempted. Correct: ({parsedQuestion.correctOptionKey}) {correctOption?.text || 'N/A'}</p>
                       )}
                     </div>
                   );
@@ -925,7 +926,7 @@ function App() {
               <button
                 onClick={handleFetchNewQuizSet}
                 disabled={isLoading}
-                className="w-full mt-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
+                className="w-full mt-4 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
               >
                 {isLoading ? <Loader2 className="animate-spin mr-2" size={18} /> : <PlusCircle size={18} className="mr-2" />}
                 More Questions for "{getDisplayWord()}"
@@ -934,6 +935,7 @@ function App() {
           );
         }
 
+        // Quiz Question View
         const currentQuestionString = quizSet[currentQuizQuestionIndex];
         const parsedQuestion = parseQuizString(currentQuestionString);
 
@@ -984,63 +986,100 @@ function App() {
   const renderProfileModal = () => {
     if (!showProfileModal || !currentUser) return null;
 
-    const renderWordList = (title: string, words: WordHistoryEntry[] | undefined) => (
-      <div className="mb-4">
-        <h4 className="font-semibold text-gray-700 mb-1">{title} ({words?.length || 0})</h4>
-        {words && words.length > 0 ? (
-          <ul className="max-h-40 overflow-y-auto text-sm space-y-1 custom-scrollbar">
-            {words.map(wh => (
-              <li key={wh.id}
-                onClick={() => handleWordSelectionFromProfile(wh.word)}
-                className="p-1.5 hover:bg-gray-200 rounded cursor-pointer flex justify-between items-center text-gray-800">
-                <span>{wh.word} <span className="text-xs text-gray-500">({new Date(wh.last_explored_at).toLocaleDateString()})</span></span>
-                {wh.is_favorite && <Heart size={14} className="text-red-500 fill-current" />}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="text-xs text-gray-500">No words in this list yet.</p>}
+    const ProfileStatCard: React.FC<{ icon: React.ElementType, label: string, value: string | number | undefined, colorClass: string }> = ({ icon: Icon, label, value, colorClass }) => (
+      <div className={`bg-opacity-10 ${colorClass.replace('text-', 'bg-').replace('-500', '-100')} p-4 rounded-xl shadow-md flex items-center space-x-3`}>
+        <div className={`p-2 rounded-full ${colorClass.replace('text-', 'bg-').replace('-500', '-200')}`}>
+          <Icon size={20} className={colorClass} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">{label}</p>
+          <p className="text-lg font-semibold text-gray-800">{value ?? 'N/A'}</p>
+        </div>
       </div>
     );
 
-    const renderStreakList = (streaks: StreakEntry[] | undefined) => (
-      <div className="mb-4">
-        <h4 className="font-semibold text-gray-700 mb-1">Streak History ({streaks?.length || 0})</h4>
-        {streaks && streaks.length > 0 ? (
-          <ul className="max-h-40 overflow-y-auto text-sm space-y-1 custom-scrollbar">
-            {streaks.map(streak => (
-              <li key={streak.id} className="p-1.5 hover:bg-gray-200 rounded text-gray-800">
-                <span className="font-medium">Score {streak.score}:</span> {streak.words.map((w, i) => (
-                  <span key={i} onClick={() => handleWordSelectionFromProfile(w)} className="cursor-pointer hover:underline">{w}</span>
-                )).reduce((prev, curr) => <>{prev} → {curr}</>)}
-                <span className="text-xs text-gray-500 ml-2">({new Date(streak.completed_at).toLocaleDateString()})</span>
-              </li>
-            ))}
+    const ListSection: React.FC<{ title: string, items: any[] | undefined, renderItem: (item: any, index: number) => JSX.Element, icon: React.ElementType, emptyText?: string }> = ({ title, items, renderItem, icon: Icon, emptyText = "Nothing here yet." }) => (
+      <div className="bg-white/50 p-4 rounded-lg shadow">
+        <h4 className="text-md font-semibold text-gray-700 mb-3 flex items-center"><Icon size={18} className="mr-2 text-purple-600" />{title} ({items?.length || 0})</h4>
+        {items && items.length > 0 ? (
+          <ul className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
+            {items.map(renderItem)}
           </ul>
-        ) : <p className="text-xs text-gray-500">No past streaks recorded.</p>}
+        ) : <p className="text-xs text-gray-500 italic">{emptyText}</p>}
       </div>
     );
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto text-gray-800 custom-scrollbar">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-semibold">User Profile</h3>
-            <button onClick={() => setShowProfileModal(false)} className="text-gray-500 hover:text-gray-700">&times;</button>
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 transition-opacity duration-300">
+        <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto text-gray-800 custom-scrollbar">
+          <div className="flex justify-between items-center mb-6 pb-3 border-b border-gray-300">
+            <div className="flex items-center">
+              <div className="p-3 bg-purple-500 rounded-full mr-3 shadow">
+                <User size={24} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-purple-700">{currentUser.username}</h3>
+                <p className="text-xs text-gray-500 flex items-center"><Mail size={12} className="mr-1" />{currentUser.email || 'Email not provided'}</p>
+              </div>
+            </div>
+            <button onClick={() => setShowProfileModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">&times;</button>
           </div>
-          <p><strong>Username:</strong> {currentUser.username}</p>
-          <p><strong>Email:</strong> {currentUser.email || 'N/A'}</p>
-          <p><strong>Account Tier:</strong> {currentUser.tier || 'Standard'}</p>
-          <p className="mb-4"><strong>Total Words Explored:</strong> {currentUser.total_words_explored || 0}</p>
 
-          {renderWordList("All Explored Words", currentUser.explored_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
-          {renderWordList("Favorite Words", currentUser.favorite_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()))}
-          {renderStreakList(currentUser.streak_history?.sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <ProfileStatCard icon={BookOpen} label="Total Words Explored" value={currentUser.total_words_explored} colorClass="text-blue-500" />
+            <ProfileStatCard icon={ShieldCheck} label="Account Tier" value={currentUser.tier || 'Standard'} colorClass="text-green-500" />
+            {currentUser.created_at && <ProfileStatCard icon={CalendarDays} label="Member Since" value={new Date(currentUser.created_at).toLocaleDateString()} colorClass="text-indigo-500" />}
+          </div>
 
-          <button onClick={() => setShowProfileModal(false)} className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">Close</button>
+          <div className="space-y-4">
+            <ListSection
+              title="Explored Words History"
+              icon={List}
+              items={currentUser.explored_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())}
+              renderItem={(wh: WordHistoryEntry) => (
+                <li key={wh.id}
+                  onClick={() => handleWordSelectionFromProfile(wh.word)}
+                  className="p-2.5 bg-white hover:bg-purple-50 rounded-md cursor-pointer flex justify-between items-center text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
+                  <span>{wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span></span>
+                  {wh.is_favorite && <Heart size={16} className="text-red-400 fill-current" />}
+                </li>
+              )}
+            />
+            <ListSection
+              title="Favorite Words"
+              icon={Star}
+              items={currentUser.favorite_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())}
+              renderItem={(wh: WordHistoryEntry) => (
+                <li key={wh.id}
+                  onClick={() => handleWordSelectionFromProfile(wh.word)}
+                  className="p-2.5 bg-white hover:bg-purple-50 rounded-md cursor-pointer text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
+                  {wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span>
+                </li>
+              )}
+              emptyText="No favorite words yet."
+            />
+            <ListSection
+              title="Streak History"
+              icon={TrendingUp}
+              items={currentUser.streak_history?.sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())}
+              renderItem={(streak: StreakEntry) => (
+                <li key={streak.id} className="p-2.5 bg-white hover:bg-purple-50 rounded-md text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
+                  <span className="font-medium text-purple-600">Score {streak.score}:</span> {streak.words.map((w, i) => (
+                    <span key={i} onClick={() => handleWordSelectionFromProfile(w)} className="cursor-pointer hover:underline">{w}</span>
+                  )).reduce((prev, curr) => <>{prev} <span className="text-purple-400">→</span> {curr}</>)}
+                  <span className="text-xs text-gray-400 ml-2">({new Date(streak.completed_at).toLocaleDateString()})</span>
+                </li>
+              )}
+              emptyText="No past streaks recorded."
+            />
+          </div>
+
+          <button onClick={() => setShowProfileModal(false)} className="mt-6 w-full bg-purple-600 text-white py-2.5 px-4 rounded-lg hover:bg-purple-700 transition-colors font-semibold shadow hover:shadow-md">Close</button>
         </div>
       </div>
     );
   };
+
 
   const renderAuthModal = () => {
     if (!showAuthModal) return null;
@@ -1205,7 +1244,8 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-gray-100 flex flex-col items-center p-4 font-sans">
-      <div className="w-full max-w-2xl bg-white/10 backdrop-blur-md shadow-2xl rounded-xl p-6 md:p-8">
+      {/* Increased max-width for the main content container */}
+      <div className="w-full max-w-3xl bg-white/10 backdrop-blur-md shadow-2xl rounded-xl p-6 md:p-8">
         <header className="flex flex-col sm:flex-row justify-between items-center mb-6 pb-4 border-b border-white/20">
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 mb-2 sm:mb-0">
             Tiny Tutor AI

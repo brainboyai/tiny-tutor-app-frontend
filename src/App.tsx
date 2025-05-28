@@ -113,7 +113,7 @@ export default function App() {
       contentScrollRef.current.scrollTop = 0;
     }
     if (selectedMode !== 'quiz' || (wordContent && !wordContent.quiz)) {
-        resetQuizState();
+      resetQuizState();
     }
   }, [selectedMode, displayWord, wordContent]);
 
@@ -172,18 +172,18 @@ export default function App() {
       if (mode === 'quiz' && data.content) {
         resetQuizState();
         if (Array.isArray(data.content) && data.content.every(q => q.question && q.options && q.correct_answer_key)) {
-            // Correct format
+          // Correct format
         } else {
-            console.warn("Received quiz content in unexpected format.");
-            setError("Quiz data is not in the expected format.");
-            setWordContent(prev => ({ ...prev, quiz: undefined }));
+          console.warn("Received quiz content in unexpected format.");
+          setError("Quiz data is not in the expected format.");
+          setWordContent(prev => ({ ...prev, quiz: undefined }));
         }
       }
       if (userProfile) {
         fetchUserProfile(localStorage.getItem('authToken'));
       }
     } else if (data && data.message && mode === 'image') {
-        setWordContent(prev => ({ ...prev, image: data.message }));
+      setWordContent(prev => ({ ...prev, image: data.message }));
     } else {
       setWordContent(prev => ({ ...prev, [mode]: undefined }));
     }
@@ -299,11 +299,11 @@ export default function App() {
     });
 
     if (userProfile && displayWord) {
-        fetchApi(`/words/${getSanitizedWord(displayWord)}/quiz/attempt`, 'POST', {
-            question_index: questionIndex,
-            selected_option_key: selectedOptionKey,
-            is_correct: isCorrect
-        });
+      fetchApi(`/words/${getSanitizedWord(displayWord)}/quiz/attempt`, 'POST', {
+        question_index: questionIndex,
+        selected_option_key: selectedOptionKey,
+        is_correct: isCorrect
+      });
     }
 
     if (questionIndex < wordContent.quiz.length - 1) {
@@ -316,13 +316,13 @@ export default function App() {
         const finalAnswers = [...quizAnswers];
         const lastAnswerIndex = finalAnswers.findIndex(ans => ans.questionIndex === questionIndex);
         if (lastAnswerIndex > -1) {
-            finalAnswers[lastAnswerIndex] = newAnswer;
+          finalAnswers[lastAnswerIndex] = newAnswer;
         } else {
-            finalAnswers.push(newAnswer);
+          finalAnswers.push(newAnswer);
         }
 
         finalAnswers.forEach((ans: QuizAnswer) => { // Explicitly type ans
-            if (ans.isCorrect) finalScore++;
+          if (ans.isCorrect) finalScore++;
         });
         setQuizScore(finalScore);
         setShowQuizResult(true);
@@ -389,10 +389,10 @@ export default function App() {
         if (isLoading && !imageContent) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Generating image... This may take a moment.</span></div>;
         if (error && !imageContent) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error generating image: {error}</div>;
         if (typeof imageContent === 'string' && imageContent.startsWith('data:image')) {
-            return <img src={imageContent} alt={`Generated image for ${displayWord}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'}/>;
+          return <img src={imageContent} alt={`Generated image for ${displayWord}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'} />;
         }
         if (typeof imageContent === 'string' && imageContent.includes("generating")) {
-            return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{imageContent}</div>;
+          return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{imageContent}</div>;
         }
         return <div className="text-slate-500">No image available or still loading. Try refreshing if it takes too long.</div>;
       case 'fact':
@@ -546,15 +546,15 @@ export default function App() {
                     <modeInfo.icon size={12} className="mr-1 sm:mr-1.5" /> {modeInfo.label}
                   </button>
                 ))}
-                 {displayWord && userProfile && (
-                    <button
+                {displayWord && userProfile && (
+                  <button
                     onClick={() => handleToggleFavorite(getDisplayWord())}
                     title={isFavoriteCurrent ? "Remove from favorites" : "Add to favorites"}
                     className="p-1.5 sm:p-2 rounded-full hover:bg-white/20 transition-colors disabled:opacity-50 ml-1 sm:ml-2"
                     disabled={isLoading}
-                    >
+                  >
                     <Heart size={18} className={`${isFavoriteCurrent ? 'text-red-500 fill-current' : 'text-slate-400 hover:text-red-400'}`} />
-                    </button>
+                  </button>
                 )}
               </div>
             </div>

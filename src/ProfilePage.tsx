@@ -15,7 +15,9 @@ const formatDate = (dateString?: string) => {
   if (!dateString) return 'N/A';
   try {
     const date = new Date(dateString);
+    // Check if the date is valid after parsing
     if (isNaN(date.getTime())) {
+        // console.warn("formatDate received an invalid date string:", dateString);
         return 'Invalid Date';
     }
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -42,6 +44,15 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, 
     setIsLoadingUsernameUpdate(true); setEditError(null);
     console.log("Attempting to update username to:", newUsername.trim()); // Placeholder
     // TODO: Implement actual API call to update username
+    // Example:
+    // const token = localStorage.getItem('authToken');
+    // const response = await fetchApi('/users/profile/username', 'PUT', { username: newUsername.trim() }, token); // Assuming fetchApi is available or passed
+    // if (response && response.success) {
+    //   fetchUserProfile();
+    //   setIsEditingUsername(false);
+    // } else {
+    //   setEditError(response?.error || "Failed to update username.");
+    // }
     setTimeout(() => { fetchUserProfile(); setIsEditingUsername(false); setIsLoadingUsernameUpdate(false); }, 1000);
   };
 
@@ -179,7 +190,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, 
           <h3 className="text-xl font-semibold text-slate-700 mb-4 flex items-center"><CalendarDays size={22} className="mr-2 text-green-500" /> Streak History</h3>
           {streakHistory.length > 0 ? (
              <ul className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-             {streakHistory.map((streak: StreakEntry) => ( // Explicitly type streak here
+             {streakHistory.map((streak: StreakEntry) => ( 
                <li key={streak.id} className="p-3 bg-slate-50 rounded-md text-sm">
                  <p><span className="font-semibold">Date:</span> {formatDate(streak.completed_at)}</p>
                  <p><span className="font-semibold">Score:</span> {streak.score}</p>

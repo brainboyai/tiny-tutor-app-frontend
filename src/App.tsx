@@ -5,15 +5,15 @@ import './App.css';
 // Import shared types from types.ts
 import {
   UserProfile,
-
-  // StreakEntry is part of UserProfile, so it's covered
+  // WordHistoryEntry, // WordHistoryEntry is part of UserProfile
+  // StreakEntry, // StreakEntry is part of UserProfile
   LiveStreak,
   QuizAnswer,
   WordContent,
   QuizQuestion,
   AppView,
   ContentMode
-} from './types';
+} from './types'; // Assuming types.ts is in the src directory
 
 // --- Constants ---
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
@@ -305,7 +305,7 @@ export default function App() {
                 
                 allAnswers.forEach(ans => finalAnswersSet.set(ans.questionIndex, ans));
                 finalAnswersSet.forEach(ans => { if (ans.isCorrect) score++; });
-                setQuizScore(score); // This might need to be inside the setQuizAnswers callback or use the new score directly
+                setQuizScore(score);
                 return allAnswers;
             });
             setShowQuizResult(true);

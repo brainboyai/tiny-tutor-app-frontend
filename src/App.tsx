@@ -19,8 +19,8 @@ interface UserProfile {
 }
 
 interface WordHistoryEntry {
-  id: string;
-  word: string;
+  id: string; // sanitized word
+  word: string; // original word
   first_explored_at: string;
   last_explored_at: string;
   is_favorite: boolean;
@@ -76,6 +76,7 @@ const sanitizeWordForId = (word: string): string => {
   return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
 
+// Parser v9: More stateful to handle multi-line options and better distinguish question text.
 const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   if (!quizStr || typeof quizStr !== 'string') {
     console.error("Invalid quiz string for parsing (null or not string):", quizStr);
@@ -83,7 +84,6 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   }
 
   const allRawLines = quizStr.trim().split('\n');
-  // Filter out empty lines AFTER trimming, but keep original relative spacing for multi-line options
   const lines = allRawLines.map(line => line.trim()).filter(line => line.length > 0);
   
   if (lines.length < 3) { 
@@ -96,9 +96,7 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   let correctOptionKey = '';
   
   const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i;
-  // Option regex: A-D, optional)., then captures rest of line.
-  // It should be fairly specific to avoid matching "A." or "B." inside option text.
-  const optionRegex = /^\s*([A-D])\s*[.)]\s*(.*)|^\s*([A-D])\s+(.*)/i; 
+  const optionRegex = /^\s*([A-D])\s*[.)]\s*(.*)|^\s*([A-D])\s+(.*)/i; // Handles "A) text" or "A text"
   const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.,]?\s*.*)?$/i;
 
   let lineIndex = 0;
@@ -112,7 +110,6 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
       lineIndex++;
       continue;
     }
-    // If the line starts like an option or is the correct answer line, stop collecting question text
     if (line.match(optionRegex) || line.match(correctAnswerRegex)) {
       break; 
     }
@@ -141,16 +138,18 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     }
 
     const optionMatch = line.match(optionRegex);
-    const keyFromResult = optionMatch ? (optionMatch[1] || optionMatch[3]) : null; // Group 1 for "A)" or Group 3 for "A "
-    const textFromResult = optionMatch ? (optionMatch[2] || optionMatch[4]) : null; // Group 2 for "A)" or Group 4 for "A "
+    // Group 1 for "A)" or Group 3 for "A " (key)
+    // Group 2 for "A)" or Group 4 for "A " (text)
+    const keyFromResult = optionMatch ? (optionMatch[1] || optionMatch[3]) : null; 
+    const textFromResult = optionMatch ? (optionMatch[2] || optionMatch[4]) : null;
 
-    if (keyFromResult && textFromResult !== null && options.length < 4) { // Start of a new option
+    if (keyFromResult && textFromResult !== null && options.length < 4) { 
       if (currentOptionBuffer) {
         options.push({ key: currentOptionBuffer.key, text: currentOptionBuffer.textLines.join(' ').trim() });
       }
       currentOptionBuffer = { key: keyFromResult.toUpperCase(), textLines: [textFromResult.trim()] };
-    } else if (currentOptionBuffer) { // Continuation of current option's text
-      currentOptionBuffer.textLines.push(line); // Add the whole line as it might be part of multi-line option
+    } else if (currentOptionBuffer) { 
+      currentOptionBuffer.textLines.push(line); 
     }
   }
 
@@ -297,7 +296,7 @@ function App() {
   };
 
   const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false) => {
-    const currentLiveStreak = liveStreak; // Capture current liveStreak
+    const currentLiveStreak = liveStreak; // Capture current liveStreak to avoid issues with state updates
     if (currentLiveStreak && currentLiveStreak.score >= 2 && authToken) {
       console.log(`Attempting to save streak (Score: ${currentLiveStreak.score}, Words: ${currentLiveStreak.words.join(', ')}) to: ${API_BASE_URL}/save_streak`);
       try {
@@ -314,8 +313,9 @@ function App() {
             console.error(`Failed to save streak. Status: ${response.status}, Body: ${errorText}`);
         } else {
             console.log("Streak saved successfully.");
+            // If profile modal is open, refresh its data
             if (showProfileModal && authToken) { 
-                fetchUserProfile(authToken); // Re-fetch profile if modal is open
+                fetchUserProfile(authToken);
             }
         }
       } catch (err) {
@@ -323,12 +323,11 @@ function App() {
       }
     }
     
-    // Reset liveStreak if forced, or if it was eligible for save (attempted), or if score was too low.
-    if (forceEnd || (currentLiveStreak && currentLiveStreak.score !== 0)) { // Reset if forced, or if any streak existed
+    if (forceEnd || (currentLiveStreak && currentLiveStreak.score !== 0)) { 
       console.log(`Resetting live streak. Force: ${forceEnd}, Previous Score: ${currentLiveStreak?.score}`);
       setLiveStreak(null);
     }
-  }, [liveStreak, authToken, showProfileModal]); // showProfileModal is a dependency for conditional refetch
+  }, [liveStreak, authToken, showProfileModal]); 
   
   const resetQuizStateForWord = (wordId: string) => {
     console.log(`Resetting UI quiz state for word ID: ${wordId}`);
@@ -570,25 +569,39 @@ function App() {
     }
   };
 
-  const handleToggleFavorite = async () => {
-    const wordToFavorite = getDisplayWord();
-    const sanitizedWordToFavorite = getDisplayWordSanitized();
+  const handleToggleFavorite = async (wordToFavorite: string, currentIsFavoriteStatus?: boolean) => {
+    // If currentIsFavoriteStatus is not passed, get it from generatedContent
+    const sanitizedWordId = sanitizeWordForId(wordToFavorite);
+    const actualCurrentFavoriteStatus = currentIsFavoriteStatus !== undefined 
+        ? currentIsFavoriteStatus 
+        : (generatedContent[sanitizedWordId]?.is_favorite || false);
 
-    if (!authToken || !sanitizedWordToFavorite) return;
+    if (!authToken) return;
 
-    const currentIsFavorite = generatedContent[sanitizedWordToFavorite]?.is_favorite || false;
-    
+    // Optimistic UI update
     setGeneratedContent(prev => ({
-      ...prev,
-      [sanitizedWordToFavorite]: {
-        ...(prev[sanitizedWordToFavorite] || { word: wordToFavorite } as WordContent), 
-        is_favorite: !currentIsFavorite,
-      }
+        ...prev,
+        [sanitizedWordId]: {
+            ...(prev[sanitizedWordId] || { word: wordToFavorite } as WordContent),
+            is_favorite: !actualCurrentFavoriteStatus,
+        }
     }));
+    // Also update in currentUser if profile modal might be affected
+    if (currentUser && currentUser.explored_words) {
+        setCurrentUser(prevUser => {
+            if (!prevUser) return null;
+            const updatedExploredWords = prevUser.explored_words?.map(w => 
+                w.word === wordToFavorite ? { ...w, is_favorite: !actualCurrentFavoriteStatus } : w
+            );
+            const updatedFavoriteWords = updatedExploredWords?.filter(w => w.is_favorite);
+            return { ...prevUser, explored_words: updatedExploredWords, favorite_words: updatedFavoriteWords };
+        });
+    }
 
-    console.log(`Toggling favorite for "${wordToFavorite}" to ${!currentIsFavorite} at: ${API_BASE_URL}/toggle_favorite`);
+
+    console.log(`Toggling favorite for "${wordToFavorite}" to ${!actualCurrentFavoriteStatus} at: ${API_BASE_URL}/toggle_favorite`);
     try {
-      await fetch(`${API_BASE_URL}/toggle_favorite`, {
+      const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -596,19 +609,38 @@ function App() {
         },
         body: JSON.stringify({ word: wordToFavorite.trim() }),
       });
-      if (showProfileModal && authToken) fetchUserProfile(authToken);
+      if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to toggle favorite on backend: ${errorText}`);
+      }
+      // If profile modal is open, refresh it to ensure consistency with backend
+      if (showProfileModal && authToken) {
+          fetchUserProfile(authToken);
+      }
     } catch (err) {
       console.error("Error toggling favorite:", err);
+      // Revert optimistic UI update on error
       setGeneratedContent(prev => ({
         ...prev,
-        [sanitizedWordToFavorite]: {
-          ...(prev[sanitizedWordToFavorite] || { word: wordToFavorite } as WordContent),
-          is_favorite: currentIsFavorite,
+        [sanitizedWordId]: {
+          ...(prev[sanitizedWordId] || { word: wordToFavorite } as WordContent),
+          is_favorite: actualCurrentFavoriteStatus, // Revert to original status
         }
       }));
-      setError("Failed to update favorite status.");
+       if (currentUser && currentUser.explored_words) {
+        setCurrentUser(prevUser => {
+            if (!prevUser) return null;
+            const revertedExploredWords = prevUser.explored_words?.map(w => 
+                w.word === wordToFavorite ? { ...w, is_favorite: actualCurrentFavoriteStatus } : w
+            );
+            const revertedFavoriteWords = revertedExploredWords?.filter(w => w.is_favorite);
+            return { ...prevUser, explored_words: revertedExploredWords, favorite_words: revertedFavoriteWords };
+        });
+    }
+      setError("Failed to update favorite status. Please try again.");
     }
   };
+
 
   const handleSubTopicClick = (subTopic: string) => {
     setIsReviewingStreakWord(false); 
@@ -1065,11 +1097,18 @@ function App() {
               icon={List}
               items={currentUser.explored_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())}
               renderItem={(wh: WordHistoryEntry) => (
-                <li key={wh.id}
-                  onClick={() => handleWordSelectionFromProfile(wh.word)}
+                <li key={wh.id} // Use sanitized word id as key
                   className="p-2.5 bg-white hover:bg-purple-50 rounded-md cursor-pointer flex justify-between items-center text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
-                  <span>{wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span></span>
-                  {wh.is_favorite && <Heart size={16} className="text-red-400 fill-current" />}
+                  <span onClick={() => handleWordSelectionFromProfile(wh.word)} className="flex-grow hover:underline">
+                    {wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span>
+                  </span>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleToggleFavorite(wh.word, wh.is_favorite); }} 
+                    title={wh.is_favorite ? "Remove from favorites" : "Add to favorites"}
+                    className="p-1.5 rounded-full hover:bg-red-100"
+                  >
+                    <Heart size={16} className={`${wh.is_favorite ? 'text-red-500 fill-current' : 'text-gray-400 hover:text-red-400'}`} />
+                  </button>
                 </li>
               )}
             />
@@ -1078,10 +1117,18 @@ function App() {
               icon={Star}
               items={currentUser.favorite_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())}
               renderItem={(wh: WordHistoryEntry) => (
-                <li key={wh.id}
-                  onClick={() => handleWordSelectionFromProfile(wh.word)}
-                  className="p-2.5 bg-white hover:bg-purple-50 rounded-md cursor-pointer text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
-                  {wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span>
+                <li key={wh.id} // Use sanitized word id as key
+                  className="p-2.5 bg-white hover:bg-purple-50 rounded-md cursor-pointer flex justify-between items-center text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
+                  <span onClick={() => handleWordSelectionFromProfile(wh.word)} className="flex-grow hover:underline">
+                    {wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span>
+                  </span>
+                   <button 
+                    onClick={(e) => { e.stopPropagation(); handleToggleFavorite(wh.word, wh.is_favorite); }} 
+                    title={wh.is_favorite ? "Remove from favorites" : "Add to favorites"}
+                    className="p-1.5 rounded-full hover:bg-red-100"
+                  >
+                    <Heart size={16} className={`${wh.is_favorite ? 'text-red-500 fill-current' : 'text-gray-400 hover:text-red-400'}`} />
+                  </button>
                 </li>
               )}
               emptyText="No favorite words yet."
@@ -1355,7 +1402,7 @@ function App() {
               </div>
               {displayWord && (
                 <button
-                  onClick={handleToggleFavorite}
+                  onClick={() => handleToggleFavorite(getDisplayWord())} // Pass word and derive status inside
                   title={isFavoriteCurrent ? "Remove from favorites" : "Add to favorites"}
                   className="p-2 rounded-full hover:bg-white/20 transition-colors disabled:opacity-50"
                   disabled={isLoading}

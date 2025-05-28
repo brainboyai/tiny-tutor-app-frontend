@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle, TrendingUp, List, Star, Mail, ShieldCheck, CalendarDays } from 'lucide-react'; // Added more icons
+import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle, Award, TrendingUp, List, Star, Mail, ShieldCheck, CalendarDays } from 'lucide-react';
 import './App.css';
 
 // --- Constants ---
@@ -15,7 +15,7 @@ interface UserProfile {
   explored_words?: WordHistoryEntry[];
   favorite_words?: WordHistoryEntry[];
   streak_history?: StreakEntry[];
-  created_at?: string; // Assuming backend might provide this
+  created_at?: string; 
 }
 
 interface WordHistoryEntry {
@@ -88,28 +88,25 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
       return null;
   }
 
-  let questionText = '';
+  let questionTextLines: string[] = [];
   const options: { key: string; text: string }[] = [];
   let correctOptionKey = '';
-  let questionTextFound = false;
   const parsedOptionKeys = new Set<string>(); 
 
   const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i;
   const optionRegex = /^\s*([A-D])\s*[.)]?\s*(.*)/i;
   const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.,]?\s*.*)?$/i;
 
+  let processedHeader = false;
 
-  let currentLineIndex = 0;
+  for (const line of lines) {
+    // Try to identify and skip a standalone header line first
+    if (!processedHeader && line.match(questionHeaderRegex) && line.replace(questionHeaderRegex, '').trim().length === 0) {
+        console.log("Skipping standalone header:", line);
+        processedHeader = true; // Mark that we've processed (and skipped) a header
+        continue; // Move to the next line
+    }
 
-  while (currentLineIndex < lines.length &&
-         lines[currentLineIndex].match(questionHeaderRegex) &&
-         lines[currentLineIndex].replace(questionHeaderRegex, '').trim().length === 0) {
-    console.log("Skipping standalone header:", lines[currentLineIndex]);
-    currentLineIndex++;
-  }
-
-  for (let i = currentLineIndex; i < lines.length; i++) {
-    const line = lines[i];
     const optionMatch = line.match(optionRegex);
     const correctMatch = line.match(correctAnswerRegex);
 
@@ -117,26 +114,26 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
       const key = optionMatch[1].toUpperCase();
       const text = optionMatch[2].trim();
       if (parsedOptionKeys.has(key)) {
-        console.warn(`Duplicate option key "${key}" detected in quiz string. This WILL cause parsing issues if correct key is not unique. Original:`, quizStr);
+        console.warn(`Duplicate option key "${key}" detected in quiz string. Original:`, quizStr);
       }
       parsedOptionKeys.add(key);
       options.push({ key, text });
     } else if (correctMatch && !correctOptionKey) {
       correctOptionKey = correctMatch[1].toUpperCase();
-    } else if (!questionTextFound &&
-               !line.match(optionRegex) && 
-               !line.match(correctAnswerRegex) 
-              ) {
-      const potentialQuestion = line.replace(questionHeaderRegex, '').trim();
-      if (potentialQuestion.length > 0) {
-        questionText = potentialQuestion;
-        questionTextFound = true;
+    } else {
+      // If it's not an option, not a correct answer line, and not a header we already skipped,
+      // it's part of the question text.
+      const potentialQuestionPart = line.replace(questionHeaderRegex, '').trim(); // Remove header if question text is on same line
+      if (potentialQuestionPart.length > 0) {
+          questionTextLines.push(potentialQuestionPart);
       }
     }
   }
+  
+  const questionText = questionTextLines.join(' ').trim();
 
   if (!questionText || options.length !== 4 || !correctOptionKey) {
-    console.warn("Could not parse quiz string fully (v7):", {
+    console.warn("Could not parse quiz string fully (v8):", {
       questionText,
       optionsCount: options.length,
       optionsCollected: options,
@@ -148,17 +145,16 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
 
   const uniqueParsedOptionKeys = Array.from(new Set(options.map(opt => opt.key)));
   if (!uniqueParsedOptionKeys.includes(correctOptionKey)) {
-    console.warn(`Correct option key "${correctOptionKey}" not found among unique parsed option keys (v7). Unique Parsed Keys:`, uniqueParsedOptionKeys, "All Parsed Options:", options.map(o=>o.key), "Question:", questionText, "Original String:", quizStr);
+    console.warn(`Correct option key "${correctOptionKey}" not found among unique parsed option keys (v8). Unique Parsed Keys:`, uniqueParsedOptionKeys, "All Parsed Options:", options.map(o=>o.key), "Question:", questionText, "Original String:", quizStr);
     return null;
   }
   const correctOptionObject = options.find(opt => opt.key === correctOptionKey);
   if (!correctOptionObject || !correctOptionObject.text.trim()) {
-      console.warn(`Correct option object for key "${correctOptionKey}" is invalid or has empty text (v7).`, "Question:", questionText);
+      console.warn(`Correct option object for key "${correctOptionKey}" is invalid or has empty text (v8).`, "Question:", questionText);
       return null;
   }
 
-
-  console.log("Successfully parsed quiz (v7):", { questionText, options, correctOptionKey });
+  console.log("Successfully parsed quiz (v8):", { questionText, options, correctOptionKey });
   return { questionText, options, correctOptionKey, originalString: quizStr };
 };
 
@@ -336,8 +332,10 @@ function App() {
     setError(null);
     setAuthError(null);
 
-    if (targetMode === 'quiz' && (isRefreshClick || activeContentMode === 'quiz')) {
-        console.log(`Regenerating quiz for "${sanitizedWordToFetchId}". Clearing existing quiz questions from UI state immediately.`);
+    // If fetching/regenerating quiz, clear old quiz questions from generatedContent first
+    // to ensure loading state shows correctly and stale data isn't flashed.
+    if (targetMode === 'quiz') {
+        console.log(`Preparing to fetch quiz for "${sanitizedWordToFetchId}". Clearing existing quiz data from UI state.`);
         setGeneratedContent(prev => ({
             ...prev,
             [sanitizedWordToFetchId]: {
@@ -409,10 +407,8 @@ function App() {
 
       setActiveContentMode(targetMode);
       
-      if (targetMode === 'quiz') {
-          resetQuizStateForWord(sanitizedFetchedWordId); 
-      }
-
+      // If quiz was fetched, UI states are already reset by the pre-emptive clear or will be by useEffect.
+      // No need for another resetQuizStateForWord(sanitizedFetchedWordId) here if already done.
 
       if (!isSubTopicClick && !isProfileWordClick) { 
         setInputValue(''); 
@@ -526,9 +522,8 @@ function App() {
                 };
             });
 
-            if (mode === 'quiz') {
-                resetQuizStateForWord(sanitizedWordInFocus); 
-            }
+            // No need to call resetQuizStateForWord here if already done pre-fetch for quiz mode
+            // and useEffect handles initialization based on new generatedContent.
 
         } catch (err) {
             console.error(`Error fetching ${mode} for ${wordInFocus}:`, err); 
@@ -537,6 +532,7 @@ function App() {
             setIsLoading(false);
         }
     } else if (mode === 'quiz') {
+        // If switching to quiz mode and data is already present, ensure UI state is fresh.
         resetQuizStateForWord(sanitizedWordInFocus);
     }
   };
@@ -712,11 +708,15 @@ function App() {
       if (!response.ok) {
         const responseText = await response.text(); 
         console.error("Backend save_quiz_attempt failed. Status:", response.status, "Response Text:", responseText);
-        if (response.status === 0 || response.type === 'opaque' || responseText.includes("CORS")) {
-             setError("Failed to save answer: Network or CORS error. Please check server logs and CORS setup for /save_quiz_attempt.");
+        if (response.status === 0 || response.type === 'opaque' || responseText.toLowerCase().includes("cors")) { // Made CORS check case-insensitive
+             setError(`Failed to save answer: Network or CORS error with /save_quiz_attempt. Status: ${response.status}. Please check server configuration.`);
         } else {
-            const errorData = JSON.parse(responseText || "{}"); 
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            try {
+                const errorData = JSON.parse(responseText);
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            } catch (parseError) {
+                throw new Error(`HTTP error! status: ${response.status}. Response: ${responseText.substring(0,100)}`);
+            }
         }
         return; 
       }
@@ -822,10 +822,14 @@ function App() {
         return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading {activeContentMode} for "{displayWordStr}"...</span></div>;
     }
 
-    const generalErrorToDisplay = error && activeContentMode !== 'explain' && activeContentMode !== 'quiz';
-    if (generalErrorToDisplay && !currentDisplayWordData?.[activeContentMode]) {
-        return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+    // Display general error if it exists and it's not a quiz-specific loading/parsing error handled below
+    if (error && !(activeContentMode === 'quiz' && (!displayData?.quiz || displayData.quiz.length === 0))) {
+        // Avoid showing general error if quiz is just loading or failed to parse (handled in quiz case)
+        if (activeContentMode !== 'explain' || (activeContentMode === 'explain' && !displayData?.explain)) {
+             return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+        }
     }
+
 
     const displayData = currentDisplayWordData;
     if (!displayData && displayWordStr) return <div className="text-gray-500 p-4">Select a mode or generate content for "{displayWordStr}".</div>;
@@ -834,9 +838,8 @@ function App() {
 
     switch (activeContentMode) {
       case 'explain':
-        // ... (explain, fact, image, deep_dive cases remain largely the same)
         if (isLoading && !displayData?.explain && displayWordStr) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading explanation...</span></div>;
-        if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+        if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>; // Error specific to explain
         return (
           <div className="prose max-w-none p-1 text-gray-800" onClick={(e) => {
             const target = e.target as HTMLElement;
@@ -869,17 +872,19 @@ function App() {
         if (error && !displayData?.deep_dive) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
         return <div className="prose max-w-none p-1 text-gray-800">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
       case 'quiz':
-        const quizSpecificError = error && !displayData?.quiz; 
-        if (quizSpecificError) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+        // Quiz-specific error (e.g., from failed save attempt)
+        if (error && (!displayData?.quiz || displayData.quiz.length === 0)) {
+            return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
+        }
 
         const quizSet = displayData?.quiz; 
         const quizProgress = displayData?.quiz_progress || []; 
 
         if (!quizSet || quizSet.length === 0) {
-          if (!isQuizContentLoading) {
+          if (!isQuizContentLoading) { // If not loading and no quiz, show message
             return <div className="p-4 text-gray-500">No quiz available for "{displayWordStr}" yet. Try generating it or refreshing.</div>;
           }
-          return null; 
+          return null; // Otherwise, loading indicator is already shown
         }
         
         console.log(`Render Quiz: currentQuizQuestionIndex=${currentQuizQuestionIndex}, quizSet.length=${quizSet.length}, quizProgress.length=${quizProgress.length}`);
@@ -895,7 +900,7 @@ function App() {
                 <div className="p-4 space-y-4 text-gray-800">
                     <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
                     <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
-                    <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar"> {/* Increased max-h slightly */}
+                    <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar"> 
                         {quizSet.map((quizString, index) => {
                             const parsedQuestion = parseQuizString(quizString);
                             if (!parsedQuestion) return <div key={index} className="text-red-500 text-sm p-2 bg-red-50 rounded-md">Error displaying summary for question {index + 1}. <details><summary className="text-xs cursor-pointer">Details</summary><pre className="text-xs whitespace-pre-wrap break-all mt-1 p-1 bg-red-100">{quizString}</pre></details></div>;
@@ -1244,7 +1249,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-gray-100 flex flex-col items-center p-4 font-sans">
-      {/* Increased max-width for the main content container */}
       <div className="w-full max-w-3xl bg-white/10 backdrop-blur-md shadow-2xl rounded-xl p-6 md:p-8">
         <header className="flex flex-col sm:flex-row justify-between items-center mb-6 pb-4 border-b border-white/20">
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 mb-2 sm:mb-0">

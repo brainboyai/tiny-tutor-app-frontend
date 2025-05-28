@@ -1,71 +1,69 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Heart, BookOpen, User as UserIconLucide, LogOut, LogIn, HelpCircle, Loader2, Image as ImageIcon, FileText, Brain, PlusCircle, RefreshCw, TrendingUp } from 'lucide-react';
-import ProfilePage from './ProfilePage'; // Or './pages/ProfilePage' if you moved it
+import ProfilePage from './ProfilePage';
 import './App.css';
 
 // --- Constants ---
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 const AUTO_ADVANCE_DELAY = 1500;
 
-// --- Types (from your stable App.tsx and aligned with ProfilePage) ---
+// --- Types ---
 interface UserProfile {
   username: string;
   email?: string;
   tier?: string;
   total_words_explored?: number;
   explored_words?: WordHistoryEntry[];
-  favorite_words?: WordHistoryEntry[]; // Derived by backend
-  streak_history?: StreakEntry[];     // From backend's /profile
+  favorite_words?: WordHistoryEntry[];
+  streak_history?: StreakEntry[];
   created_at?: string;
 }
 
-interface WordHistoryEntry { // From your stable App.tsx
-  id: string; // sanitized word
-  word: string; // original word
+interface WordHistoryEntry {
+  id: string;
+  word: string;
   first_explored_at: string;
   last_explored_at: string;
   is_favorite: boolean;
   modes_generated?: string[];
   quiz_progress?: QuizAttempt[];
-  content?: Partial<WordContent>; // For frontend caching
+  content?: Partial<WordContent>;
 }
 
-interface StreakEntry { // From your stable App.tsx, ensure ProfilePage.tsx aligns
+interface StreakEntry { // Aligned with backend and previous stable App.tsx
   id: string;
-  words: string[]; // Words in this specific streak segment
-  score: number;   // Score for this specific streak segment
-  completed_at: string; // Timestamp when this streak segment was completed/saved
-  // If ProfilePage expects 'words_explored_count', we need to reconcile or adapt.
-  // For now, using the structure from your stable App.tsx.
+  words: string[];
+  score: number;
+  completed_at: string;
 }
 
-interface LiveStreak { // From your stable App.tsx
+interface LiveStreak {
   score: number;
   words: string[];
 }
 
-interface QuizAnswer { // For frontend state tracking of current quiz
+interface QuizAnswer {
   questionIndex: number;
   selectedOptionKey: string;
   isCorrect: boolean;
 }
 
-interface QuizAttempt { // For storing user's attempt history (as per backend)
+interface QuizAttempt {
   question_index: number;
   selected_option_key: string;
   is_correct: boolean;
   timestamp: string;
 }
 
-interface WordContent { // Content for a specific word/mode
+interface WordContent {
   explain?: string;
   image?: string;
   fact?: string;
-  quiz?: QuizQuestion[]; // Array of questions
+  quiz?: QuizQuestion[];
   deep_dive?: string;
 }
 
-interface QuizQuestion { // Structure of a single quiz question
+interface QuizQuestion {
   question: string;
   options: { [key: string]: string };
   correct_answer_key: string;
@@ -81,23 +79,16 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [displayWord, setDisplayWord] = useState<string | null>(null);
   const [selectedMode, setSelectedMode] = useState<ContentMode>('explain');
-  
   const [wordContent, setWordContent] = useState<WordContent | null>(null);
-  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-
-  // Streak State
   const [liveStreak, setLiveStreak] = useState<LiveStreak | null>(null);
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState<boolean>(false);
   const [wordForReview, setWordForReview] = useState<string>('');
-
-  // Quiz State
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
   const [showQuizResult, setShowQuizResult] = useState(false);
@@ -126,13 +117,63 @@ export default function App() {
     return () => { if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current); };
   }, []);
 
-  // --- Streak Logic ---
-  const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false) => {
+  const resetQuizState = useCallback((): void => {
+    setCurrentQuizQuestionIndex(0); setQuizAnswers([]);
+    setShowQuizResult(false); setQuizScore(0);
+    if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+  }, []);
+
+  type FetchUserProfileType = (token: string | null) => Promise<void>;
+  type EndCurrentStreakIfNeededType = (forceEnd?: boolean) => Promise<void>;
+  type HandleLogoutType = () => void;
+
+  const fetchApi = useCallback(async (
+    endpoint: string, 
+    method: string = 'GET', 
+    body: any = null, 
+    token?: string | null
+  ): Promise<any | null> => {
+    setIsLoading(true); setError(null); 
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const currentToken = token || localStorage.getItem('authToken');
+    if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
+      if (response.status === 401) {
+        localStorage.removeItem('authToken');
+        setUserProfile(null); setDisplayWord(null); setWordContent(null);
+        setCurrentView('main'); setError(null); 
+        setLiveStreak(null); setIsReviewingStreakWord(false); setWordForReview('');
+        resetQuizState();
+        setAuthError("Session expired. Please log in again.");
+        setCurrentView('auth'); setIsAuthModalOpen(true); 
+        return null;
+      }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error(`API Error (${method} ${endpoint}):`, err);
+      const message = err.message || 'An unexpected error occurred.';
+      if (endpoint.includes('/auth/')) setAuthError(message); else setError(message);
+      return null;
+    } finally { setIsLoading(false); }
+  }, [resetQuizState]); 
+
+  const fetchUserProfile: FetchUserProfileType = useCallback(async (token) => {
+    if (!token) { setUserProfile(null); return; }
+    const data = await fetchApi('/users/profile', 'GET', null, token);
+    if (data && data.user) setUserProfile(data.user);
+  }, [fetchApi]);
+
+  const endCurrentStreakIfNeeded: EndCurrentStreakIfNeededType = useCallback(async (forceEnd = false) => {
     const currentLiveStreak = liveStreak;
     let streakWasSaved = false;
     const token = localStorage.getItem('authToken');
 
-    if (currentLiveStreak && currentLiveStreak.score >= 1 && token) { // Min score 1 to save
+    if (currentLiveStreak && currentLiveStreak.score >= 1 && token) {
       console.log(`Attempting to save streak (Score: ${currentLiveStreak.score}, Words: ${currentLiveStreak.words.join(', ')})`);
       try {
         const response = await fetch(`${API_BASE_URL}/save_streak`, {
@@ -146,20 +187,17 @@ export default function App() {
         } else {
             console.log("Streak saved successfully.");
             streakWasSaved = true;
-            // Re-fetch profile to update streak history if viewing profile or for general update
             if (token) fetchUserProfile(token); 
         }
-      } catch (err) {
-        console.error('Network error or other exception saving streak:', err);
-      }
+      } catch (err) { console.error('Network error or other exception saving streak:', err); }
     }
     if (forceEnd || (currentLiveStreak && (currentLiveStreak.score >= 1 || currentLiveStreak.score < 1))) { 
       console.log(`Resetting live streak. Force: ${forceEnd}, Previous Score: ${currentLiveStreak?.score}, Saved: ${streakWasSaved}`);
       setLiveStreak(null);
     }
-  }, [liveStreak, fetchUserProfile]); // Added fetchUserProfile
+  }, [liveStreak, fetchUserProfile]);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout: HandleLogoutType = useCallback(() => {
     endCurrentStreakIfNeeded(true);
     localStorage.removeItem('authToken');
     setUserProfile(null); setDisplayWord(null); setWordContent(null);
@@ -167,50 +205,12 @@ export default function App() {
     setLiveStreak(null); setIsReviewingStreakWord(false); setWordForReview('');
     resetQuizState();
     console.log("User logged out");
-  }, [endCurrentStreakIfNeeded]);
-
-  const fetchApi = useCallback(async (endpoint: string, method: string = 'GET', body: any = null, token?: string | null) => {
-    setIsLoading(true); setError(null); 
-    const headers: HeadersInit = { 'Content-Type': 'application/json' };
-    const currentToken = token || localStorage.getItem('authToken');
-    if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
-    try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
-      if (response.status === 401) {
-        handleLogout(); 
-        setAuthError("Session expired. Please log in again.");
-        setCurrentView('auth'); setIsAuthModalOpen(true); return null;
-      }
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: `HTTP error! status: ${response.status}` }));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-      return await response.json();
-    } catch (err: any) {
-      console.error(`API Error (${method} ${endpoint}):`, err);
-      const message = err.message || 'An unexpected error occurred.';
-      if (endpoint.includes('/auth/')) setAuthError(message); else setError(message);
-      return null;
-    } finally { setIsLoading(false); }
-  }, [handleLogout]);
-
-  const fetchUserProfile = useCallback(async (token: string | null) => {
-    if (!token) { setUserProfile(null); return; }
-    const data = await fetchApi('/users/profile', 'GET', null, token);
-    if (data && data.user) setUserProfile(data.user);
-  }, [fetchApi]);
+  }, [endCurrentStreakIfNeeded, resetQuizState]);
 
   useEffect(() => {
     const token = localStorage.getItem('authToken');
     if (token) fetchUserProfile(token);
   }, [fetchUserProfile]);
-
-
-  const resetQuizState = () => {
-    setCurrentQuizQuestionIndex(0); setQuizAnswers([]);
-    setShowQuizResult(false); setQuizScore(0);
-    if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-  };
 
   const fetchWordContent = useCallback(async (word: string, mode: ContentMode, forceRefresh: boolean = false) => {
     if (!word) return;
@@ -220,23 +220,21 @@ export default function App() {
         setAuthError("Please log in to explore content."); 
         setCurrentView('auth'); setIsAuthModalOpen(true); return; 
     }
-
     if (!forceRefresh && userProfile) {
         const exploredWordEntry = userProfile.explored_words?.find(ew => ew.id === sanitizedWord);
         const cachedModeContent = exploredWordEntry?.content?.[mode];
-        if (cachedModeContent) {
+        if (cachedModeContent !== undefined) { // Check for undefined explicitly
             setWordContent(prev => ({ ...prev, [mode]: cachedModeContent }));
             if (mode === 'quiz') resetQuizState();
             setUserProfile(prev => prev ? ({ ...prev, explored_words: prev.explored_words?.map(ew => ew.id === sanitizedWord ? {...ew, last_explored_at: new Date().toISOString()} : ew)}) : null);
             return;
         }
     }
-    
     const data = await fetchApi(`/words/${sanitizedWord}/${mode}`);
     if (data && data.content !== undefined) {
       setWordContent(prev => ({ ...prev, [mode]: data.content }));
       if (mode === 'quiz' && data.content) resetQuizState();
-      if (userProfile) fetchUserProfile(token); // Refresh profile to get updated explored_words and content
+      if (userProfile) fetchUserProfile(token);
     } else if (data && data.message && mode === 'image') {
       setWordContent(prev => ({ ...prev, image: data.message }));
     } else if (data && data.error) {
@@ -244,34 +242,30 @@ export default function App() {
     } else {
       setError(`Failed to load content for ${mode}.`); setWordContent(prev => ({ ...prev, [mode]: undefined }));
     }
-  }, [fetchApi, userProfile, fetchUserProfile]);
+  }, [fetchApi, userProfile, fetchUserProfile, resetQuizState]);
 
 
   const handleSearch = useCallback(async (wordToSearch: string, e?: React.FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     const trimmedWord = wordToSearch.trim();
     if (!trimmedWord || isLoading) return;
-
     await endCurrentStreakIfNeeded(true); 
     setIsReviewingStreakWord(false); setWordForReview('');
-
     setDisplayWord(trimmedWord); setSelectedMode('explain');
     setWordContent(null); resetQuizState();
     await fetchWordContent(trimmedWord, 'explain');
     setSearchTerm(''); 
     if (currentView !== 'main') setCurrentView('main');
     setLiveStreak({ score: 1, words: [trimmedWord] });
-  }, [isLoading, fetchWordContent, currentView, endCurrentStreakIfNeeded]);
+  }, [isLoading, fetchWordContent, currentView, endCurrentStreakIfNeeded, resetQuizState]);
 
   const handleSubTopicClick = (subTopic: string) => {
     setIsReviewingStreakWord(false); setWordForReview('');
-    
     if (liveStreak && liveStreak.words[liveStreak.words.length - 1]?.toLowerCase() !== subTopic.toLowerCase()) {
         setLiveStreak(prev => ({ score: (prev?.score || 0) + 1, words: [...(prev?.words || []), subTopic] }));
     } else if (!liveStreak && displayWord) {
         setLiveStreak({score: 1, words: [subTopic]});
     }
-    
     setDisplayWord(subTopic); setSelectedMode('explain');
     setWordContent(null); resetQuizState();
     fetchWordContent(subTopic, 'explain');
@@ -280,20 +274,15 @@ export default function App() {
   const handleStreakWordClick = (word: string) => {
     const currentDisplay = getCurrentDisplayWord();
     if (word.toLowerCase() === currentDisplay.toLowerCase() && isReviewingStreakWord) return;
-    
     setIsReviewingStreakWord(true); setWordForReview(word);
     resetQuizState(); 
-
     const sanitizedReviewWord = getSanitizedWord(word);
     const exploredWordEntry = userProfile?.explored_words?.find(ew => ew.id === sanitizedReviewWord);
     const cachedExplainContent = exploredWordEntry?.content?.explain;
-
     if (cachedExplainContent) {
         setDisplayWord(word); setSelectedMode('explain');
-        setWordContent({ explain: cachedExplainContent });
+        setWordContent({ explain: cachedExplainContent }); // Only set explain, other modes will fetch if needed
     } else {
-        // This will end current live streak and start a new one for the reviewed word.
-        // If you want to preserve the live streak while reviewing, this needs adjustment.
         handleSearch(word); 
     }
   };
@@ -302,7 +291,7 @@ export default function App() {
     if (isLoading) return;
     setSelectedMode(mode);
     const currentWord = getCurrentDisplayWord();
-    if (currentWord && (!wordContent || !wordContent[mode] || (mode === 'quiz' && !wordContent.quiz))) {
+    if (currentWord && (!wordContent || wordContent[mode] === undefined || (mode === 'quiz' && !wordContent.quiz))) {
       fetchWordContent(currentWord, mode);
     } else if (mode === 'quiz' && currentWord) {
         resetQuizState();
@@ -361,11 +350,20 @@ export default function App() {
         } else {
             let score = 0;
             const finalAnswersSet = new Map<number, QuizAnswer>();
-            quizAnswers.forEach(ans => finalAnswersSet.set(ans.questionIndex, ans));
-            finalAnswersSet.set(newAnswer.questionIndex, newAnswer); 
-            finalAnswersSet.forEach(ans => { if (ans.isCorrect) score++; });
-            setQuizScore(score);
-            setShowQuizResult(true);
+            // Use the latest quizAnswers from state directly might be an issue due to closure
+            // Instead, build based on `newAnswer` and the previous state passed to setQuizAnswers
+            setQuizAnswers(currentAnswers => {
+                const allAnswers = [...currentAnswers];
+                const lastAnswerIdx = allAnswers.findIndex(a => a.questionIndex === newAnswer.questionIndex);
+                if(lastAnswerIdx > -1) allAnswers[lastAnswerIdx] = newAnswer;
+                else allAnswers.push(newAnswer);
+
+                allAnswers.forEach(ans => finalAnswersSet.set(ans.questionIndex, ans));
+                finalAnswersSet.forEach(ans => { if (ans.isCorrect) score++; });
+                setQuizScore(score); // This might need to be inside the setQuizAnswers callback or use the new score directly
+                return allAnswers; // Return updated answers
+            });
+            setShowQuizResult(true); // Show result after state is set
         }
     }, AUTO_ADVANCE_DELAY);
   };
@@ -387,12 +385,9 @@ export default function App() {
     const parts = text.split(/<click>(.*?)<\/click>/g);
     return parts.map((part, index) => {
       if (index % 2 === 1) {
-        return (
-          <button key={index} onClick={() => handleSubTopicClick(part)}
+        return ( <button key={index} onClick={() => handleSubTopicClick(part)}
             className="text-purple-500 hover:text-purple-700 underline font-semibold focus:outline-none focus:ring-2 focus:ring-purple-300 rounded mx-0.5 px-0.5">
-            {part}
-          </button>
-        );
+            {part} </button> );
       }
       return <span key={index}>{part}</span>;
     });
@@ -451,36 +446,38 @@ export default function App() {
   
   const renderContent = () => { 
     const currentWordForContent = getCurrentDisplayWord();
-    const currentWordData = wordContent; 
+    // wordContent state now directly holds the content for the current displayWord and selectedMode
+    const contentForSelectedMode = wordContent?.[selectedMode];
 
-    if (isLoading && !currentWordData?.[selectedMode]) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Loading {selectedMode}...</span></div>;
-    if (error && selectedMode !== 'image' && !currentWordData?.[selectedMode]) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error: {error}</div>;
+    if (isLoading && contentForSelectedMode === undefined) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Loading {selectedMode}...</span></div>;
+    if (error && selectedMode !== 'image' && contentForSelectedMode === undefined) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error: {error}</div>;
     if (!currentWordForContent && !error && !authError) return <div className="text-center text-slate-500 py-10 px-4">Enter a word above and press Enter or click Search to begin exploring.</div>;
-
-    const contentDataForMode = currentWordData?.[selectedMode];
 
     switch (selectedMode) {
       case 'explain':
-        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{contentDataForMode ? renderClickableExplanation(contentDataForMode as string) : (isLoading ? 'Loading explanation...' : 'No explanation available.')}
-         {contentDataForMode && !isLoading && <button onClick={handleRefreshContent} className="mt-2 text-xs text-purple-500 hover:text-purple-700 flex items-center"><RefreshCw size={12} className="mr-1"/>Regenerate</button>}
+        const explainText = wordContent?.explain;
+        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{explainText ? renderClickableExplanation(explainText) : (isLoading ? 'Loading explanation...' : 'No explanation available.')}
+         {explainText && !isLoading && <button onClick={handleRefreshContent} className="mt-2 text-xs text-purple-500 hover:text-purple-700 flex items-center"><RefreshCw size={12} className="mr-1"/>Regenerate</button>}
         </div>;
       case 'image':
-        if (isLoading && !contentDataForMode) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Generating image...</span></div>;
-        if (error && !contentDataForMode) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error generating image: {error}</div>;
-        if (typeof contentDataForMode === 'string' && contentDataForMode.startsWith('data:image')) {
-            return <img src={contentDataForMode} alt={`Generated for ${currentWordForContent}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'}/>;
+        const imageText = wordContent?.image;
+        if (isLoading && !imageText) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Generating image...</span></div>;
+        if (error && !imageText) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error generating image: {error}</div>;
+        if (typeof imageText === 'string' && imageText.startsWith('data:image')) {
+            return <img src={imageText} alt={`Generated for ${currentWordForContent}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'}/>;
         }
-        if (typeof contentDataForMode === 'string' && contentDataForMode.includes("generating")) {
-            return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{contentDataForMode}</div>;
+        if (typeof imageText === 'string' && imageText.includes("generating")) {
+            return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{imageText}</div>;
         }
         return <div className="text-slate-500">No image available or still loading.</div>;
       case 'fact':
-        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{contentDataForMode || (isLoading ? 'Loading fact...' : 'No fact available.')}
-         {contentDataForMode && !isLoading && <button onClick={handleRefreshContent} className="mt-2 text-xs text-purple-500 hover:text-purple-700 flex items-center"><RefreshCw size={12} className="mr-1"/>Regenerate</button>}
+        const factText = wordContent?.fact;
+        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{factText || (isLoading ? 'Loading fact...' : 'No fact available.')}
+         {factText && !isLoading && <button onClick={handleRefreshContent} className="mt-2 text-xs text-purple-500 hover:text-purple-700 flex items-center"><RefreshCw size={12} className="mr-1"/>Regenerate</button>}
         </div>;
       case 'quiz':
         if (isLoading && !wordContent?.quiz) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Loading quiz...</span></div>;
-        const quizQuestions = wordContent?.quiz as QuizQuestion[] | undefined;
+        const quizQuestions = wordContent?.quiz; // Already typed as QuizQuestion[] | undefined
         if (!quizQuestions || quizQuestions.length === 0) return <div className="text-slate-500">No quiz available for this word. <button onClick={handleRetakeQuiz} className="ml-2 text-xs text-purple-500 hover:underline">Try generating new questions?</button></div>;
         if (showQuizResult) { 
             return (
@@ -541,8 +538,9 @@ export default function App() {
           </div>
         );
       case 'deep_dive':
-        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{contentDataForMode || (isLoading ? 'Loading deep dive...' : 'No deep dive available.')}
-         {contentDataForMode && !isLoading && <button onClick={handleRefreshContent} className="mt-2 text-xs text-purple-500 hover:text-purple-700 flex items-center"><RefreshCw size={12} className="mr-1"/>Regenerate</button>}
+        const deepDiveText = wordContent?.deep_dive;
+        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{deepDiveText || (isLoading ? 'Loading deep dive...' : 'No deep dive available.')}
+         {deepDiveText && !isLoading && <button onClick={handleRefreshContent} className="mt-2 text-xs text-purple-500 hover:text-purple-700 flex items-center"><RefreshCw size={12} className="mr-1"/>Regenerate</button>}
         </div>;
       default:
         return <div className="text-slate-500">Select a mode to see content.</div>;

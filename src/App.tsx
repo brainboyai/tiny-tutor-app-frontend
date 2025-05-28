@@ -1,23 +1,22 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle, TrendingUp, List, Star, Mail, ShieldCheck, CalendarDays, ArrowLeft } from 'lucide-react';
-import ProfilePage from './ProfilePage'; // Import the new ProfilePage component
+import { Heart, BookOpen, User as UserIconLucide, LogOut, LogIn, /*RefreshCw,*/ HelpCircle, Loader2, /*MessageSquare,*/ Image as ImageIcon, FileText, Brain, PlusCircle /*, TrendingUp, List, Star, Mail, ShieldCheck, CalendarDays, ArrowLeft*/ } from 'lucide-react';
+import ProfilePage from './ProfilePage'; // Assuming ProfilePage.tsx is in the same directory or ./pages/ProfilePage.tsx
 import './App.css';
 
-// --- Constants ---\n
+// --- Constants ---
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 const AUTO_ADVANCE_DELAY = 1500; // ms
 
-// --- Types ---\n
+// --- Types ---
 interface UserProfile {
   username: string;
   email?: string;
   tier?: string; // free or premium
   total_words_explored?: number;
   explored_words?: WordHistoryEntry[];
-  favorite_words?: WordHistoryEntry[]; // Already part of UserProfile, can be derived from explored_words
-  streak_history?: StreakEntry[]; // For gamification
+  favorite_words?: WordHistoryEntry[];
+  streak_history?: StreakEntry[];
   created_at?: string;
-  // Potentially add 'learning_level' or 'xp_points' here later for gamification
 }
 
 interface WordHistoryEntry {
@@ -27,18 +26,22 @@ interface WordHistoryEntry {
   last_explored_at: string;
   is_favorite: boolean;
   modes_generated?: string[];
-  quiz_progress?: QuizAttempt[]; // Added to track quiz state for a word
+  quiz_progress?: QuizAttempt[];
 }
 
-interface StreakEntry { // This might be simplified or expanded for gamification
-  id: string; // e.g., date string 'YYYY-MM-DD' or a unique ID
-  words_explored_count: number; // Number of unique words explored on this day/streak period
-  // score: number; // Points earned during this streak period
-  date: string; // Date of the streak activity
+interface StreakEntry {
+  id: string;
+  words_explored_count: number;
+  date: string;
 }
 
+interface QuizAnswer { // Defined for clarity
+  questionIndex: number;
+  selectedOptionKey: string;
+  isCorrect: boolean;
+}
 
-interface QuizAttempt {
+interface QuizAttempt { // From backend perspective, might be similar to QuizAnswer + timestamp
   question_index: number;
   selected_option_key: string;
   is_correct: boolean;
@@ -49,20 +52,18 @@ interface WordContent {
   explain?: string;
   image?: string; // URL or base64
   fact?: string;
-  quiz?: QuizQuestion[]; // Changed from string[] to QuizQuestion[]
+  quiz?: QuizQuestion[];
   deep_dive?: string;
 }
 
 interface QuizQuestion {
   question: string;
-  options: { [key: string]: string }; // e.g., { "A": "Option A", "B": "Option B" }
+  options: { [key: string]: string };
   correct_answer_key: string;
-  explanation?: string; // Explanation for the correct answer
+  explanation?: string;
 }
 
-
-// --- App State ---\n
-type AppView = 'main' | 'profile' | 'auth'; // Added 'auth' view
+type AppView = 'main' | 'profile' | 'auth';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('main');
@@ -76,11 +77,10 @@ export default function App() {
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login'); // login or signup
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
-  // Quiz specific state
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState(0);
-  const [quizAnswers, setQuizAnswers] = useState<Array<{ questionIndex: number; selectedOptionKey: string; isCorrect: boolean }>>([]);
+  const [quizAnswers, setQuizAnswers] = useState<QuizAnswer[]>([]);
   const [showQuizResult, setShowQuizResult] = useState(false);
   const [quizScore, setQuizScore] = useState(0);
 
@@ -95,16 +95,12 @@ export default function App() {
     { id: 'deep_dive', label: 'Deep Dive', icon: BookOpen },
   ];
 
-  // --- Effects ---
-
-  // Focus search input on mount
   useEffect(() => {
     if (currentView === 'main' && searchInputRef.current) {
       searchInputRef.current.focus();
     }
   }, [currentView]);
 
-  // Fetch user profile on mount if token exists
   useEffect(() => {
     const token = localStorage.getItem('authToken');
     if (token) {
@@ -112,24 +108,18 @@ export default function App() {
     }
   }, []);
 
-  // Scroll to top of content when mode or word changes
   useEffect(() => {
     if (contentScrollRef.current) {
       contentScrollRef.current.scrollTop = 0;
     }
-    // Reset quiz state when word or mode changes
     if (selectedMode !== 'quiz' || (wordContent && !wordContent.quiz)) {
         resetQuizState();
     }
   }, [selectedMode, displayWord, wordContent]);
 
-
-  // --- Utility Functions ---
   const getSanitizedWord = (word: string) => word.trim().toLowerCase();
   const getDisplayWord = () => displayWord || '';
 
-
-  // --- API Interaction ---
   const fetchApi = useCallback(async (endpoint: string, method: string = 'GET', body: any = null, token?: string | null) => {
     setIsLoading(true);
     setError(null);
@@ -148,11 +138,11 @@ export default function App() {
         body: body ? JSON.stringify(body) : null,
       });
 
-      if (response.status === 401) { // Unauthorized
-        handleLogout(); // Clear stale token and profile
+      if (response.status === 401) {
+        handleLogout();
         setAuthError("Session expired. Please log in again.");
-        setCurrentView('auth'); // Redirect to auth view
-        setIsAuthModalOpen(true); // Still open modal for immediate feedback if preferred
+        setCurrentView('auth');
+        setIsAuthModalOpen(true);
         return null;
       }
       if (!response.ok) {
@@ -162,16 +152,16 @@ export default function App() {
       return await response.json();
     } catch (err: any) {
       console.error(`API Error (${method} ${endpoint}):`, err);
-      setError(err.message || 'An unexpected error occurred.');
+      const message = err.message || 'An unexpected error occurred.';
+      setError(message);
       if (endpoint.includes('/users/profile') || endpoint.includes('/auth')) {
-        setAuthError(err.message || 'Authentication failed.');
+        setAuthError(message);
       }
       return null;
     } finally {
       setIsLoading(false);
     }
   }, []);
-
 
   const fetchWordContent = useCallback(async (word: string, mode: string) => {
     if (!word) return;
@@ -180,25 +170,22 @@ export default function App() {
     if (data && data.content) {
       setWordContent(prev => ({ ...prev, [mode]: data.content }));
       if (mode === 'quiz' && data.content) {
-        resetQuizState(); // Reset quiz when new quiz data is fetched
-        // Ensure quiz content is an array of QuizQuestion objects
+        resetQuizState();
         if (Array.isArray(data.content) && data.content.every(q => q.question && q.options && q.correct_answer_key)) {
-            // Content is already in the correct format
-        } else if (typeof data.content === 'string') { // Handle simple string array if backend sends that
-            // This case should ideally be handled by backend sending structured quiz data
-            console.warn("Received quiz content as simple strings. Attempting to parse or show error.");
-            setError("Quiz data is not in the expected format. Please try again later.");
+            // Correct format
+        } else {
+            console.warn("Received quiz content in unexpected format.");
+            setError("Quiz data is not in the expected format.");
             setWordContent(prev => ({ ...prev, quiz: undefined }));
         }
       }
-      // Update user's explored words if logged in
       if (userProfile) {
-        fetchUserProfile(localStorage.getItem('authToken')); // Re-fetch to get updated word history
+        fetchUserProfile(localStorage.getItem('authToken'));
       }
-    } else if (data && data.message && mode === 'image') { // Handle image generation message
-        setWordContent(prev => ({ ...prev, image: data.message })); // Display "Image is being generated"
+    } else if (data && data.message && mode === 'image') {
+        setWordContent(prev => ({ ...prev, image: data.message }));
     } else {
-      setWordContent(prev => ({ ...prev, [mode]: null })); // Clear content if fetch fails for a mode
+      setWordContent(prev => ({ ...prev, [mode]: undefined }));
     }
   }, [fetchApi, userProfile]);
 
@@ -210,23 +197,15 @@ export default function App() {
     const data = await fetchApi('/users/profile', 'GET', null, token);
     if (data && data.user) {
       setUserProfile(data.user);
-      // setCurrentView('main'); // Go to main view after successful profile fetch (login/signup)
-      // setIsAuthModalOpen(false); // Close auth modal
-    } else {
-      // Error handled by fetchApi, potentially logout if 401
-      // setUserProfile(null); // Keep existing profile or clear if error indicates invalid session
     }
   }, [fetchApi]);
 
-
-  // --- Event Handlers ---
   const handleSearch = async (e?: React.FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     if (!searchTerm.trim() || isLoading) return;
-
     setDisplayWord(searchTerm.trim());
-    setSelectedMode('explain'); // Default to explain mode on new search
-    setWordContent(null); // Clear previous word content
+    setSelectedMode('explain');
+    setWordContent(null);
     resetQuizState();
     await fetchWordContent(searchTerm.trim(), 'explain');
   };
@@ -242,6 +221,7 @@ export default function App() {
   const handleToggleFavorite = async (word: string | null) => {
     if (!word || !userProfile) {
       setAuthError("Please log in to save favorites.");
+      setCurrentView('auth');
       setIsAuthModalOpen(true);
       setAuthMode('login');
       return;
@@ -250,9 +230,8 @@ export default function App() {
     const isCurrentlyFavorite = userProfile.favorite_words?.some(favWord => favWord.id === sanitizedWord);
     const endpoint = `/users/favorites/${sanitizedWord}`;
     const method = isCurrentlyFavorite ? 'DELETE' : 'POST';
-
     const result = await fetchApi(endpoint, method);
-    if (result) { // Re-fetch profile to update favorite status and lists
+    if (result) {
       fetchUserProfile(localStorage.getItem('authToken'));
     }
   };
@@ -263,20 +242,17 @@ export default function App() {
     const email = (form.elements.namedItem('email') as HTMLInputElement)?.value;
     const password = (form.elements.namedItem('password') as HTMLInputElement)?.value;
     const username = (form.elements.namedItem('username') as HTMLInputElement)?.value;
-
-    let endpoint = authMode === 'login' ? '/auth/login' : '/auth/signup';
-    let payload: any = { email, password };
+    const endpoint = authMode === 'login' ? '/auth/login' : '/auth/signup';
+    const payload: any = { email, password };
     if (authMode === 'signup') payload.username = username;
 
     const data = await fetchApi(endpoint, 'POST', payload);
     if (data && data.token) {
       localStorage.setItem('authToken', data.token);
-      await fetchUserProfile(data.token); // Fetch profile with the new token
+      await fetchUserProfile(data.token);
       setIsAuthModalOpen(false);
-      setCurrentView('main'); // Go to main view after successful login/signup
+      setCurrentView('main');
       setAuthError(null);
-    } else if (!data) { // Error handled by fetchApi, authError state is set
-      // Keep modal open, authError is displayed
     }
   };
 
@@ -285,19 +261,20 @@ export default function App() {
     setUserProfile(null);
     setDisplayWord(null);
     setWordContent(null);
-    setCurrentView('main'); // Or 'auth' if you want to force login screen
+    setCurrentView('main');
     setError(null);
     setAuthError(null);
     console.log("User logged out");
   };
 
-  const toggleAuthModal = (mode?: 'login' | 'signup') => {
-    setIsAuthModalOpen(!isAuthModalOpen);
-    if (mode) setAuthMode(mode);
-    setAuthError(null); // Clear previous auth errors when opening modal
-  };
+  // This function was marked as unused. If it's needed, its call sites should be reviewed.
+  // For now, it's removed to clear the TS error.
+  // const toggleAuthModal = (mode?: 'login' | 'signup') => {
+  //   setIsAuthModalOpen(!isAuthModalOpen);
+  //   if (mode) setAuthMode(mode);
+  //   setAuthError(null);
+  // };
 
-  // --- Quiz Logic Handlers ---
   const resetQuizState = () => {
     setCurrentQuizQuestionIndex(0);
     setQuizAnswers([]);
@@ -307,49 +284,47 @@ export default function App() {
 
   const handleQuizOptionSelect = (questionIndex: number, selectedOptionKey: string) => {
     if (!wordContent?.quiz || !wordContent.quiz[questionIndex]) return;
-
     const currentQuestion = wordContent.quiz[questionIndex];
     const isCorrect = currentQuestion.correct_answer_key === selectedOptionKey;
 
-    // Update quizAnswers state
+    const newAnswer: QuizAnswer = { questionIndex, selectedOptionKey, isCorrect };
     setQuizAnswers(prevAnswers => {
       const existingAnswerIndex = prevAnswers.findIndex(ans => ans.questionIndex === questionIndex);
       if (existingAnswerIndex > -1) {
         const updatedAnswers = [...prevAnswers];
-        updatedAnswers[existingAnswerIndex] = { questionIndex, selectedOptionKey, isCorrect };
+        updatedAnswers[existingAnswerIndex] = newAnswer;
         return updatedAnswers;
       }
-      return [...prevAnswers, { questionIndex, selectedOptionKey, isCorrect }];
+      return [...prevAnswers, newAnswer];
     });
 
-    // Save quiz attempt to backend
     if (userProfile && displayWord) {
-        const sanitizedWord = getSanitizedWord(displayWord);
-        fetchApi(`/words/${sanitizedWord}/quiz/attempt`, 'POST', {
+        fetchApi(`/words/${getSanitizedWord(displayWord)}/quiz/attempt`, 'POST', {
             question_index: questionIndex,
             selected_option_key: selectedOptionKey,
             is_correct: isCorrect
-        }); // Fire-and-forget or handle response if needed for immediate feedback
+        });
     }
 
-
-    // Auto-advance or show result
     if (questionIndex < wordContent.quiz.length - 1) {
-      setTimeout(() => {
-        setCurrentQuizQuestionIndex(questionIndex + 1);
-      }, AUTO_ADVANCE_DELAY);
+      setTimeout(() => setCurrentQuizQuestionIndex(questionIndex + 1), AUTO_ADVANCE_DELAY);
     } else {
-      // All questions answered, calculate and show result
       setTimeout(() => {
-        let score = 0;
-        quizAnswers.forEach(ans => { // Use the latest quizAnswers by passing a function to setQuizScore
-            if (ans.isCorrect) score++;
+        // Recalculate score based on the final state of quizAnswers
+        // including the very last answer which might not be in quizAnswers yet due to async state update.
+        let finalScore = 0;
+        const finalAnswers = [...quizAnswers];
+        const lastAnswerIndex = finalAnswers.findIndex(ans => ans.questionIndex === questionIndex);
+        if (lastAnswerIndex > -1) {
+            finalAnswers[lastAnswerIndex] = newAnswer;
+        } else {
+            finalAnswers.push(newAnswer);
+        }
+
+        finalAnswers.forEach((ans: QuizAnswer) => { // Explicitly type ans
+            if (ans.isCorrect) finalScore++;
         });
-         // Add the last answer's correctness to score
-        if (isCorrect) score++; else if (quizAnswers.some(qa => qa.questionIndex === questionIndex && !qa.isCorrect)) score--;
-
-
-        setQuizScore(score);
+        setQuizScore(finalScore);
         setShowQuizResult(true);
       }, AUTO_ADVANCE_DELAY);
     }
@@ -357,15 +332,11 @@ export default function App() {
 
   const handleRetakeQuiz = () => {
     resetQuizState();
-    // If quiz content needs to be re-fetched or reset more formally:
-    // if (displayWord) fetchWordContent(displayWord, 'quiz');
   };
 
-
-  // --- Conditional Rendering ---
   const renderAuthModal = () => {
     if (!isAuthModalOpen && currentView !== 'auth') return null;
-    if (currentView === 'auth' && !isAuthModalOpen) setIsAuthModalOpen(true); // Ensure modal is open if view is auth
+    if (currentView === 'auth' && !isAuthModalOpen) setIsAuthModalOpen(true);
 
     return (
       <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
@@ -404,34 +375,34 @@ export default function App() {
     );
   };
 
-
   const renderContent = () => {
     if (isLoading && !wordContent) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Loading content...</span></div>;
     if (error && selectedMode !== 'image') return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error: {error}</div>;
     if (!displayWord && !error && !authError) return <div className="text-center text-slate-500 py-10 px-4">Enter a word above and press Enter or click Search to begin exploring.</div>;
 
-    const contentData = wordContent?.[selectedMode as keyof WordContent];
-
     switch (selectedMode) {
       case 'explain':
-        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{contentData || (isLoading ? 'Loading explanation...' : 'No explanation available.')}</div>;
+        const explainContent = wordContent?.explain;
+        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{explainContent || (isLoading ? 'Loading explanation...' : 'No explanation available.')}</div>;
       case 'image':
-        if (isLoading && !contentData) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Generating image... This may take a moment.</span></div>;
-        if (error && !contentData) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error generating image: {error}</div>;
-        if (typeof contentData === 'string' && contentData.startsWith('data:image')) {
-            return <img src={contentData} alt={`Generated image for ${displayWord}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'}/>;
+        const imageContent = wordContent?.image;
+        if (isLoading && !imageContent) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Generating image... This may take a moment.</span></div>;
+        if (error && !imageContent) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error generating image: {error}</div>;
+        if (typeof imageContent === 'string' && imageContent.startsWith('data:image')) {
+            return <img src={imageContent} alt={`Generated image for ${displayWord}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'}/>;
         }
-        if (typeof contentData === 'string' && contentData.includes("generating")) { // Message from backend like "Image is being generated..."
-            return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{contentData}</div>;
+        if (typeof imageContent === 'string' && imageContent.includes("generating")) {
+            return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{imageContent}</div>;
         }
         return <div className="text-slate-500">No image available or still loading. Try refreshing if it takes too long.</div>;
       case 'fact':
-        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{contentData || (isLoading ? 'Loading fact...' : 'No fact available.')}</div>;
+        const factContent = wordContent?.fact;
+        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{factContent || (isLoading ? 'Loading fact...' : 'No fact available.')}</div>;
       case 'quiz':
         if (isLoading && !wordContent?.quiz) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Loading quiz...</span></div>;
         if (!wordContent?.quiz || wordContent.quiz.length === 0) return <div className="text-slate-500">No quiz available for this word.</div>;
 
-        const quizQuestions = wordContent.quiz as QuizQuestion[]; // Assert type
+        const quizQuestions = wordContent.quiz as QuizQuestion[];
 
         if (showQuizResult) {
           return (
@@ -458,7 +429,7 @@ export default function App() {
         }
 
         const currentQuestion = quizQuestions[currentQuizQuestionIndex];
-        if (!currentQuestion) return <div className="text-slate-500">Loading question...</div>; // Should not happen if quiz loaded
+        if (!currentQuestion) return <div className="text-slate-500">Loading question...</div>;
         const userAnsweredThis = quizAnswers.find(ans => ans.questionIndex === currentQuizQuestionIndex);
 
         return (
@@ -469,12 +440,12 @@ export default function App() {
               {Object.entries(currentQuestion.options).map(([key, optionText]) => {
                 const isSelected = userAnsweredThis?.selectedOptionKey === key;
                 let buttonClass = "w-full text-left p-3 rounded-md border transition-all duration-150 ease-in-out text-sm ";
-                if (userAnsweredThis) { // Answered
+                if (userAnsweredThis) {
                   if (isSelected && userAnsweredThis.isCorrect) buttonClass += "bg-green-500/20 border-green-600 text-green-700 font-medium";
                   else if (isSelected && !userAnsweredThis.isCorrect) buttonClass += "bg-red-500/20 border-red-600 text-red-700 font-medium";
-                  else if (currentQuestion.correct_answer_key === key) buttonClass += "bg-green-500/10 border-green-500/50 text-slate-600"; // Show correct if wrong one selected
+                  else if (currentQuestion.correct_answer_key === key) buttonClass += "bg-green-500/10 border-green-500/50 text-slate-600";
                   else buttonClass += "bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200/70";
-                } else { // Not answered yet
+                } else {
                   buttonClass += "bg-white border-slate-300 text-slate-700 hover:bg-purple-500/10 hover:border-purple-500";
                 }
 
@@ -494,7 +465,8 @@ export default function App() {
         );
 
       case 'deep_dive':
-        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{contentData || (isLoading ? 'Loading deep dive...' : 'No deep dive available.')}</div>;
+        const deepDiveContent = wordContent?.deep_dive;
+        return <div className="prose prose-sm sm:prose-base max-w-none text-slate-700 whitespace-pre-wrap">{deepDiveContent || (isLoading ? 'Loading deep dive...' : 'No deep dive available.')}</div>;
       default:
         return <div className="text-slate-500">Select a mode to see content.</div>;
     }
@@ -502,12 +474,9 @@ export default function App() {
 
   const isFavoriteCurrent = userProfile?.favorite_words?.some(favWord => favWord.id === getSanitizedWord(getDisplayWord())) || false;
 
-
-  // --- Main Render ---
   if (currentView === 'profile') {
     return <ProfilePage userProfile={userProfile} onNavigateBack={() => setCurrentView('main')} onLogout={handleLogout} fetchUserProfile={() => fetchUserProfile(localStorage.getItem('authToken'))} />;
   }
-
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center p-2 sm:p-4 md:p-6 font-sans">
@@ -520,7 +489,7 @@ export default function App() {
           {userProfile ? (
             <>
               <button onClick={() => setCurrentView('profile')} title="View Profile" className="p-2 rounded-full hover:bg-white/10 transition-colors">
-                <User size={20} className="text-slate-300" />
+                <UserIconLucide size={20} className="text-slate-300" />
               </button>
               <button onClick={handleLogout} title="Logout" className="p-2 rounded-full hover:bg-white/10 transition-colors">
                 <LogOut size={20} className="text-slate-300" />
@@ -553,7 +522,6 @@ export default function App() {
 
         {(error && !displayWord) && <p className="text-center text-red-400 bg-red-500/10 p-3 rounded-md mb-4">{error}</p>}
         {(authError && !userProfile) && <p className="text-center text-yellow-400 bg-yellow-500/10 p-3 rounded-md mb-4">{authError}</p>}
-
 
         {(displayWord || error || authError) && (
           <div className="bg-slate-800/70 backdrop-blur-md rounded-lg shadow-xl overflow-hidden">

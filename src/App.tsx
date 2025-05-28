@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react'; // Removed CheckCircle, XCircle
+import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react';
 import './App.css';
 
 // --- Constants ---
@@ -77,12 +77,12 @@ const sanitizeWordForId = (word: string): string => {
 
 const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   if (!quizStr || typeof quizStr !== 'string') {
-    console.error("Invalid quiz string for parsing:", quizStr);
+    console.error("Invalid quiz string for parsing (null or not string):", quizStr);
     return null;
   }
 
   const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  if (lines.length < 3) { // Basic check: needs at least a question, one option, and a correct answer line.
+  if (lines.length < 3) {
       console.warn("Quiz string has too few lines after cleaning:", lines.length, "Original:", quizStr);
       return null;
   }
@@ -90,74 +90,67 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   let questionText = '';
   const options: { key: string; text: string }[] = [];
   let correctOptionKey = '';
+  let questionTextFound = false;
 
-  const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i; // Matches "Question X:", "**Question X:**", etc.
+  const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i;
   const optionRegex = /^\s*([A-D])\s*[.)]?\s*(.*)/i;
-  const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.,]?\s*.*)?$/i; // Handles optional comma
+  // Regex to find "Correct Answer: X" or "Answer: X" or "Correct: X", allowing optional comma/period after X
+  const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.,]?\s*.*)?$/i;
 
-  let potentialQuestionTextLines: string[] = [];
-  let lineIndex = 0;
 
-  // Attempt to identify and skip a standalone header line
-  if (lineIndex < lines.length && lines[lineIndex].match(questionHeaderRegex) && lines[lineIndex].replace(questionHeaderRegex, '').trim().length === 0) {
-      console.log("Found standalone header:", lines[lineIndex]);
-      lineIndex++; // Move to the next line, expecting it to be the question text
+  let currentLineIndex = 0;
+
+  // Skip standalone header line(s) if they are truly standalone (no actual question text on them)
+  while (currentLineIndex < lines.length &&
+         lines[currentLineIndex].match(questionHeaderRegex) &&
+         lines[currentLineIndex].replace(questionHeaderRegex, '').trim().length === 0) {
+    console.log("Skipping standalone header:", lines[currentLineIndex]);
+    currentLineIndex++;
   }
 
-  // Process lines for question, options, and correct answer
-  for (; lineIndex < lines.length; lineIndex++) {
-    const line = lines[lineIndex];
+  for (let i = currentLineIndex; i < lines.length; i++) {
+    const line = lines[i];
     const optionMatch = line.match(optionRegex);
     const correctMatch = line.match(correctAnswerRegex);
 
-    if (optionMatch && optionMatch[1] && optionMatch[2] !== undefined) {
-      if (options.length < 4) {
-        options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
+    if (optionMatch && options.length < 4) {
+      // It's an option
+      options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
+    } else if (correctMatch && !correctOptionKey) {
+      // It's the correct answer line
+      correctOptionKey = correctMatch[1].toUpperCase();
+    } else if (!questionTextFound &&
+               !line.match(optionRegex) && // Double check it's not an option
+               !line.match(correctAnswerRegex) // Double check it's not a correct answer line
+              ) {
+      // This is likely the question text.
+      // It could be on the same line as a header (e.g., "Question 1: What is X?")
+      // or on a line after a standalone header.
+      const potentialQuestion = line.replace(questionHeaderRegex, '').trim();
+      if (potentialQuestion.length > 0) {
+        questionText = potentialQuestion;
+        questionTextFound = true;
       }
-    } else if (correctMatch && correctMatch[1]) {
-      if (!correctOptionKey) { // Take the first valid correct answer found
-        correctOptionKey = correctMatch[1].toUpperCase();
-      }
-    } else if (!line.match(questionHeaderRegex) || line.replace(questionHeaderRegex, '').trim().length > 0) {
-        // If it's not a header-only line, not an option, not a correct answer line,
-        // it's part of the question text.
-        const textPart = line.replace(questionHeaderRegex, '').trim(); // Remove header if question text is on same line
-        if (textPart.length > 0) {
-            potentialQuestionTextLines.push(textPart);
-        }
     }
   }
-  
-  // Consolidate question text (usually the first significant non-header/option/answer line)
-  if (potentialQuestionTextLines.length > 0) {
-      questionText = potentialQuestionTextLines.join(' '); // Join if it spanned multiple lines, though typically one.
-                                                        // For the given format, usually potentialQuestionTextLines[0] is enough.
-      if (potentialQuestionTextLines.length > 1) {
-        // If multiple lines were collected, it's likely the first one is the main question.
-        // This can be refined if questions genuinely span multiple lines often.
-        questionText = potentialQuestionTextLines[0];
-      }
-  }
-
 
   if (!questionText || options.length !== 4 || !correctOptionKey) {
-    console.warn("Could not parse quiz string fully (v3):", {
+    console.warn("Could not parse quiz string fully (v5):", {
       questionText,
       optionsCount: options.length,
       optionsCollected: options,
       correctOptionKey,
       original: quizStr,
-      processedLines: lines,
-      potentialQuestionTextLines
     });
     return null;
   }
 
   if (!options.find(opt => opt.key === correctOptionKey)) {
-    console.warn(`Correct option key "${correctOptionKey}" not found in parsed options (v3). Options:`, options, "Question:", questionText);
+    console.warn(`Correct option key "${correctOptionKey}" not found in parsed options (v5). Options:`, options, "Question:", questionText);
     return null;
   }
 
+  console.log("Successfully parsed quiz (v5):", { questionText, options, correctOptionKey });
   return { questionText, options, correctOptionKey, originalString: quizStr };
 };
 

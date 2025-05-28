@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Heart, BookOpen, User as UserIconLucide, LogOut, LogIn, HelpCircle, Loader2, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react';
-import ProfilePage from './ProfilePage'; // Or './pages/ProfilePage'
+import ProfilePage from './ProfilePage'; // Or './pages/ProfilePage' if you moved it
 import './App.css';
 
 // --- Constants ---
@@ -14,7 +14,7 @@ interface UserProfile {
   tier?: string;
   total_words_explored?: number;
   explored_words?: WordHistoryEntry[];
-  favorite_words?: WordHistoryEntry[];
+  favorite_words?: WordHistoryEntry[]; // Derived in backend from explored_words
   streak_history?: StreakEntry[];
   created_at?: string;
 }
@@ -30,11 +30,10 @@ interface WordHistoryEntry {
   content?: Partial<WordContent>;
 }
 
-interface StreakEntry { // Aligned with ProfilePage.tsx expectation
+interface StreakEntry { // Ensure this matches ProfilePage.tsx
   id: string;
   date: string;
-  words_explored_count: number; // Changed from activity_count to match ProfilePage
-  // Add other properties if your backend provides them for streaks
+  words_explored_count: number;
 }
 
 interface QuizAnswer {
@@ -114,6 +113,13 @@ export default function App() {
   const getSanitizedWord = (word: string) => word.trim().toLowerCase();
   const getCurrentDisplayWord = () => displayWord || '';
 
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('authToken');
+    setUserProfile(null); setDisplayWord(null); setWordContent(null);
+    setCurrentView('main'); setError(null); setAuthError(null);
+    console.log("User logged out");
+  }, []);
+
   const fetchApi = useCallback(async (endpoint: string, method: string = 'GET', body: any = null, token?: string | null) => {
     setIsLoading(true);
     setError(null);
@@ -125,7 +131,7 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
       if (response.status === 401) {
-        handleLogout(); // Defined below
+        handleLogout(); 
         setAuthError("Session expired. Please log in again.");
         setCurrentView('auth');
         setIsAuthModalOpen(true);
@@ -148,7 +154,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, []); // handleLogout will be defined, so it can be used here
+  }, [handleLogout]);
 
   const fetchUserProfile = useCallback(async (token: string | null) => {
     if (!token) {
@@ -159,13 +165,6 @@ export default function App() {
     if (data && data.user) setUserProfile(data.user);
   }, [fetchApi]);
 
-  const handleLogout = useCallback(() => { // useCallback for handleLogout
-    localStorage.removeItem('authToken');
-    setUserProfile(null); setDisplayWord(null); setWordContent(null);
-    setCurrentView('main'); setError(null); setAuthError(null);
-    console.log("User logged out");
-  }, []); // No dependencies needed if it only uses setters
-
   const fetchWordContent = useCallback(async (word: string, mode: string, forceRefresh: boolean = false) => {
     if (!word) return;
     const sanitizedWord = getSanitizedWord(word);
@@ -173,7 +172,7 @@ export default function App() {
     if (!forceRefresh && userProfile) {
         const exploredWordEntry = userProfile.explored_words?.find(ew => ew.id === sanitizedWord);
         const cachedContent = exploredWordEntry?.content?.[mode as keyof WordContent];
-        if (cachedContent) { // Check if cachedContent is not undefined/null
+        if (cachedContent) {
             setWordContent(prev => ({ ...prev, [mode]: cachedContent }));
             if (mode === 'quiz') resetQuizState();
             return;
@@ -190,9 +189,9 @@ export default function App() {
     } else {
       setWordContent(prev => ({ ...prev, [mode]: undefined }));
     }
-  }, [fetchApi, userProfile, fetchUserProfile]); // Added fetchUserProfile
+  }, [fetchApi, userProfile, fetchUserProfile]);
 
-  const handleSearch = async (wordToSearch: string, e?: React.FormEvent<HTMLFormElement>) => {
+  const handleSearch = useCallback(async (wordToSearch: string, e?: React.FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     const trimmedWord = wordToSearch.trim();
     if (!trimmedWord || isLoading) return;
@@ -202,14 +201,15 @@ export default function App() {
     setWordContent(null);
     resetQuizState();
     await fetchWordContent(trimmedWord, 'explain');
-    setSearchTerm('');
-  };
+    setSearchTerm(''); 
+    if (currentView !== 'main') setCurrentView('main');
+  }, [isLoading, fetchWordContent, currentView]);
 
   const handleModeChange = (mode: string) => {
     if (isLoading) return;
     setSelectedMode(mode);
     const currentWord = getCurrentDisplayWord();
-    if (currentWord && (!wordContent || !wordContent[mode as keyof WordContent])) {
+    if (currentWord && (!wordContent || !wordContent[mode as keyof WordContent] || (mode === 'quiz' && !wordContent.quiz))) {
       fetchWordContent(currentWord, mode);
     }
   };
@@ -279,11 +279,10 @@ export default function App() {
       setTimeout(() => setCurrentQuizQuestionIndex(qIdx => qIdx + 1), AUTO_ADVANCE_DELAY);
     } else {
       setTimeout(() => {
-        // Ensure the latest answer is considered for scoring
         let score = 0;
         const finalAnswersSet = new Map<number, QuizAnswer>();
         quizAnswers.forEach(ans => finalAnswersSet.set(ans.questionIndex, ans));
-        finalAnswersSet.set(newAnswer.questionIndex, newAnswer); // Ensure the very last answer is included/updated
+        finalAnswersSet.set(newAnswer.questionIndex, newAnswer); 
 
         finalAnswersSet.forEach(ans => { if (ans.isCorrect) score++; });
         setQuizScore(score);
@@ -317,14 +316,18 @@ export default function App() {
       return <span key={index}>{part}</span>;
     });
   };
+  
+  const handleProfileWordClick = (word: string) => {
+    setCurrentView('main');
+    handleSearch(word);
+  };
 
-  const renderAuthModal = (): JSX.Element | null => { // Ensure return type
+  const renderAuthModal = (): JSX.Element | null => {
     if (!isAuthModalOpen && currentView !== 'auth') return null;
-    // Ensure modal is open if view is auth, and set it if not
     if (currentView === 'auth' && !isAuthModalOpen) {
-        setIsAuthModalOpen(true); // This might cause a re-render, ensure it's handled well
+        Promise.resolve().then(() => setIsAuthModalOpen(true));
     }
-    if (!isAuthModalOpen) return null; // Double check after potential setIsAuthModalOpen
+    if (!isAuthModalOpen) return null;
 
     return (
       <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
@@ -333,7 +336,7 @@ export default function App() {
             onClick={() => { 
               setIsAuthModalOpen(false); 
               if (currentView === 'auth') setCurrentView('main'); 
-              setAuthError(null); // Clear auth error on close
+              setAuthError(null);
             }} 
             className="absolute top-3 right-3 text-slate-400 hover:text-slate-200 transition-colors text-2xl leading-none"
             aria-label="Close authentication modal"
@@ -342,7 +345,6 @@ export default function App() {
           </button>
           <h2 className="text-2xl font-semibold text-center text-slate-100 mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
           {authError && <p className="bg-red-500/20 text-red-400 border border-red-500/30 p-3 rounded-md text-sm mb-4">{authError}</p>}
-          {/* Form calls handleAuthAction */}
           <form onSubmit={handleAuthAction}> 
             {authMode === 'signup' && (
               <div className="mb-4">
@@ -368,7 +370,7 @@ export default function App() {
             <button 
               onClick={() => { 
                 setAuthMode(authMode === 'login' ? 'signup' : 'login'); 
-                setAuthError(null); // Clear auth error on mode switch
+                setAuthError(null); 
               }} 
               className="text-purple-400 hover:text-purple-300 font-semibold"
             >
@@ -472,7 +474,13 @@ export default function App() {
   };
   
   if (currentView === 'profile') {
-    return <ProfilePage userProfile={userProfile} onNavigateBack={() => setCurrentView('main')} onLogout={handleLogout} fetchUserProfile={() => fetchUserProfile(localStorage.getItem('authToken'))} />;
+    return <ProfilePage 
+              userProfile={userProfile} 
+              onNavigateBack={() => setCurrentView('main')} 
+              onLogout={handleLogout} 
+              fetchUserProfile={() => fetchUserProfile(localStorage.getItem('authToken'))}
+              onWordClick={handleProfileWordClick}
+           />;
   }
 
   return (
@@ -515,7 +523,6 @@ export default function App() {
         </form>
 
         {(error && !displayWord) && <p className="text-center text-red-400 bg-red-500/10 p-3 rounded-md mb-4">{error}</p>}
-        {/* Only show general authError if modal is closed; modal shows its own */}
         {(authError && !userProfile && !isAuthModalOpen && currentView !== 'auth') && 
             <p className="text-center text-yellow-400 bg-yellow-500/10 p-3 rounded-md mb-4">{authError}</p>}
 

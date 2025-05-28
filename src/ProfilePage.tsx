@@ -1,32 +1,31 @@
 import React, { useState, useEffect } from 'react';
-// Removed 'User' from this import line as it was unused
 import { Mail, ShieldCheck, TrendingUp, List, Star, CalendarDays, LogOut, ArrowLeft, Edit3, Save, XCircle } from 'lucide-react';
 
-// Re-define types or import from App.tsx if structure allows (for larger apps, share types)
+// Types (ensure these align with App.tsx and backend)
 interface UserProfile {
     username: string;
     email?: string;
     tier?: string;
     total_words_explored?: number;
     explored_words?: WordHistoryEntry[];
-    favorite_words?: WordHistoryEntry[];
+    favorite_words?: WordHistoryEntry[]; // This is derived by backend, but good to have for type consistency
     streak_history?: StreakEntry[];
     created_at?: string;
 }
 
 interface WordHistoryEntry {
-    id: string;
-    word: string;
+    id: string; // sanitized word
+    word: string; // original word
     first_explored_at: string;
     last_explored_at: string;
     is_favorite: boolean;
-    modes_generated?: string[];
+    // content and modes_generated might also be here if needed directly on profile
 }
 
 interface StreakEntry {
     id: string;
-    words_explored_count: number;
     date: string;
+    words_explored_count: number;
 }
 
 interface ProfilePageProps {
@@ -34,14 +33,19 @@ interface ProfilePageProps {
     onNavigateBack: () => void;
     onLogout: () => void;
     fetchUserProfile: () => void;
+    onWordClick: (word: string) => void; // New prop to handle word clicks
 }
 
 const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    try {
+        return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) {
+        return 'Invalid Date';
+    }
 };
 
-const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, onLogout, fetchUserProfile }) => {
+const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, onLogout, fetchUserProfile, onWordClick }) => {
     const [isEditingUsername, setIsEditingUsername] = useState(false);
     const [newUsername, setNewUsername] = useState(userProfile?.username || '');
     const [editError, setEditError] = useState<string | null>(null);
@@ -62,30 +66,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, 
         setIsLoading(true);
         setEditError(null);
 
-        // Placeholder for API call - replace with actual implementation
-        // const token = localStorage.getItem('authToken');
-        // const API_BASE_URL_PROFILE = 'https://tiny-tutor-app.onrender.com'; // Define or pass from App.tsx
-        // try {
-        //   const response = await fetch(`${API_BASE_URL_PROFILE}/users/profile/username`, { 
-        //     method: 'PUT',
-        //     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        //     body: JSON.stringify({ username: newUsername.trim() })
-        //   });
-        //   const data = await response.json();
-        //   if (response.ok) {
-        //     fetchUserProfile(); 
-        //     setIsEditingUsername(false);
-        //   } else {
-        //     setEditError(data.error || "Failed to update username.");
-        //   }
-        // } catch (error) {
-        //   setEditError("An error occurred while updating username.");
-        //   console.error("Update username error:", error);
-        // } finally {
-        //    setIsLoading(false);
-        // }
-
-        // Mock success for now:
+        // Placeholder for API call
         console.log("Attempting to update username to:", newUsername.trim());
         setTimeout(() => {
             fetchUserProfile();
@@ -109,9 +90,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, 
         );
     }
 
-    const exploredWords = userProfile.explored_words || [];
-    const favoriteWords = userProfile.favorite_words || exploredWords.filter(w => w.is_favorite);
-    const streakHistory = userProfile.streak_history || [];
+    // Ensure explored_words and favorite_words are arrays
+    const exploredWords = Array.isArray(userProfile.explored_words) ? userProfile.explored_words : [];
+    const favoriteWords = Array.isArray(userProfile.favorite_words) ? userProfile.favorite_words : [];
+    const streakHistory = Array.isArray(userProfile.streak_history) ? userProfile.streak_history : [];
+
 
     return (
         <div className="min-h-screen bg-slate-100 text-slate-800 p-4 sm:p-6 md:p-8">
@@ -134,105 +117,98 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, 
             </header>
 
             <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
+                {/* User Info Card */}
                 <div className="bg-white p-5 sm:p-6 rounded-xl shadow-lg">
                     <div className="flex flex-col sm:flex-row items-center">
-                        <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-purple-500 flex items-center justify-center text-white text-3xl sm:text-4xl font-bold mb-4 sm:mb-0 sm:mr-6">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-purple-500 flex items-center justify-center text-white text-3xl sm:text-4xl font-bold mb-4 sm:mb-0 sm:mr-6 shrink-0">
                             {userProfile.username.substring(0, 1).toUpperCase()}
                         </div>
-                        <div className="text-center sm:text-left">
+                        <div className="text-center sm:text-left flex-grow">
                             {isEditingUsername ? (
                                 <div className="flex items-center space-x-2">
                                     <input
-                                        type="text"
-                                        value={newUsername}
-                                        onChange={(e) => setNewUsername(e.target.value)}
-                                        className="p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-lg"
-                                        autoFocus
+                                        type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)}
+                                        className="p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none text-lg" autoFocus
                                     />
-                                    <button onClick={handleUsernameUpdate} disabled={isLoading} className="p-2 bg-green-500 hover:bg-green-600 text-white rounded-md disabled:opacity-50">
-                                        <Save size={20} />
-                                    </button>
-                                    <button onClick={() => { setIsEditingUsername(false); setNewUsername(userProfile.username); setEditError(null); }} className="p-2 bg-slate-300 hover:bg-slate-400 text-slate-700 rounded-md">
-                                        <XCircle size={20} />
-                                    </button>
+                                    <button onClick={handleUsernameUpdate} disabled={isLoading} className="p-2 bg-green-500 hover:bg-green-600 text-white rounded-md disabled:opacity-50"><Save size={20} /></button>
+                                    <button onClick={() => { setIsEditingUsername(false); setNewUsername(userProfile.username); setEditError(null); }} className="p-2 bg-slate-300 hover:bg-slate-400 text-slate-700 rounded-md"><XCircle size={20} /></button>
                                 </div>
                             ) : (
                                 <div className="flex items-center">
-                                    <h2 className="text-2xl sm:text-3xl font-semibold text-slate-800">{userProfile.username}</h2>
-                                    <button onClick={() => setIsEditingUsername(true)} title="Edit username" className="ml-2 p-1 text-slate-500 hover:text-purple-600">
-                                        <Edit3 size={16} />
-                                    </button>
+                                    <h2 className="text-2xl sm:text-3xl font-semibold text-slate-800 break-all">{userProfile.username}</h2>
+                                    <button onClick={() => setIsEditingUsername(true)} title="Edit username" className="ml-2 p-1 text-slate-500 hover:text-purple-600 shrink-0"><Edit3 size={16} /></button>
                                 </div>
                             )}
                             {editError && <p className="text-xs text-red-500 mt-1">{editError}</p>}
-                            <p className="text-slate-600 flex items-center mt-1">
-                                <Mail size={14} className="mr-2 text-slate-500" /> {userProfile.email || 'No email provided'}
-                            </p>
-                            <p className="text-slate-500 flex items-center mt-1 capitalize">
-                                <ShieldCheck size={14} className="mr-2 text-slate-500" /> Tier: {userProfile.tier || 'Free'}
-                            </p>
+                            <p className="text-slate-600 flex items-center mt-1 break-all"><Mail size={14} className="mr-2 text-slate-500 shrink-0" /> {userProfile.email || 'No email provided'}</p>
+                            <p className="text-slate-500 flex items-center mt-1 capitalize"><ShieldCheck size={14} className="mr-2 text-slate-500 shrink-0" /> Tier: {userProfile.tier || 'Free'}</p>
                             <p className="text-xs text-slate-400 mt-1">Joined: {formatDate(userProfile.created_at)}</p>
                         </div>
                     </div>
                 </div>
 
+                {/* Stats Overview */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                     <div className="bg-white p-5 rounded-xl shadow-lg flex items-center">
-                        <TrendingUp size={28} className="mr-4 text-purple-500" />
+                        <TrendingUp size={28} className="mr-4 text-purple-500 shrink-0" />
                         <div>
                             <p className="text-3xl font-bold text-slate-700">{userProfile.total_words_explored || 0}</p>
                             <p className="text-sm text-slate-500">Total Words Explored</p>
                         </div>
                     </div>
                     <div className="bg-white p-5 rounded-xl shadow-lg flex items-center">
-                        <CalendarDays size={28} className="mr-4 text-orange-500" />
+                        <CalendarDays size={28} className="mr-4 text-orange-500 shrink-0" />
                         <div>
-                            <p className="text-3xl font-bold text-slate-700">{streakHistory.length > 0 ? `${streakHistory[streakHistory.length - 1].words_explored_count} words` : 'N/A'}</p>
-                            <p className="text-sm text-slate-500">Last Activity / Current Streak (TBD)</p>
+                            {/* Streak display will be improved when backend logic is ready */}
+                            <p className="text-3xl font-bold text-slate-700">{streakHistory.length > 0 ? `Current: ${streakHistory[streakHistory.length - 1].words_explored_count} words` : 'N/A'}</p>
+                            <p className="text-sm text-slate-500">Current Streak (TBD)</p>
                         </div>
                     </div>
                 </div>
 
+                {/* Explored Words Section */}
                 <div className="bg-white p-5 sm:p-6 rounded-xl shadow-lg">
-                    <h3 className="text-xl font-semibold text-slate-700 mb-4 flex items-center">
-                        <List size={22} className="mr-2 text-purple-500" /> Explored Words ({exploredWords.length})
-                    </h3>
+                    <h3 className="text-xl font-semibold text-slate-700 mb-4 flex items-center"><List size={22} className="mr-2 text-purple-500" /> Explored Words ({exploredWords.length})</h3>
                     {exploredWords.length > 0 ? (
                         <ul className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar pr-2">
                             {exploredWords.map(word => (
                                 <li key={word.id} className="p-3 bg-slate-50 rounded-md hover:bg-slate-100 transition-colors flex justify-between items-center">
-                                    <span className="font-medium text-slate-700">{word.word}</span>
-                                    <span className="text-xs text-slate-500">Last seen: {formatDate(word.last_explored_at)}</span>
+                                    <button
+                                        onClick={() => onWordClick(word.word)}
+                                        className="font-medium text-purple-600 hover:text-purple-800 hover:underline text-left"
+                                    >
+                                        {word.word}
+                                    </button>
+                                    <span className="text-xs text-slate-500 whitespace-nowrap">Last seen: {formatDate(word.last_explored_at)}</span>
                                 </li>
                             ))}
                         </ul>
-                    ) : (
-                        <p className="text-slate-500">You haven't explored any words yet. Start searching!</p>
-                    )}
+                    ) : (<p className="text-slate-500">You haven't explored any words yet. Start searching!</p>)}
                 </div>
 
+                {/* Favorite Words Section */}
                 <div className="bg-white p-5 sm:p-6 rounded-xl shadow-lg">
-                    <h3 className="text-xl font-semibold text-slate-700 mb-4 flex items-center">
-                        <Star size={22} className="mr-2 text-yellow-500" /> Favorite Words ({favoriteWords.length})
-                    </h3>
+                    <h3 className="text-xl font-semibold text-slate-700 mb-4 flex items-center"><Star size={22} className="mr-2 text-yellow-500" /> Favorite Words ({favoriteWords.length})</h3>
                     {favoriteWords.length > 0 ? (
                         <ul className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar pr-2">
                             {favoriteWords.map(word => (
                                 <li key={word.id} className="p-3 bg-slate-50 rounded-md hover:bg-slate-100 transition-colors flex justify-between items-center">
-                                    <span className="font-medium text-slate-700">{word.word}</span>
-                                    <span className="text-xs text-slate-500">Favorited: {formatDate(word.last_explored_at)}</span>
+                                    <button
+                                        onClick={() => onWordClick(word.word)}
+                                        className="font-medium text-purple-600 hover:text-purple-800 hover:underline text-left"
+                                    >
+                                        {word.word}
+                                    </button>
+                                    <span className="text-xs text-slate-500 whitespace-nowrap">Favorited: {formatDate(word.last_explored_at)}</span>
                                 </li>
                             ))}
                         </ul>
-                    ) : (
-                        <p className="text-slate-500">No favorite words yet. Click the heart icon on words you like!</p>
-                    )}
+                    ) : (<p className="text-slate-500">No favorite words yet. Click the heart icon on words you like!</p>)}
                 </div>
 
+                {/* Streak History Section - Basic Placeholder */}
                 <div className="bg-white p-5 sm:p-6 rounded-xl shadow-lg">
-                    <h3 className="text-xl font-semibold text-slate-700 mb-4 flex items-center">
-                        <CalendarDays size={22} className="mr-2 text-green-500" /> Streak History (Placeholder)
-                    </h3>
+                    <h3 className="text-xl font-semibold text-slate-700 mb-4 flex items-center"><CalendarDays size={22} className="mr-2 text-green-500" /> Streak History (Backend Not Implemented)</h3>
                     {streakHistory.length > 0 ? (
                         <ul className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                             {streakHistory.slice(-10).reverse().map(streak => (
@@ -241,9 +217,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, 
                                 </li>
                             ))}
                         </ul>
-                    ) : (
-                        <p className="text-slate-500">Your activity streak will be shown here. Keep learning consistently!</p>
-                    )}
+                    ) : (<p className="text-slate-500">Your activity streak will be shown here once backend support is added.</p>)}
                 </div>
 
                 <div className="bg-white p-5 sm:p-6 rounded-xl shadow-lg">
@@ -253,14 +227,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ userProfile, onNavigateBack, 
 
                 <div className="bg-white p-5 sm:p-6 rounded-xl shadow-lg">
                     <h3 className="text-xl font-semibold text-slate-700 mb-4">Account Settings</h3>
-                    <button
-                        onClick={onLogout}
-                        className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white font-semibold py-2.5 px-6 rounded-md transition-colors flex items-center justify-center"
-                    >
+                    <button onClick={onLogout} className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white font-semibold py-2.5 px-6 rounded-md transition-colors flex items-center justify-center">
                         <LogOut size={18} className="mr-2" /> Logout
                     </button>
                 </div>
-
             </div>
         </div>
     );

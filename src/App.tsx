@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User as UserIconLucide, LogOut, LogIn, /*RefreshCw,*/ HelpCircle, Loader2, /*MessageSquare,*/ Image as ImageIcon, FileText, Brain, PlusCircle /*, TrendingUp, List, Star, Mail, ShieldCheck, CalendarDays, ArrowLeft*/ } from 'lucide-react';
+import { Heart, BookOpen, User as UserIconLucide, LogOut, LogIn, HelpCircle, Loader2, Image as ImageIcon, FileText, Brain, PlusCircle } from 'lucide-react';
 import ProfilePage from './ProfilePage'; // Assuming ProfilePage.tsx is in the same directory or ./pages/ProfilePage.tsx
 import './App.css';
 
@@ -35,13 +35,13 @@ interface StreakEntry {
   date: string;
 }
 
-interface QuizAnswer { // Defined for clarity
+interface QuizAnswer {
   questionIndex: number;
   selectedOptionKey: string;
   isCorrect: boolean;
 }
 
-interface QuizAttempt { // From backend perspective, might be similar to QuizAnswer + timestamp
+interface QuizAttempt {
   question_index: number;
   selected_option_key: string;
   is_correct: boolean;
@@ -113,7 +113,7 @@ export default function App() {
       contentScrollRef.current.scrollTop = 0;
     }
     if (selectedMode !== 'quiz' || (wordContent && !wordContent.quiz)) {
-      resetQuizState();
+        resetQuizState();
     }
   }, [selectedMode, displayWord, wordContent]);
 
@@ -171,19 +171,19 @@ export default function App() {
       setWordContent(prev => ({ ...prev, [mode]: data.content }));
       if (mode === 'quiz' && data.content) {
         resetQuizState();
-        if (Array.isArray(data.content) && data.content.every(q => q.question && q.options && q.correct_answer_key)) {
-          // Correct format
+        if (Array.isArray(data.content) && data.content.every((q: any) => q.question && q.options && q.correct_answer_key)) {
+            // Correct format
         } else {
-          console.warn("Received quiz content in unexpected format.");
-          setError("Quiz data is not in the expected format.");
-          setWordContent(prev => ({ ...prev, quiz: undefined }));
+            console.warn("Received quiz content in unexpected format.");
+            setError("Quiz data is not in the expected format.");
+            setWordContent(prev => ({ ...prev, quiz: undefined }));
         }
       }
       if (userProfile) {
         fetchUserProfile(localStorage.getItem('authToken'));
       }
     } else if (data && data.message && mode === 'image') {
-      setWordContent(prev => ({ ...prev, image: data.message }));
+        setWordContent(prev => ({ ...prev, image: data.message }));
     } else {
       setWordContent(prev => ({ ...prev, [mode]: undefined }));
     }
@@ -267,14 +267,6 @@ export default function App() {
     console.log("User logged out");
   };
 
-  // This function was marked as unused. If it's needed, its call sites should be reviewed.
-  // For now, it's removed to clear the TS error.
-  // const toggleAuthModal = (mode?: 'login' | 'signup') => {
-  //   setIsAuthModalOpen(!isAuthModalOpen);
-  //   if (mode) setAuthMode(mode);
-  //   setAuthError(null);
-  // };
-
   const resetQuizState = () => {
     setCurrentQuizQuestionIndex(0);
     setQuizAnswers([]);
@@ -299,30 +291,33 @@ export default function App() {
     });
 
     if (userProfile && displayWord) {
-      fetchApi(`/words/${getSanitizedWord(displayWord)}/quiz/attempt`, 'POST', {
-        question_index: questionIndex,
-        selected_option_key: selectedOptionKey,
-        is_correct: isCorrect
-      });
+        fetchApi(`/words/${getSanitizedWord(displayWord)}/quiz/attempt`, 'POST', {
+            question_index: questionIndex,
+            selected_option_key: selectedOptionKey,
+            is_correct: isCorrect
+        });
     }
 
     if (questionIndex < wordContent.quiz.length - 1) {
       setTimeout(() => setCurrentQuizQuestionIndex(questionIndex + 1), AUTO_ADVANCE_DELAY);
     } else {
       setTimeout(() => {
-        // Recalculate score based on the final state of quizAnswers
-        // including the very last answer which might not be in quizAnswers yet due to async state update.
         let finalScore = 0;
-        const finalAnswers = [...quizAnswers];
-        const lastAnswerIndex = finalAnswers.findIndex(ans => ans.questionIndex === questionIndex);
-        if (lastAnswerIndex > -1) {
-          finalAnswers[lastAnswerIndex] = newAnswer;
+        
+        // Ensure the latest answer is part of the calculation
+        let currentAnswersForScore = [...quizAnswers];
+        const justAnsweredIndex = currentAnswersForScore.findIndex(a => a.questionIndex === questionIndex);
+        
+        // Update or add the newAnswer to currentAnswersForScore for accurate scoring
+        if (justAnsweredIndex > -1) {
+            currentAnswersForScore[justAnsweredIndex] = newAnswer; 
         } else {
-          finalAnswers.push(newAnswer);
+            // If newAnswer for the current questionIndex is not found, add it.
+            currentAnswersForScore.push(newAnswer);
         }
-
-        finalAnswers.forEach((ans: QuizAnswer) => { // Explicitly type ans
-          if (ans.isCorrect) finalScore++;
+        
+        currentAnswersForScore.forEach((ans: QuizAnswer) => {
+            if (ans.isCorrect) finalScore++;
         });
         setQuizScore(finalScore);
         setShowQuizResult(true);
@@ -389,10 +384,10 @@ export default function App() {
         if (isLoading && !imageContent) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Generating image... This may take a moment.</span></div>;
         if (error && !imageContent) return <div className="text-red-500 bg-red-500/10 p-4 rounded-md border border-red-500/20">Error generating image: {error}</div>;
         if (typeof imageContent === 'string' && imageContent.startsWith('data:image')) {
-          return <img src={imageContent} alt={`Generated image for ${displayWord}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'} />;
+            return <img src={imageContent} alt={`Generated image for ${displayWord}`} className="rounded-md shadow-md max-w-full h-auto mx-auto" onError={(e) => e.currentTarget.src = 'https://placehold.co/600x400/E2E8F0/AAAAAA?text=Image+Error'}/>;
         }
         if (typeof imageContent === 'string' && imageContent.includes("generating")) {
-          return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{imageContent}</div>;
+            return <div className="text-center text-slate-600 py-10"><Loader2 size={24} className="animate-spin inline mr-2" />{imageContent}</div>;
         }
         return <div className="text-slate-500">No image available or still loading. Try refreshing if it takes too long.</div>;
       case 'fact':
@@ -410,7 +405,7 @@ export default function App() {
               <h3 className="text-xl font-semibold mb-3 text-slate-700">Quiz Completed!</h3>
               <p className="text-lg mb-4 text-slate-600">Your score: <span className="font-bold text-purple-600">{quizScore}</span> / {quizQuestions.length}</p>
               <div className="mb-6 space-y-3">
-                {quizQuestions.map((q, idx) => {
+                {quizQuestions.map((q: QuizQuestion, idx: number) => {
                   const userAnswer = quizAnswers.find(a => a.questionIndex === idx);
                   return (
                     <div key={idx} className={`p-3 rounded-md text-left ${userAnswer?.isCorrect ? 'bg-green-500/10 border-l-4 border-green-500' : 'bg-red-500/10 border-l-4 border-red-500'}`}>
@@ -546,15 +541,15 @@ export default function App() {
                     <modeInfo.icon size={12} className="mr-1 sm:mr-1.5" /> {modeInfo.label}
                   </button>
                 ))}
-                {displayWord && userProfile && (
-                  <button
+                 {displayWord && userProfile && (
+                    <button
                     onClick={() => handleToggleFavorite(getDisplayWord())}
                     title={isFavoriteCurrent ? "Remove from favorites" : "Add to favorites"}
                     className="p-1.5 sm:p-2 rounded-full hover:bg-white/20 transition-colors disabled:opacity-50 ml-1 sm:ml-2"
                     disabled={isLoading}
-                  >
+                    >
                     <Heart size={18} className={`${isFavoriteCurrent ? 'text-red-500 fill-current' : 'text-slate-400 hover:text-red-400'}`} />
-                  </button>
+                    </button>
                 )}
               </div>
             </div>

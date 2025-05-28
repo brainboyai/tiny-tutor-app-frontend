@@ -2,77 +2,22 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Heart, BookOpen, User as UserIconLucide, LogOut, LogIn, HelpCircle, Loader2, Image as ImageIcon, FileText, Brain, PlusCircle, RefreshCw, TrendingUp } from 'lucide-react';
 import ProfilePage from './ProfilePage';
 import './App.css';
+// Import shared types from types.ts
+import {
+  UserProfile,
+
+  // StreakEntry is part of UserProfile, so it's covered
+  LiveStreak,
+  QuizAnswer,
+  WordContent,
+  QuizQuestion,
+  AppView,
+  ContentMode
+} from './types';
 
 // --- Constants ---
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 const AUTO_ADVANCE_DELAY = 1500;
-
-// --- Types ---
-interface UserProfile {
-  username: string;
-  email?: string;
-  tier?: string;
-  total_words_explored?: number;
-  explored_words?: WordHistoryEntry[];
-  favorite_words?: WordHistoryEntry[];
-  streak_history?: StreakEntry[];
-  created_at?: string;
-}
-
-interface WordHistoryEntry {
-  id: string;
-  word: string;
-  first_explored_at: string;
-  last_explored_at: string;
-  is_favorite: boolean;
-  modes_generated?: string[];
-  quiz_progress?: QuizAttempt[];
-  content?: Partial<WordContent>;
-}
-
-interface StreakEntry { // Aligned with backend and previous stable App.tsx
-  id: string;
-  words: string[];
-  score: number;
-  completed_at: string;
-}
-
-interface LiveStreak {
-  score: number;
-  words: string[];
-}
-
-interface QuizAnswer {
-  questionIndex: number;
-  selectedOptionKey: string;
-  isCorrect: boolean;
-}
-
-interface QuizAttempt {
-  question_index: number;
-  selected_option_key: string;
-  is_correct: boolean;
-  timestamp: string;
-}
-
-interface WordContent {
-  explain?: string;
-  image?: string;
-  fact?: string;
-  quiz?: QuizQuestion[];
-  deep_dive?: string;
-}
-
-interface QuizQuestion {
-  question: string;
-  options: { [key: string]: string };
-  correct_answer_key: string;
-  explanation?: string;
-}
-
-type AppView = 'main' | 'profile' | 'auth';
-type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep_dive';
-
 
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('main');
@@ -223,7 +168,7 @@ export default function App() {
     if (!forceRefresh && userProfile) {
         const exploredWordEntry = userProfile.explored_words?.find(ew => ew.id === sanitizedWord);
         const cachedModeContent = exploredWordEntry?.content?.[mode];
-        if (cachedModeContent !== undefined) { // Check for undefined explicitly
+        if (cachedModeContent !== undefined) {
             setWordContent(prev => ({ ...prev, [mode]: cachedModeContent }));
             if (mode === 'quiz') resetQuizState();
             setUserProfile(prev => prev ? ({ ...prev, explored_words: prev.explored_words?.map(ew => ew.id === sanitizedWord ? {...ew, last_explored_at: new Date().toISOString()} : ew)}) : null);
@@ -281,7 +226,7 @@ export default function App() {
     const cachedExplainContent = exploredWordEntry?.content?.explain;
     if (cachedExplainContent) {
         setDisplayWord(word); setSelectedMode('explain');
-        setWordContent({ explain: cachedExplainContent }); // Only set explain, other modes will fetch if needed
+        setWordContent({ explain: cachedExplainContent });
     } else {
         handleSearch(word); 
     }
@@ -350,20 +295,20 @@ export default function App() {
         } else {
             let score = 0;
             const finalAnswersSet = new Map<number, QuizAnswer>();
-            // Use the latest quizAnswers from state directly might be an issue due to closure
-            // Instead, build based on `newAnswer` and the previous state passed to setQuizAnswers
             setQuizAnswers(currentAnswers => {
                 const allAnswers = [...currentAnswers];
                 const lastAnswerIdx = allAnswers.findIndex(a => a.questionIndex === newAnswer.questionIndex);
                 if(lastAnswerIdx > -1) allAnswers[lastAnswerIdx] = newAnswer;
-                else allAnswers.push(newAnswer);
-
+                else if (!allAnswers.some(a => a.questionIndex === newAnswer.questionIndex)) {
+                     allAnswers.push(newAnswer);
+                }
+                
                 allAnswers.forEach(ans => finalAnswersSet.set(ans.questionIndex, ans));
                 finalAnswersSet.forEach(ans => { if (ans.isCorrect) score++; });
                 setQuizScore(score); // This might need to be inside the setQuizAnswers callback or use the new score directly
-                return allAnswers; // Return updated answers
+                return allAnswers;
             });
-            setShowQuizResult(true); // Show result after state is set
+            setShowQuizResult(true);
         }
     }, AUTO_ADVANCE_DELAY);
   };
@@ -446,7 +391,6 @@ export default function App() {
   
   const renderContent = () => { 
     const currentWordForContent = getCurrentDisplayWord();
-    // wordContent state now directly holds the content for the current displayWord and selectedMode
     const contentForSelectedMode = wordContent?.[selectedMode];
 
     if (isLoading && contentForSelectedMode === undefined) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Loading {selectedMode}...</span></div>;
@@ -477,7 +421,7 @@ export default function App() {
         </div>;
       case 'quiz':
         if (isLoading && !wordContent?.quiz) return <div className="flex justify-center items-center h-64"><Loader2 size={32} className="animate-spin text-purple-500" /> <span className="ml-3 text-slate-600">Loading quiz...</span></div>;
-        const quizQuestions = wordContent?.quiz; // Already typed as QuizQuestion[] | undefined
+        const quizQuestions = wordContent?.quiz;
         if (!quizQuestions || quizQuestions.length === 0) return <div className="text-slate-500">No quiz available for this word. <button onClick={handleRetakeQuiz} className="ml-2 text-xs text-purple-500 hover:underline">Try generating new questions?</button></div>;
         if (showQuizResult) { 
             return (

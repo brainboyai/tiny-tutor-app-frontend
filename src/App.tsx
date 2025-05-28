@@ -91,6 +91,7 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   const options: { key: string; text: string }[] = [];
   let correctOptionKey = '';
   let questionTextFound = false;
+  const parsedOptionKeys = new Set<string>(); // To detect duplicate option keys
 
   const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i;
   const optionRegex = /^\s*([A-D])\s*[.)]?\s*(.*)/i;
@@ -112,7 +113,15 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
     const correctMatch = line.match(correctAnswerRegex);
 
     if (optionMatch && options.length < 4) {
-      options.push({ key: optionMatch[1].toUpperCase(), text: optionMatch[2].trim() });
+      const key = optionMatch[1].toUpperCase();
+      const text = optionMatch[2].trim();
+      if (parsedOptionKeys.has(key)) {
+        console.warn(`Duplicate option key "${key}" detected in quiz string. This may cause parsing issues. Original:`, quizStr);
+        // Depending on desired strictness, you could return null here or try to continue.
+        // For now, we'll log and continue, but the validation later will likely catch it if correctOptionKey is affected.
+      }
+      parsedOptionKeys.add(key);
+      options.push({ key, text });
     } else if (correctMatch && !correctOptionKey) {
       correctOptionKey = correctMatch[1].toUpperCase();
     } else if (!questionTextFound &&
@@ -128,7 +137,7 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   }
 
   if (!questionText || options.length !== 4 || !correctOptionKey) {
-    console.warn("Could not parse quiz string fully (v5):", {
+    console.warn("Could not parse quiz string fully (v6):", {
       questionText,
       optionsCount: options.length,
       optionsCollected: options,
@@ -139,11 +148,12 @@ const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
   }
 
   if (!options.find(opt => opt.key === correctOptionKey)) {
-    console.warn(`Correct option key "${correctOptionKey}" not found in parsed options (v5). Options:`, options, "Question:", questionText);
+    // This log is crucial for the error you're seeing.
+    console.warn(`Correct option key "${correctOptionKey}" not found in parsed options (v6). Parsed options:`, options.map(o => o.key), "Question:", questionText, "Original String:", quizStr);
     return null;
   }
 
-  console.log("Successfully parsed quiz (v5):", { questionText, options, correctOptionKey });
+  console.log("Successfully parsed quiz (v6):", { questionText, options, correctOptionKey });
   return { questionText, options, correctOptionKey, originalString: quizStr };
 };
 
@@ -315,18 +325,26 @@ function App() {
       return;
     }
 
+    const sanitizedWordToFetchId = sanitizeWordForId(wordToFetch);
+
+    // If regenerating quiz, clear old quiz questions from state BEFORE fetching to prevent flash
+    if (targetMode === 'quiz' && (isRefreshClick || activeContentMode === 'quiz')) {
+        console.log(`Regenerating quiz for "${sanitizedWordToFetchId}". Clearing existing quiz questions from UI state.`);
+        setGeneratedContent(prev => ({
+            ...prev,
+            [sanitizedWordToFetchId]: {
+                ...(prev[sanitizedWordToFetchId] || {}),
+                quiz: undefined, // Clear out old questions
+                quiz_progress: [] // Ensure progress is also reset
+            }
+        }));
+        resetQuizStateForWord(sanitizedWordToFetchId); 
+    }
+    
     setIsLoading(true);
     setError(null);
     setAuthError(null);
     
-    const wordIdForReset = sanitizeWordForId(wordToFetch); 
-
-    // Always reset UI states when targeting quiz or refreshing quiz
-    if (targetMode === 'quiz' || (isRefreshClick && activeContentMode === 'quiz')) {
-        resetQuizStateForWord(wordIdForReset); 
-    }
-
-
     const isNewPrimaryWordSearch = !isSubTopicClick && !isRefreshClick && !isProfileWordClick;
 
     if (isNewPrimaryWordSearch || isProfileWordClick) {
@@ -346,7 +364,7 @@ function App() {
         body: JSON.stringify({
           word: wordToFetch.trim(),
           mode: targetMode,
-          refresh_cache: isRefreshClick, // This tells backend to try and get fresh questions
+          refresh_cache: isRefreshClick, 
         }),
       });
 
@@ -372,11 +390,9 @@ function App() {
             ...contentToStore, 
             is_favorite: data.is_favorite, 
         };
-        // CRITICAL: If new quiz questions are fetched (for quiz mode, or refresh in quiz mode),
-        // quiz_progress MUST be reset to empty for a fresh start.
         if (targetMode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
-            console.log(`New quiz data received for "${dataWord}" (mode: ${targetMode}, refresh: ${isRefreshClick}). Resetting quiz_progress.`);
-            newWordContent.quiz_progress = [];
+            console.log(`New quiz data received for "${dataWord}" (mode: ${targetMode}, refresh: ${isRefreshClick}). Ensuring quiz_progress is empty.`);
+            newWordContent.quiz_progress = []; // Always reset progress when new questions are set
         } else if (targetMode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
             console.log(`Quiz mode requested for "${dataWord}" but no questions received. Ensuring quiz_progress is empty.`);
             newWordContent.quiz_progress = [];
@@ -389,9 +405,8 @@ function App() {
 
       setActiveContentMode(targetMode);
       
-      // UI states reset again after data is set, useEffect will also catch this
       if (targetMode === 'quiz') {
-          resetQuizStateForWord(sanitizedFetchedWordId);
+          resetQuizStateForWord(sanitizedFetchedWordId); // Final UI state reset after new data is in place
       }
 
 
@@ -418,13 +433,10 @@ function App() {
     }
   };
   
-  // "More Questions" button handler
   const handleFetchNewQuizSet = () => {
     const wordForNewQuiz = getDisplayWord();
     if (wordForNewQuiz && authToken) {
         console.log(`Fetching new quiz set for "${wordForNewQuiz}" via "More Questions" button.`);
-        // isRefreshClick=true is important here to signal backend for new questions
-        // and for frontend to correctly reset progress.
         handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
     } else if (!authToken) {
         setShowAuthModal(true);
@@ -438,11 +450,9 @@ function App() {
     const wordInFocus = getDisplayWord();
     const sanitizedWordInFocus = getDisplayWordSanitized();
 
-    // If switching away from quiz, reset UI states
     if (mode !== 'quiz') {
         resetQuizStateForWord(sanitizedWordInFocus); 
     }
-
 
     if (!wordInFocus) { 
         if (!getDisplayWord()) { 
@@ -453,7 +463,6 @@ function App() {
 
     const currentWordDataForModeCheck = generatedContent[sanitizedWordInFocus];
     
-    // Fetch content if not present or if quiz mode is selected and quiz array is missing/empty
     if (
         authToken &&
         sanitizedWordInFocus && 
@@ -462,6 +471,20 @@ function App() {
          (mode === 'quiz' && (!currentWordDataForModeCheck.quiz || currentWordDataForModeCheck.quiz.length === 0))
         )
     ) {
+        // If fetching quiz data for the first time for this word (not a refresh from quiz tab)
+        if (mode === 'quiz') {
+            console.log(`Fetching quiz for "${sanitizedWordInFocus}" first time. Clearing UI quiz questions.`);
+            setGeneratedContent(prev => ({
+                ...prev,
+                [sanitizedWordInFocus]: {
+                    ...(prev[sanitizedWordInFocus] || {}),
+                    quiz: undefined, 
+                    quiz_progress: [] 
+                }
+            }));
+            resetQuizStateForWord(sanitizedWordInFocus);
+        }
+
         setIsLoading(true);
         setError(null);
         console.log(`Fetching content for mode "${mode}" for word "${wordInFocus}" from: ${API_BASE_URL}/generate_explanation`); 
@@ -472,7 +495,7 @@ function App() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${authToken}`,
                 },
-                body: JSON.stringify({ word: wordInFocus.trim(), mode: mode, refresh_cache: mode === 'quiz' }), // Refresh cache if fetching for quiz
+                body: JSON.stringify({ word: wordInFocus.trim(), mode: mode, refresh_cache: mode === 'quiz' }), 
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
@@ -488,9 +511,8 @@ function App() {
                     ...contentToStore,
                     is_favorite: data.is_favorite !== undefined ? data.is_favorite : existingWordContent.is_favorite,
                 };
-                // If fetching for quiz mode and new questions arrive, reset progress for this word.
                 if (mode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
-                    console.log(`New quiz data received for "${wordInFocus}" during mode change. Resetting quiz_progress.`);
+                    console.log(`New quiz data received for "${wordInFocus}" during mode change. Ensuring quiz_progress is empty.`);
                     updatedWordContent.quiz_progress = [];
                 } else if (mode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
                     updatedWordContent.quiz_progress = [];
@@ -501,7 +523,6 @@ function App() {
                 };
             });
 
-            // Always reset UI states when switching to quiz mode or fetching new quiz data
             if (mode === 'quiz') {
                 resetQuizStateForWord(sanitizedWordInFocus); 
             }
@@ -513,7 +534,6 @@ function App() {
             setIsLoading(false);
         }
     } else if (mode === 'quiz') {
-        // If switching to quiz mode and data already exists, still ensure UI state is fresh
         resetQuizStateForWord(sanitizedWordInFocus);
     }
   };
@@ -568,7 +588,6 @@ function App() {
   const handleRefreshContent = () => {
     const wordToRefresh = getDisplayWord();
     if (wordToRefresh) {
-      // isRefreshClick=true will be passed to handleGenerateExplanation
       handleGenerateExplanation(wordToRefresh, false, true, false, activeContentMode);
     }
   };
@@ -636,14 +655,11 @@ function App() {
     }
   };
 
-  // This useEffect initializes the quiz view when data changes or mode switches.
   useEffect(() => {
     const wordId = getDisplayWordSanitized();
     if (activeContentMode === 'quiz' && wordId && generatedContent[wordId]?.quiz) {
         const wordData = generatedContent[wordId];
         const quizQuestions = wordData.quiz!; 
-        // CRITICAL: Use the frontend's quiz_progress for the current quiz instance.
-        // This progress should have been reset to [] when new questions were loaded.
         const progress = wordData.quiz_progress || []; 
 
         const newQuestionIndex = progress.length; 
@@ -656,8 +672,6 @@ function App() {
         setIsQuizAttemptedThisQuestion(false);
         if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
         
-        // This part for loading an already answered question might be less relevant if progress is always fresh.
-        // However, it's harmless if progress is indeed empty.
         const attemptForCurrentQuestion = progress.find(p => p.question_index === newQuestionIndex);
         if(attemptForCurrentQuestion && (newQuestionIndex < quizQuestions.length)){
             setSelectedQuizOption(attemptForCurrentQuestion.selected_option_key);
@@ -679,7 +693,6 @@ function App() {
     
     console.log(`Saving quiz attempt for "${wordBeingQuizzed}" (Q${questionIndex + 1}) to backend.`);
     try {
-      // Send the attempt to the backend
       const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
         method: 'POST',
         headers: {
@@ -697,8 +710,7 @@ function App() {
         const errorData = await response.json().catch(() => ({ error: 'Failed to save quiz attempt to backend' }));
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
-      // Backend save was successful. Now, update frontend state by appending.
-      // We ignore data.quiz_progress from backend to avoid stale data issues.
+      // const data: { message: string, quiz_progress: QuizAttempt[] } = await response.json(); // We don't need to use backend's quiz_progress
 
       const newAttempt: QuizAttempt = {
         question_index: questionIndex,
@@ -711,11 +723,8 @@ function App() {
         const existingWordData = prev[sanitizedWordBeingQuizzed] || {};
         const existingProgress = existingWordData.quiz_progress || [];
         
-        // Filter out any previous attempt for this specific question index, then add the new one.
-        // This handles cases where a user might somehow re-attempt (though current UI prevents this for a single question).
         const updatedProgress = existingProgress.filter(att => att.question_index !== questionIndex);
         updatedProgress.push(newAttempt);
-        // Sort by question_index to maintain order, especially if filtering affected order.
         updatedProgress.sort((a, b) => a.question_index - b.question_index);
 
         console.log(`Frontend updated quiz_progress for "${sanitizedWordBeingQuizzed}". New length: ${updatedProgress.length}`);
@@ -724,12 +733,11 @@ function App() {
           ...prev,
           [sanitizedWordBeingQuizzed]: {
             ...existingWordData,
-            quiz_progress: updatedProgress, // Use the frontend-managed appended progress
+            quiz_progress: updatedProgress, 
           },
         };
       });
 
-      // Trigger auto-advance after frontend state is updated
       if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
       autoAdvanceTimeoutRef.current = setTimeout(() => {
         handleNextQuestion();
@@ -749,7 +757,6 @@ function App() {
     setSelectedQuizOption(optionKey);
     setQuizFeedback({ message: isCorrect ? "Correct!" : "Incorrect.", isCorrect });
     setIsQuizAttemptedThisQuestion(true);
-    // Save attempt, which will then trigger auto-advance on successful frontend update
     handleSaveQuizAttempt(questionIdx, optionKey, isCorrect);
   };
 
@@ -764,9 +771,8 @@ function App() {
 
     if(currentWordData?.quiz && currentWordData.quiz_progress) {
         const quizSet = currentWordData.quiz;
-        // Progress is now managed by the frontend and reflects the current quiz instance
         const progress = currentWordData.quiz_progress; 
-        const nextQuestionToShowIndex = progress.length; // Next index is current length of progress array
+        const nextQuestionToShowIndex = progress.length; 
         
         console.log(`handleNextQuestion: quizSet.length=${quizSet.length}, progress.length=${progress.length}, nextQuestionToShowIndex=${nextQuestionToShowIndex}`);
 
@@ -776,7 +782,6 @@ function App() {
             setQuizFeedback(null);
             setIsQuizAttemptedThisQuestion(false);
         } else {
-            // All questions answered, move to summary
             setCurrentQuizQuestionIndex(quizSet.length);
             setSelectedQuizOption(null); 
             setQuizFeedback(null); 
@@ -784,7 +789,6 @@ function App() {
         }
     } else {
         console.warn("handleNextQuestion called but quiz data or frontend progress is missing/inconsistent.");
-        // Fallback to a safe state
         setCurrentQuizQuestionIndex(0); 
         setSelectedQuizOption(null);
         setQuizFeedback(null);
@@ -798,9 +802,17 @@ function App() {
 
   const renderContent = () => {
     const displayWordStr = getDisplayWord();
-    const generalErrorToDisplay = error && activeContentMode !== 'explain' && activeContentMode !== 'quiz';
+    // For quiz loading, we use a more specific check: isLoading AND the quiz array for the current word is not yet populated
+    const isQuizContentLoading = activeContentMode === 'quiz' && isLoading && (!currentDisplayWordData?.quiz || currentDisplayWordData.quiz.length === 0);
+    
+    if (isQuizContentLoading && displayWordStr) {
+        return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading new quiz for "{displayWordStr}"...</span></div>;
+    }
+    if (isLoading && !isQuizContentLoading && !currentDisplayWordData?.[activeContentMode] && displayWordStr) {
+        return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading {activeContentMode} for "{displayWordStr}"...</span></div>;
+    }
 
-    if (isLoading && !currentDisplayWordData?.[activeContentMode] && displayWordStr) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading {activeContentMode} for "{displayWordStr}"...</span></div>;
+    const generalErrorToDisplay = error && activeContentMode !== 'explain' && activeContentMode !== 'quiz';
     if (generalErrorToDisplay && !currentDisplayWordData?.[activeContentMode]) {
         return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
     }
@@ -846,16 +858,20 @@ function App() {
         if (error && !displayData?.deep_dive) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
         return <div className="prose max-w-none p-1 text-gray-800">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
       case 'quiz':
-        if (isLoading && !displayData?.quiz && displayWordStr) return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading quiz...</span></div>;
-        const quizSpecificError = error && !displayData?.quiz;
+        // Loading state for quiz is handled by isQuizContentLoading at the top of renderContent
+        const quizSpecificError = error && !displayData?.quiz; // Error specifically for quiz fetching
         if (quizSpecificError) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
 
         const quizSet = displayData?.quiz; 
-        // Use frontend-managed progress for rendering
         const quizProgress = displayData?.quiz_progress || []; 
 
         if (!quizSet || quizSet.length === 0) {
-          return <div className="p-4 text-gray-500">No quiz available for "{displayWordStr}" yet. Try generating it or refreshing.</div>;
+          // If not loading and quiz array is still empty/undefined, show this message.
+          if (!isQuizContentLoading) {
+            return <div className="p-4 text-gray-500">No quiz available for "{displayWordStr}" yet. Try generating it or refreshing.</div>;
+          }
+          // If it IS loading (isQuizContentLoading is true), the top-level loading indicator is already shown.
+          return null; 
         }
         
         console.log(`Render Quiz: currentQuizQuestionIndex=${currentQuizQuestionIndex}, quizSet.length=${quizSet.length}, quizProgress.length=${quizProgress.length}`);
@@ -895,7 +911,7 @@ function App() {
                         })}
                     </div>
                      <button
-                        onClick={handleFetchNewQuizSet} // "More Questions" button
+                        onClick={handleFetchNewQuizSet} 
                         disabled={isLoading}
                         className="w-full mt-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
                     >
@@ -911,6 +927,7 @@ function App() {
         const parsedQuestion = parseQuizString(currentQuestionString);
 
         if (!parsedQuestion) {
+          // This is where the error "Error loading question..." is shown
           return <div className="text-red-500 p-4">Error loading question. Please try refreshing. Original string: <pre className="text-xs whitespace-pre-wrap break-all">{currentQuestionString}</pre></div>;
         }
         

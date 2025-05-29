@@ -26,21 +26,20 @@ interface CurrentUser {
   id: string;
 }
 
-// Represents the structure of a parsed quiz question
 interface ParsedQuizQuestion {
   question: string;
-  options: { [key: string]: string }; // e.g., { A: "Option A", B: "Option B" }
-  correctOptionKey: string; // e.g., "A"
-  explanation?: string; // Optional explanation for the answer
-  originalString?: string; // Keep original string for debugging if needed
+  options: { [key: string]: string }; 
+  correctOptionKey: string; 
+  explanation?: string; 
+  originalString?: string; 
 }
 
 interface GeneratedContentItem {
   explanation?: string;
-  quiz?: ParsedQuizQuestion[]; // Now stores parsed questions
+  quiz?: ParsedQuizQuestion[]; 
   fact?: string;
-  image_prompt?: string;
-  image_url?: string;
+  image_prompt?: string; // For actual image prompt or placeholder text
+  image_url?: string;    // For actual image URL
   deep_dive?: string;
   is_favorite?: boolean;
   first_explored_at?: string;
@@ -86,13 +85,10 @@ type ContentMode = 'explain' | 'quiz' | 'fact' | 'image' | 'deep_dive';
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; 
 
 const sanitizeWordForId = (word: string): string => {
-  if (typeof word !== 'string') return "invalid_word_input"; // Guard against non-string input
+  if (typeof word !== 'string') return "invalid_word_input"; 
   return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
 
-// --- Quiz Parsing Logic ---
-// This parser needs to be robust based on the exact format from your backend.
-// This is an example based on common formats. Adjust if your backend format differs.
 const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion[] => {
     if (!Array.isArray(quizStringsFromBackend)) {
         console.error("Quiz data from backend is not an array:", quizStringsFromBackend);
@@ -102,21 +98,12 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
     return quizStringsFromBackend.map((quizStr: string, index: number) => {
         if (typeof quizStr !== 'string') {
             console.error(`Quiz item at index ${index} is not a string:`, quizStr);
-            return null; // Or some default error question structure
+            return null; 
         }
-        // Example parsing logic (highly dependent on your backend's string format)
-        // This assumes a format like:
-        // **Question 1:** What is X?
-        // A) Opt1
-        // B) Opt2
-        // C) Opt3
-        // D) Opt4
-        // Correct Answer: A
-        // Explanation: Some explanation (optional)
-
+        
         const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line);
-        if (lines.length < 6) { // Minimum: Question, 4 options, Correct Answer
-            console.warn(`Quiz string for item ${index} has too few lines:`, quizStr);
+        if (lines.length < 3) { // Simplified minimum: Question, one option, Correct Answer
+            console.warn(`Quiz string for item ${index} has too few lines:`, lines.length, "Content:", quizStr);
             return null;
         }
 
@@ -124,47 +111,53 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
         const options: { [key: string]: string } = {};
         let correctOptionKey = "";
         let explanation = "";
+        let parsingState: 'question' | 'options' | 'answer' | 'explanation' = 'question';
 
-        const questionMatch = lines[0].match(/^\*\*Question \d*:\*\*\s*(.*)/i);
-        if (questionMatch) {
-            question = questionMatch[1];
-        } else {
-            // Fallback if question format is different, e.g. just the first line
-            question = lines[0]; 
-        }
-        
-        let optionParsing = true;
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i];
+        for (const line of lines) {
+            if (line.match(/^\*\*Question \d*:\*\*/i)) {
+                question = line.replace(/^\*\*Question \d*:\*\*\s*/i, '').trim();
+                parsingState = 'options';
+                continue;
+            }
+            if (parsingState === 'question' && !question) { // If no header, first line is question
+                question = line;
+                parsingState = 'options';
+                continue;
+            }
+
             const optionMatch = line.match(/^([A-D])\)\s*(.*)/i);
-            const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i);
-            const explanationMatch = line.match(/^Explanation:\s*(.*)/i);
+            if (optionMatch) {
+                options[optionMatch[1].toUpperCase()] = optionMatch[2].trim();
+                parsingState = 'options'; // Stay in options mode
+                continue;
+            }
 
-            if (optionParsing && optionMatch) {
-                options[optionMatch[1].toUpperCase()] = optionMatch[2];
-                if (Object.keys(options).length >= 4) {
-                    optionParsing = false; // Assume 4 options max
-                }
-            } else if (correctMatch) {
+            const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i);
+            if (correctMatch) {
                 correctOptionKey = correctMatch[1].toUpperCase();
-                optionParsing = false;
-            } else if (explanationMatch) {
-                explanation = explanationMatch[1];
-                optionParsing = false;
-            } else if (!optionParsing && !correctOptionKey && question) { // If still parsing question (multi-line)
+                parsingState = 'explanation'; // Move to explanation after correct answer
+                continue;
+            }
+            
+            const explanationMatch = line.match(/^Explanation:\s*(.*)/i);
+            if (explanationMatch) {
+                explanation = explanationMatch[1].trim();
+                parsingState = 'explanation';
+                continue;
+            }
+             // If in question state and it's not an option/answer, append to question
+            if (parsingState === 'question' && question) {
                 question += " " + line;
             }
         }
         
-        // Basic validation
-        if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) {
-             console.warn(`Failed to parse quiz string item ${index} completely. Q: "${question}", Opts: ${Object.keys(options).length}, Correct: "${correctOptionKey}"`, quizStr);
-             // Attempt to return at least the question if available, otherwise null
-             return question ? { question, options: {}, correctOptionKey: '', originalString: quizStr } : null;
+        if (!question || Object.keys(options).length === 0 || !correctOptionKey || !options[correctOptionKey]) {
+             console.warn(`Incomplete parse for quiz item ${index}. Q: "${question}", Opts: ${Object.keys(options).length}, CorrectKey: "${correctOptionKey}", OptionsHasKey: ${!!options[correctOptionKey]}`, "Original:", quizStr);
+             return question ? { question, options: options || {}, correctOptionKey: correctOptionKey || '', originalString: quizStr } : null;
         }
 
         return { question, options, correctOptionKey, explanation, originalString: quizStr };
-    }).filter(q => q !== null) as ParsedQuizQuestion[]; // Filter out any nulls from parsing errors
+    }).filter(q => q !== null) as ParsedQuizQuestion[]; 
 };
 
 
@@ -240,8 +233,14 @@ function App() {
         username: data.username,
         email: data.email,
         totalWordsExplored: data.total_words_explored,
-        exploredWords: (data.explored_words || []).map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
-        favoriteWords: (data.favorite_words || []).map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        exploredWords: (data.explored_words || [])
+            .map((w: any) => ({ ...w, word: w.word_id as string }))
+            .filter((w: any) => typeof w.word === 'string' && w.word.trim() !== '')
+            .sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        favoriteWords: (data.favorite_words || [])
+            .map((w: any) => ({ ...w, word: w.word_id as string }))
+            .filter((w: any) => typeof w.word === 'string' && w.word.trim() !== '')
+            .sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
         streakHistory: (data.streak_history || []).sort((a:any, b:any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()),
       });
       setCurrentUser({ username: data.username, email: data.email, id: data.user_id });
@@ -405,24 +404,29 @@ function App() {
 
       if (!isRefreshClick && contentExists) {
         if (modeToFetch === 'quiz') {
-          const existingQuizData = generatedContent[wordId].quiz; // Should be ParsedQuizQuestion[]
+          const existingQuizData = generatedContent[wordId].quiz; 
           const existingProgress = generatedContent[wordId].quiz_progress || [];
           if (existingQuizData && existingQuizData.length > 0) {
             const nextQuestionIdx = existingProgress.length >= existingQuizData.length ? existingQuizData.length : existingProgress.length;
             setCurrentQuizQuestionIndex(nextQuestionIdx);
           } else {
-             throw new Error("Cached quiz is empty or invalid, fetching new one.");
+             console.warn("Cached quiz exists but is empty or invalid, fetching new one.");
+             // Proceed to fetch new data by not returning here
           }
         }
-        if (!isSubTopicClick && !isProfileWordClick) setCurrentFocusWord(wordToFetch); 
-        setActiveContentMode(modeToFetch);
-        setIsLoading(false);
-        if (isNewPrimaryWordSearch || isProfileWordClick) { 
-            setLiveStreak({ score: 1, words: [wordToFetch] });
+        // If content exists and it's not an empty quiz needing refresh, return
+        if (!(modeToFetch === 'quiz' && (!generatedContent[wordId].quiz || generatedContent[wordId].quiz?.length === 0))) {
+            if (!isSubTopicClick && !isProfileWordClick) setCurrentFocusWord(wordToFetch); 
+            setActiveContentMode(modeToFetch);
+            setIsLoading(false);
+            if (isNewPrimaryWordSearch || isProfileWordClick) { 
+                setLiveStreak({ score: 1, words: [wordToFetch] });
+            }
+            return;
         }
-        return;
       }
 
+      console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}" from backend.`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
         headers: {
@@ -442,45 +446,75 @@ function App() {
         throw new Error(errData.error || `Failed to generate content (${response.status})`);
       }
 
-      const data = await response.json(); // data can contain { word, [mode]: content, full_cache, ... }
+      const data = await response.json(); 
+      console.log("Data received from backend:", data);
       
       setGeneratedContent(prev => {
-        const currentWordData = prev[wordId] || {};
-        const newWordData: GeneratedContentItem = { ...currentWordData };
+        const existingWordData = prev[wordId] || {};
+        const newWordData: GeneratedContentItem = { ...existingWordData };
 
-        // Use full_cache as a base if available
-        if (data.full_cache) {
-            Object.assign(newWordData, data.full_cache);
-            // If full_cache has quiz (string array), parse it
-            if (data.full_cache.quiz && Array.isArray(data.full_cache.quiz)) {
-                newWordData.quiz = parseQuizStringToArray(data.full_cache.quiz);
+        // Use full_cache as a base if available and if direct mode data isn't primary
+        const baseCache = data.full_cache || {};
+
+        // Explanation
+        newWordData.explanation = data.explain ?? baseCache.explain ?? existingWordData.explanation;
+        // Fact
+        newWordData.fact = data.fact ?? baseCache.fact ?? existingWordData.fact;
+        // Deep Dive
+        newWordData.deep_dive = data.deep_dive ?? baseCache.deep_dive ?? existingWordData.deep_dive;
+
+        // Image (placeholder or actual)
+        if (modeToFetch === 'image') {
+            if (data.image_url) { // Actual image from backend (future)
+                newWordData.image_url = data.image_url;
+                newWordData.image_prompt = data.image_prompt ?? baseCache.image_prompt ?? existingWordData.image_prompt;
+            } else if (data.image) { // Placeholder text from backend (current)
+                newWordData.image_prompt = data.image; // data.image contains the placeholder string
+                newWordData.image_url = undefined;
+            } else if (baseCache.image_url) { // From full_cache
+                 newWordData.image_url = baseCache.image_url;
+                 newWordData.image_prompt = baseCache.image_prompt ?? existingWordData.image_prompt;
+            } else if (baseCache.image) { // Placeholder from full_cache
+                 newWordData.image_prompt = baseCache.image;
+                 newWordData.image_url = undefined;
             }
+        } else { // Preserve existing image data if not fetching image mode
+            newWordData.image_prompt = existingWordData.image_prompt;
+            newWordData.image_url = existingWordData.image_url;
         }
         
-        // Override with specific mode data if present in the root of `data`
-        // This handles the case where backend sends `data.explain`, `data.fact`, etc.
-        if (data[modeToFetch] !== undefined) {
-            if (modeToFetch === 'quiz') {
-                // Assuming data[modeToFetch] (i.e. data.quiz) is an array of strings from backend
-                newWordData.quiz = parseQuizStringToArray(data[modeToFetch]);
-                newWordData.quiz_progress = []; 
+        // Quiz
+        if (modeToFetch === 'quiz') {
+            const quizStrings = data.quiz ?? baseCache.quiz; 
+            if (quizStrings && Array.isArray(quizStrings)) {
+                newWordData.quiz = parseQuizStringToArray(quizStrings);
+                newWordData.quiz_progress = (isRefreshClick || !existingWordData.quiz_progress) ? [] : existingWordData.quiz_progress;
+                 // Always reset index for new/refreshed quiz data
                 setCurrentQuizQuestionIndex(0);
-            } else if (modeToFetch === 'image') {
-                if(data.image_url) newWordData.image_url = data.image_url;
-                if(data.image_prompt) newWordData.image_prompt = data.image_prompt;
             } else {
-                newWordData[modeToFetch as keyof GeneratedContentItem] = data[modeToFetch];
+                newWordData.quiz = []; // Ensure it's an empty array if no quiz data
+                newWordData.quiz_progress = [];
+                setCurrentQuizQuestionIndex(0);
             }
+        } else if (existingWordData.quiz) { 
+            newWordData.quiz = existingWordData.quiz;
+            newWordData.quiz_progress = existingWordData.quiz_progress;
         }
         
-        newWordData.is_favorite = data.is_favorite !== undefined ? data.is_favorite : (newWordData.is_favorite || false);
-        newWordData.first_explored_at = currentWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
+        newWordData.is_favorite = data.is_favorite !== undefined ? data.is_favorite : (existingWordData.is_favorite || false);
+        newWordData.first_explored_at = existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
         newWordData.last_explored_at = data.last_explored_at || new Date().toISOString();
 
-        const currentModesGenerated = newWordData.modes_generated || [];
-        if (!currentModesGenerated.includes(modeToFetch)) {
-            newWordData.modes_generated = [...currentModesGenerated, modeToFetch];
+        const currentModesGenerated = new Set(existingWordData.modes_generated || []);
+        currentModesGenerated.add(modeToFetch);
+        if (data.modes_generated && Array.isArray(data.modes_generated)) { // From direct response
+            data.modes_generated.forEach((m:string) => currentModesGenerated.add(m));
+        } else if (baseCache.modes_generated && Array.isArray(baseCache.modes_generated)) { // From full_cache
+            baseCache.modes_generated.forEach((m:string) => currentModesGenerated.add(m));
         }
+        newWordData.modes_generated = Array.from(currentModesGenerated);
+        
+        console.log("Processed newWordData for", wordId, ":", newWordData);
         return { ...prev, [wordId]: newWordData };
       });
 
@@ -507,7 +541,6 @@ function App() {
       }
 
       setActiveContentMode(modeToFetch);
-      // No need to reset currentQuizQuestionIndex here as it's handled in setGeneratedContent
 
     } catch (err: any) {
       setError(err.message);
@@ -540,7 +573,7 @@ function App() {
 
     if (contentForNewModeExists) {
         if (newMode === 'quiz') {
-            const quizData = generatedContent[wordId].quiz; // Should be ParsedQuizQuestion[]
+            const quizData = generatedContent[wordId].quiz; 
             const progress = generatedContent[wordId].quiz_progress || [];
             if (quizData && quizData.length > 0) {
                 const nextQuestionIdx = progress.length >= quizData.length ? quizData.length : progress.length;
@@ -548,13 +581,12 @@ function App() {
                 setSelectedQuizOption(null); 
                 setQuizFeedback(null);
                 setIsQuizAttempted(false); 
-            } else { // Quiz array exists but is empty, or not properly parsed
+            } else { 
                 handleGenerateExplanation(wordToUse, false, false, false, newMode);
             }
         }
         return; 
     }
-    // Content for the new mode does not exist, fetch it.
     handleGenerateExplanation(wordToUse, false, false, false, newMode);
   };
   
@@ -675,8 +707,9 @@ function App() {
     const wordToUse = getDisplayWord();
     if (activeContentMode === 'quiz' && wordToUse) {
         const wordId = sanitizeWordForId(wordToUse);
-        const quizSet = generatedContent[wordId]?.quiz; // Should be ParsedQuizQuestion[]
-        const progress = generatedContent[wordId]?.quiz_progress || [];
+        const currentWordContent = generatedContent[wordId];
+        const quizSet = currentWordContent?.quiz; 
+        const progress = currentWordContent?.quiz_progress || [];
 
         if (quizSet && quizSet.length > 0) {
             const questionToDisplayIndex = currentQuizQuestionIndex < quizSet.length ? currentQuizQuestionIndex : progress.length;
@@ -684,7 +717,7 @@ function App() {
             if (questionToDisplayIndex < quizSet.length) { 
                 const currentQuestion = quizSet[questionToDisplayIndex];
                 const attemptedQuestion = progress.find(p => p.question_index === questionToDisplayIndex);
-                if (attemptedQuestion && currentQuestion) { // Ensure currentQuestion is valid
+                if (attemptedQuestion && currentQuestion && currentQuestion.options) { 
                     setSelectedQuizOption(attemptedQuestion.selected_option_key);
                     setQuizFeedback({
                         message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
@@ -697,8 +730,7 @@ function App() {
                     setIsQuizAttempted(false);
                 }
             }
-        } else if (!isLoading && !error && generatedContent[wordId] && !generatedContent[wordId].quiz) { 
-             // If quiz mode is active, content for word exists, but quiz array is missing, try fetching
+        } else if (!isLoading && !error && currentWordContent && !currentWordContent.quiz) { 
             handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
         }
     }
@@ -745,7 +777,7 @@ function App() {
     if (!wordToUse) return;
 
     const wordId = sanitizeWordForId(wordToUse);
-    const quizSet = generatedContent[wordId]?.quiz; // Should be ParsedQuizQuestion[]
+    const quizSet = generatedContent[wordId]?.quiz; 
     if (!quizSet || currentQuizQuestionIndex >= quizSet.length) return; 
 
     const progress = generatedContent[wordId]?.quiz_progress || [];
@@ -753,7 +785,7 @@ function App() {
     if (alreadyAnsweredInDb || isQuizAttempted) return; 
 
     const currentQuestion = quizSet[currentQuizQuestionIndex];
-    if (!currentQuestion || !currentQuestion.options) { // Add check for currentQuestion and its options
+    if (!currentQuestion || typeof currentQuestion.options !== 'object' || currentQuestion.options === null) { 
         console.error("Current quiz question or its options are invalid:", currentQuestion);
         setError("Error displaying quiz question options.");
         return;
@@ -928,28 +960,28 @@ function App() {
         ) : <p className="text-slate-400">No explanation available. Try generating one.</p>;
         break;
       case 'quiz':
-        const quizSet = content.quiz; // This should now be ParsedQuizQuestion[]
+        const quizSet = content.quiz; 
         const progress = content.quiz_progress || [];
 
         if (!quizSet || quizSet.length === 0) {
             modeContentElement = <p className="text-slate-400">No quiz available for "{wordToUse}". Try generating one or refreshing.</p>;
             break;
         }
-        if (currentQuizQuestionIndex >= quizSet.length) { // Summary View
+        if (currentQuizQuestionIndex >= quizSet.length) { 
             const score = progress.filter(p => p.is_correct).length;
             modeContentElement = (
                 <div className="text-slate-200">
                     <h3 className="text-xl font-semibold mb-4 text-sky-300">Quiz Summary for "{wordToUse}"</h3>
                     <p className="text-lg mb-4">Your Score: <span className="font-bold text-emerald-400">{score}</span> / {quizSet.length}</p>
                     <ul className="space-y-3 mb-6 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                        {quizSet.map((parsedQ, idx) => { // Iterate over ParsedQuizQuestion
+                        {quizSet.map((parsedQ, idx) => { 
                             if (!parsedQ) return <li key={`error-${idx}`} className="text-red-400">Error displaying question {idx + 1}.</li>;
                             const attempt = progress.find(p => p.question_index === idx);
                             return (
                                 <li key={idx} className={`p-3 rounded-md ${attempt ? (attempt.is_correct ? 'bg-green-500/20' : 'bg-red-500/20') : 'bg-slate-700'}`}>
                                     <p className="font-medium mb-1">Q{idx + 1}: {parsedQ.question}</p>
-                                    <p className="text-xs">Your answer: {attempt && parsedQ.options[attempt.selected_option_key] ? parsedQ.options[attempt.selected_option_key] : (attempt ? 'N/A' : 'Not answered')}</p>
-                                    {!attempt?.is_correct && parsedQ.options[parsedQ.correctOptionKey] && <p className="text-xs text-emerald-300">Correct: {parsedQ.options[parsedQ.correctOptionKey]}</p>}
+                                    <p className="text-xs">Your answer: {attempt && parsedQ.options && parsedQ.options[attempt.selected_option_key] ? parsedQ.options[attempt.selected_option_key] : (attempt ? 'N/A' : 'Not answered')}</p>
+                                    {!attempt?.is_correct && parsedQ.options && parsedQ.options[parsedQ.correctOptionKey] && <p className="text-xs text-emerald-300">Correct: {parsedQ.options[parsedQ.correctOptionKey]}</p>}
                                 </li>
                             );
                         })}
@@ -962,8 +994,8 @@ function App() {
                     </button>
                 </div>
             );
-        } else { // Question View
-            const currentQuestion = quizSet[currentQuizQuestionIndex]; // This is a ParsedQuizQuestion
+        } else { 
+            const currentQuestion = quizSet[currentQuizQuestionIndex]; 
             if (!currentQuestion || typeof currentQuestion.options !== 'object' || currentQuestion.options === null) {
                  modeContentElement = <p className="text-red-400">Error: Quiz question data is invalid or options are missing.</p>;
             } else {
@@ -1013,9 +1045,10 @@ function App() {
       case 'image':
         modeContentElement = (
             <div>
-                {content.image_prompt && <p className="text-sm text-slate-400 mb-2 italic">Prompt: {content.image_prompt}</p>}
                 {content.image_url ? (
                     <img src={content.image_url} alt={`Generated for ${wordToUse}`} className="rounded-lg shadow-lg mx-auto max-w-full h-auto max-h-[400px] object-contain" />
+                ) : content.image_prompt ? ( // If no URL, but prompt (placeholder) exists
+                    <p className="text-slate-400 italic">{content.image_prompt}</p>
                 ) : (
                     <p className="text-slate-400">No image available. Try generating one.</p>
                 )}

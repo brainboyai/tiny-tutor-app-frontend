@@ -10,7 +10,7 @@ import './index.css'; // Tailwind base styles
 import ProfilePage from './ProfilePage'; // Assuming ProfilePage.tsx is in the same src/ directory
 
 // --- Constants (from original App.tsx, ensure these are defined) ---
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://tiny-tutor-app.onrender.com'; // Ensure this is correctly set in .env
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'; // Ensure this is correctly set in .env
 
 // --- Type Definitions (from original App.tsx, ensure these are defined) ---
 interface CurrentUser {
@@ -123,7 +123,6 @@ function App() {
   const [wordForReview, setWordForReview] = useState<string | null>(null); // Word being reviewed from streak/profile
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState(false);
 
-  // const [isMenuOpen, setIsMenuOpen] = useState(false); // Removed unused state
   const [darkMode, setDarkMode] = useState(() => {
     const savedMode = localStorage.getItem('darkMode');
     return savedMode ? JSON.parse(savedMode) : window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -162,31 +161,41 @@ function App() {
 
 
   // --- Fetch User Profile ---
-  const fetchUserProfile = useCallback(async (token: string | null) => {
-    if (!token) {
+  const fetchUserProfile = useCallback(async (tokenToUse: string | null) => {
+    if (!tokenToUse) {
+      // Clear states if no token is provided (e.g., on logout or initial load without token)
+      // Do not show auth modal here, let other logic handle it.
+      setAuthToken(null);
       setCurrentUser(null);
-      setUserProfileData({ exploredWords: [], favoriteWords: [], streakHistory: [], totalWordsExplored: 0, isLoading: false, error: null, username: undefined, email: undefined });
+      setUserProfileData(prev => ({ ...prev, isLoading: false, error: null, username: undefined, email: undefined, exploredWords: [], favoriteWords: [], streakHistory: [], totalWordsExplored: 0 }));
       return;
     }
+
     setUserProfileData(prev => ({ ...prev, isLoading: true, error: null }));
     try {
       const response = await fetch(`${API_BASE_URL}/profile`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${tokenToUse}` }
       });
+
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to parse error response from /profile" }));
         if (response.status === 401) {
-          localStorage.removeItem('authToken');
+          console.warn("fetchUserProfile: Received 401. Token might be invalid or expired.");
+          localStorage.removeItem('authToken'); // Remove invalid token
           setAuthToken(null);
-          setCurrentUser(null);
-          setUserProfileData({ exploredWords: [], favoriteWords: [], streakHistory: [], totalWordsExplored: 0, isLoading: false, error: null, username: undefined, email: undefined });
-          setActiveView('main');
-          setShowAuthModal(true);
-          setAuthError("Session expired. Please login again.");
-          throw new Error("Session expired. Please login again.");
+          setCurrentUser(null); // Clear current user
+          setUserProfileData(prev => ({ ...prev, isLoading: false, error: errorData.error || "Session expired. Please login.", username: undefined, email: undefined, exploredWords: [], favoriteWords: [], streakHistory: [], totalWordsExplored: 0 }));
+          if (!showAuthModal) { // Avoid opening modal if already open
+            setShowAuthModal(true);
+            setAuthError(errorData.error || "Your session has expired. Please login again.");
+          }
+        } else {
+          setUserProfileData(prev => ({ ...prev, isLoading: false, error: errorData.error || `Failed to fetch profile: ${response.statusText}` }));
         }
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch profile: ${response.statusText}`);
+        // Do not throw error here if we've handled the state update, to prevent duplicate error handling
+        return; // Exit after handling error
       }
+
       const data = await response.json();
       setCurrentUser({ username: data.username, email: data.email, id: data.user_id });
       setUserProfileData({
@@ -199,21 +208,19 @@ function App() {
         isLoading: false,
         error: null,
       });
-    } catch (err: any) {
-      console.error("Error fetching profile:", err);
-      setUserProfileData(prev => ({ ...prev, isLoading: false, error: err.message }));
-      if (err.message.includes("Session expired") && !showAuthModal) {
-        setError("Session expired. Please login again.");
-      }
+    } catch (err: any) { // Catch network errors or JSON parsing errors for the success case
+      console.error("Error during fetchUserProfile or JSON parsing:", err);
+      setUserProfileData(prev => ({ ...prev, isLoading: false, error: prev.error || err.message || "An unexpected error occurred while fetching profile." }));
     }
-  }, [showAuthModal]);
+  }, [setAuthToken, setCurrentUser, setShowAuthModal, setAuthError, showAuthModal]); // Added showAuthModal to deps
 
   // --- Initial data fetch if token exists ---
   useEffect(() => {
-    if (authToken && (!currentUser || !userProfileData.username)) {
-      fetchUserProfile(authToken);
+    const tokenFromStorage = localStorage.getItem('authToken');
+    if (tokenFromStorage && !currentUser) { // Only fetch if no currentUser and token exists
+      fetchUserProfile(tokenFromStorage);
     }
-  }, [authToken, currentUser, userProfileData.username, fetchUserProfile]);
+  }, []); // Removed dependencies to make it truly on mount, subsequent calls handled by login/logout
 
 
   // --- Authentication Handlers (login, signup, logout) ---
@@ -221,7 +228,7 @@ function App() {
     e.preventDefault();
     setAuthError(null);
     setAuthSuccessMessage(null);
-    setIsAuthProcessing(true); // Use specific state for auth button
+    setIsAuthProcessing(true);
 
     const endpoint = type === 'login' ? '/login' : '/signup';
     try {
@@ -239,11 +246,24 @@ function App() {
       if (type === 'signup') {
         setAuthSuccessMessage('Signup successful! Please login.');
         setAuthMode('login');
-      } else {
+      } else { // Login successful
         localStorage.setItem('authToken', data.token);
         setAuthToken(data.token);
+
+        // Optimistically set currentUser with data from login response
+        if (data.user && data.user.id) {
+          setCurrentUser({
+            id: data.user.id,
+            username: data.user.username,
+            email: data.user.email
+            // tier: data.user.tier // if CurrentUser type includes tier
+          });
+        }
+
         setShowAuthModal(false);
-        setError(null);
+        setError(null); // Clear global errors
+
+        // Fetch full profile data. If this fails (e.g. 401), fetchUserProfile will handle state clearing.
         await fetchUserProfile(data.token);
       }
     } catch (err: any) {
@@ -282,10 +302,10 @@ function App() {
     setActiveView('main');
     setShowAuthModal(false);
     mainInputRef.current?.focus();
-  }, [liveStreak, authToken]);
+  }, [liveStreak, authToken]); // authToken is a dependency here
 
 
-  // --- Content Generation and Management ---
+  // --- Content Generation and Management (Keep existing - no changes in this block) ---
   const handleGenerateExplanation = async (
     wordToFetch: string,
     isProfileWordClick = false,
@@ -301,6 +321,7 @@ function App() {
     if (!authToken) {
       setShowAuthModal(true);
       setAuthMode('login');
+      setAuthError(null); // Clear auth error when prompting login
       return;
     }
 
@@ -361,7 +382,7 @@ function App() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: "Failed to parse error from /generate_explanation" }));
         if (response.status === 401 && authToken) {
           handleLogout(false);
           return;
@@ -388,11 +409,13 @@ function App() {
         else if (modeToFetch === 'image') newContentForWord.image = data.image_url;
         else if (modeToFetch === 'deep_dive') newContentForWord.deep_dive = data.deep_dive_content;
 
-        if (data.is_favorite !== undefined) {
+        if (data.is_favorite !== undefined) { // Should come from word_data
           newContentForWord.is_favorite = data.is_favorite;
         }
-        if (data.word_data && data.word_data.quiz_progress) {
-          newContentForWord.quiz_progress = data.word_data.quiz_progress;
+        if (data.word_data) { // If backend sends full word data
+          if (data.word_data.quiz_progress) newContentForWord.quiz_progress = data.word_data.quiz_progress;
+          if (data.word_data.is_favorite !== undefined) newContentForWord.is_favorite = data.word_data.is_favorite;
+          // Potentially update other parts of newContentForWord from data.word_data.generated_content_cache
         }
         return { ...prev, [effectiveWordId]: newContentForWord };
       });
@@ -476,7 +499,7 @@ function App() {
     }
   };
 
-  // --- Quiz Interaction Handlers ---
+  // --- Quiz Interaction Handlers (Keep existing - no changes in this block) ---
   const handleQuizOptionSelect = (optionKey: string) => {
     const displayWord = getDisplayWord();
     if (!displayWord || isQuizAttempted) return;
@@ -557,7 +580,7 @@ function App() {
   };
 
 
-  // --- Streak Interaction Handlers ---
+  // --- Streak Interaction Handlers (Keep existing - no changes in this block) ---
   const handleSubTopicClick = (subTopic: string) => {
     if (isLoading) return;
     setIsReviewingStreakWord(false);
@@ -580,7 +603,7 @@ function App() {
   };
 
 
-  // --- Profile Navigation and Interaction ---
+  // --- Profile Navigation and Interaction (Keep existing - no changes in this block) ---
   const handleToggleProfileView = () => {
     if (activeView === 'profile') {
       setActiveView('main');
@@ -589,9 +612,10 @@ function App() {
       if (!authToken) {
         setShowAuthModal(true);
         setAuthMode('login');
+        setAuthError(null); // Clear auth error when opening
         return;
       }
-      if (authToken && !userProfileData.isLoading) {
+      if (authToken && !userProfileData.isLoading) { // Also check userProfileData.username to avoid refetch if already loaded
         fetchUserProfile(authToken);
       }
       setActiveView('profile');
@@ -606,16 +630,15 @@ function App() {
   };
 
 
-  // --- Helper to get the word currently being displayed ---
+  // --- Helper to get the word currently being displayed (Keep existing) ---
   const getDisplayWord = useCallback(() => {
     return isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord;
   }, [isReviewingStreakWord, wordForReview, currentFocusWord]);
 
 
-  // --- Render Functions ---
+  // --- Render Functions (Keep existing - with minor correction in renderAuthModal submit button state) ---
   const renderAuthModal = () => {
     if (!showAuthModal) return null;
-    // isProcessingAuth removed as it's managed by isAuthProcessing state
     return (
       <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 dark:bg-opacity-80">
         <div className="bg-white dark:bg-slate-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md relative">
@@ -625,11 +648,8 @@ function App() {
           <h2 className="text-2xl sm:text-3xl font-bold mb-6 text-center text-slate-700 dark:text-slate-100">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
           {authError && <p className="mb-4 text-red-500 dark:text-red-400 text-sm bg-red-100 dark:bg-red-900 dark:bg-opacity-30 p-3 rounded-md">{authError}</p>}
           {authSuccessMessage && <p className="mb-4 text-green-600 dark:text-green-400 text-sm bg-green-100 dark:bg-green-700 dark:bg-opacity-20 p-3 rounded-md">{authSuccessMessage}</p>}
-          <form onSubmit={async (e: React.FormEvent<HTMLFormElement>) => { // Typed e
+          <form onSubmit={async (e: React.FormEvent<HTMLFormElement>) => {
             e.preventDefault();
-            // const formButton = (e.nativeEvent as any).submitter as HTMLButtonElement; // Corrected submitter access
-            // if(formButton) formButton.disabled = true; 
-            // setIsAuthProcessing(true); // Already set in handleAuthAction
             const target = e.target as typeof e.target & {
               username?: { value: string };
               email: { value: string };
@@ -639,8 +659,6 @@ function App() {
             const password = target.password.value;
             const username = authMode === 'signup' ? target.username?.value : undefined;
             await handleAuthAction(e, authMode, { username, email, password });
-            // setIsAuthProcessing(false); // Already set in handleAuthAction
-            // if(formButton) formButton.disabled = false; 
           }}>
             {authMode === 'signup' && (
               <div className="mb-4">
@@ -927,7 +945,12 @@ function App() {
                 </button>
               </>
             ) : (
-              <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); }} className="flex items-center bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-3 sm:px-4 rounded-lg transition-colors text-sm sm:text-base">
+              <button onClick={() => {
+                setShowAuthModal(true);
+                setAuthMode('login');
+                setAuthError(null); // Clear previous errors when opening modal
+                setAuthSuccessMessage(null);
+              }} className="flex items-center bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-3 sm:px-4 rounded-lg transition-colors text-sm sm:text-base">
                 <LogIn size={18} className="mr-1 sm:mr-2" /> Login
               </button>
             )}
@@ -939,27 +962,29 @@ function App() {
       {activeView === 'main' ? (
         <main className="flex-grow container mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col">
           {/* Input Area */}
-          <div className="mb-6 sm:mb-8">
-            <form onSubmit={(e) => { e.preventDefault(); handleGenerateExplanation(inputValue, false, false, false, 'explain', true); }} className="flex items-center gap-2 sm:gap-3 bg-white dark:bg-slate-800 p-2 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-              <Search size={20} className="text-slate-400 dark:text-slate-500 ml-2" />
-              <input
-                ref={mainInputRef}
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Enter a word or concept (e.g., photosynthesis)"
-                className="flex-grow p-2.5 sm:p-3 bg-transparent focus:outline-none text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm sm:text-base"
-                disabled={isLoading && !getDisplayWord()}
-              />
-              <button type="submit" disabled={isLoading && !getDisplayWord()} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2.5 px-4 sm:px-5 rounded-lg transition-colors flex items-center disabled:opacity-70">
-                {(isLoading && !getDisplayWord()) ? <RefreshCw size={18} className="animate-spin sm:mr-2" /> : <Send size={18} className="sm:mr-2" />}
-                <span className="hidden sm:inline">Generate</span>
-              </button>
-            </form>
-          </div>
+          {currentUser && /* Only show input area if user is logged in */ (
+            <div className="mb-6 sm:mb-8">
+              <form onSubmit={(e) => { e.preventDefault(); handleGenerateExplanation(inputValue, false, false, false, 'explain', true); }} className="flex items-center gap-2 sm:gap-3 bg-white dark:bg-slate-800 p-2 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+                <Search size={20} className="text-slate-400 dark:text-slate-500 ml-2" />
+                <input
+                  ref={mainInputRef}
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="Enter a word or concept (e.g., photosynthesis)"
+                  className="flex-grow p-2.5 sm:p-3 bg-transparent focus:outline-none text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm sm:text-base"
+                  disabled={isLoading && !getDisplayWord()}
+                />
+                <button type="submit" disabled={isLoading && !getDisplayWord()} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2.5 px-4 sm:px-5 rounded-lg transition-colors flex items-center disabled:opacity-70">
+                  {(isLoading && !getDisplayWord()) ? <RefreshCw size={18} className="animate-spin sm:mr-2" /> : <Send size={18} className="sm:mr-2" />}
+                  <span className="hidden sm:inline">Generate</span>
+                </button>
+              </form>
+            </div>
+          )}
 
           {/* Live Streak Display */}
-          {liveStreak && liveStreak.score > 0 && (
+          {currentUser && liveStreak && liveStreak.score > 0 && (
             <div className="mb-4 p-3 bg-sky-50 dark:bg-sky-900 dark:bg-opacity-50 border border-sky-200 dark:border-sky-700 rounded-lg text-sm text-sky-700 dark:text-sky-300 shadow">
               <span className="font-semibold">Live Streak: {liveStreak.score}</span>
               <div className="mt-1 flex flex-wrap gap-1 items-center">
@@ -980,7 +1005,7 @@ function App() {
           )}
 
           {/* Content Area Header (Word, Favorite, Refresh) */}
-          {getDisplayWord() && (
+          {currentUser && getDisplayWord() && (
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 p-3 bg-white dark:bg-slate-800 rounded-lg shadow border border-slate-200 dark:border-slate-700">
               <div className="flex items-center mb-2 sm:mb-0">
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100 mr-3 capitalize">
@@ -1011,7 +1036,7 @@ function App() {
           )}
 
           {/* Content Mode Buttons */}
-          {getDisplayWord() && (
+          {currentUser && getDisplayWord() && (
             <div className="mb-4 sm:mb-6 flex flex-wrap gap-2 sm:gap-3">
               {(['explain', 'quiz', 'fact', 'image', 'deep_dive'] as const).map(mode => (
                 <button
@@ -1069,4 +1094,3 @@ function App() {
 }
 
 export default App;
-

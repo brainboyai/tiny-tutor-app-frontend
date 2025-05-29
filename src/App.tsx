@@ -1,37 +1,60 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Heart, BookOpen, User, LogOut, LogIn, RefreshCw, HelpCircle, Loader2, MessageSquare, Image as ImageIcon, FileText, Brain, PlusCircle, TrendingUp, List, Star, Mail, ShieldCheck, CalendarDays } from 'lucide-react';
-import './App.css';
+import React, { useState, useEffect, useCallback, FormEvent } from 'react';
+import {
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
+  Heart,
+  ImageIcon,
+  Lightbulb,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  Search,
+  Settings,
+  Sparkles,
+  Star,
+  User,
+  X,
+  MessageSquareQuote,
+  Brain,
+  RotateCcw,
+  Home
+} from 'lucide-react';
+import './App.css'; // Assuming some base styles might be here
+import './index.css'; // For Tailwind
+import ProfilePageComponent from './ProfilePage'; // Import the new component
 
-// --- Constants ---
-const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
-const AUTO_ADVANCE_DELAY = 1500; // ms
-
-// --- Types ---
-interface UserProfile {
+// Define types for user, content, etc.
+// It's good practice to move these to a separate types.ts file if they grow
+interface CurrentUser {
   username: string;
-  email?: string;
-  tier?: string;
-  total_words_explored?: number;
-  explored_words?: WordHistoryEntry[];
-  favorite_words?: WordHistoryEntry[];
-  streak_history?: StreakEntry[];
-  created_at?: string; 
+  email: string;
+  id: string;
 }
 
-interface WordHistoryEntry {
-  id: string; // sanitized word
-  word: string; // original word
-  first_explored_at: string;
-  last_explored_at: string;
-  is_favorite: boolean;
+interface GeneratedContentItem {
+  explanation?: string;
+  quiz?: QuizQuestion[];
+  fact?: string;
+  image_prompt?: string;
+  image_url?: string;
+  deep_dive?: string;
+  is_favorite?: boolean;
+  first_explored_at?: string;
+  last_explored_at?: string;
+  quiz_progress?: QuizAttempt[];
   modes_generated?: string[];
 }
 
-interface StreakEntry {
-  id: string;
-  words: string[];
-  score: number;
-  completed_at: string;
+interface GeneratedContent {
+  [wordId: string]: GeneratedContentItem;
+}
+
+interface QuizQuestion {
+  question: string;
+  options: { [key: string]: string };
+  correctOptionKey: string;
+  explanation?: string;
 }
 
 interface QuizAttempt {
@@ -41,568 +64,438 @@ interface QuizAttempt {
   timestamp: string;
 }
 
-interface WordContent {
-  explain?: string;
-  image?: string;
-  fact?: string;
-  quiz?: string[]; 
-  deep_dive?: string;
-  is_favorite?: boolean;
-  quiz_progress?: QuizAttempt[];
-  explicit_connections?: string[];
-  modes_generated?: string[];
-}
-
-interface GeneratedContent {
-  [key: string]: WordContent; 
-}
-
-type ContentMode = 'explain' | 'image' | 'fact' | 'quiz' | 'deep_dive';
-
 interface LiveStreak {
   score: number;
+  words: string[]; // Array of word strings in the streak
+}
+
+interface StreakRecord {
+  id: string; // Firestore document ID
   words: string[];
+  score: number;
+  completed_at: string; // ISO string date
 }
 
-interface ParsedQuizQuestion {
-  questionText: string;
-  options: { key: string; text: string }[];
-  correctOptionKey: string;
-  originalString: string;
+interface UserProfileData {
+  username: string;
+  email: string;
+  totalWordsExplored: number;
+  exploredWords: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }[];
+  favoriteWords: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }[];
+  streakHistory: StreakRecord[];
 }
 
-// --- Helper Functions ---
+
+type ContentMode = 'explain' | 'quiz' | 'fact' | 'image' | 'deep_dive';
+
+const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; // Replace with your actual backend URL
+
+// Helper function to sanitize words for use as IDs (optional, but good practice)
 const sanitizeWordForId = (word: string): string => {
   return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
 
-// Parser v10: Improved state machine for options and question text.
-const parseQuizString = (quizStr: string): ParsedQuizQuestion | null => {
-  if (!quizStr || typeof quizStr !== 'string') {
-    console.error("Invalid quiz string for parsing (null or not string):", quizStr);
-    return null;
-  }
-
-  const allRawLines = quizStr.trim().split('\n');
-  const lines = allRawLines.map(line => line.trim()).filter(line => line.length > 0);
-  
-  if (lines.length < 3) { 
-      console.warn("Quiz string has too few lines after cleaning (v10):", lines.length, "Original:", quizStr);
-      return null;
-  }
-
-  let questionText = '';
-  const optionsMap: Map<string, string[]> = new Map(); 
-  let correctOptionKey = '';
-  
-  const questionHeaderRegex = /^(\*\*?)?Question\s*\d*[:.)]?\s*(\*\*?)?$/i;
-  const optionRegex = /^\s*([A-D])\s*[.)]\s*(.*)|^\s*([A-D])\s+(.*)/i; 
-  const correctAnswerRegex = /(?:Correct Answer[:\s]*|Answer[:\s]*|Correct[:\s]*)([A-D])(?:[.,]?\s*.*)?$/i;
-
-  let lineIndex = 0;
-  let questionTextLines: string[] = [];
-
-  // 1. Identify and extract question text
-  while(lineIndex < lines.length) {
-    const line = lines[lineIndex];
-    if (line.match(questionHeaderRegex) && line.replace(questionHeaderRegex, '').trim().length === 0) {
-      console.log("Skipping standalone header (v10):", line);
-      lineIndex++;
-      continue;
-    }
-    if (line.match(optionRegex) || line.match(correctAnswerRegex)) {
-      break; 
-    }
-    const potentialQuestionPart = line.replace(questionHeaderRegex, '').trim();
-    if (potentialQuestionPart) {
-        questionTextLines.push(potentialQuestionPart);
-    }
-    lineIndex++;
-  }
-  questionText = questionTextLines.join(' ').trim();
-
-  // 2. Parse options and correct answer
-  let currentOptionKeyInternal: string | null = null;
-
-  for (; lineIndex < lines.length; lineIndex++) {
-    const line = lines[lineIndex];
-    const correctAnswerMatch = line.match(correctAnswerRegex);
-
-    if (correctAnswerMatch) {
-      correctOptionKey = correctAnswerMatch[1].toUpperCase();
-      // After finding correct answer, any pending option text should be finalized
-      if (currentOptionKeyInternal && optionsMap.has(currentOptionKeyInternal) && optionsMap.get(currentOptionKeyInternal)?.length === 0 && line !== `Correct Answer: ${correctOptionKey}`) {
-          // This case is tricky: if "Correct Answer: X" is on a new line but the previous option text was just the key
-          // For now, we assume option text is on the same line or lines immediately following the key
-      }
-      break; 
-    }
-
-    const optionMatch = line.match(optionRegex);
-    const keyFromResult = optionMatch ? (optionMatch[1] || optionMatch[3])?.toUpperCase() : null;
-    const textFromResult = optionMatch ? (optionMatch[2] || optionMatch[4])?.trim() : null;
-
-    if (keyFromResult && textFromResult !== null) { 
-      currentOptionKeyInternal = keyFromResult;
-      if (!optionsMap.has(currentOptionKeyInternal)) {
-        optionsMap.set(currentOptionKeyInternal, []);
-      }
-      if (textFromResult) { 
-        optionsMap.get(currentOptionKeyInternal)?.push(textFromResult);
-      }
-    } else if (currentOptionKeyInternal && optionsMap.has(currentOptionKeyInternal)) { 
-      optionsMap.get(currentOptionKeyInternal)?.push(line); 
-    }
-  }
-  
-  const options: {key: string, text: string}[] = [];
-  const optionOrder = ['A', 'B', 'C', 'D'];
-  for (const key of optionOrder) {
-      if (optionsMap.has(key)) {
-          options.push({key, text: optionsMap.get(key)!.join(' ').trim() });
-      }
-  }
-  
-  if (!questionText || options.length !== 4 || !correctOptionKey) {
-    console.warn("Could not parse quiz string fully (v10 final check):", {
-      questionText,
-      optionsCount: options.length,
-      optionsCollected: options.map(o => ({key: o.key, text: o.text.substring(0,30)})),
-      correctOptionKey,
-      original: quizStr,
-    });
-    return null;
-  }
-
-  if (!options.find(opt => opt.key === correctOptionKey)) {
-    console.warn(`Correct option key "${correctOptionKey}" not found among parsed option keys (v10). Parsed Keys:`, options.map(o=>o.key), "Question:", questionText, "Original String:", quizStr);
-    return null;
-  }
-
-  console.log("Successfully parsed quiz (v10):", { questionText, options, correctOptionKey });
-  return { questionText, options, correctOptionKey, originalString: quizStr };
-};
-
-
 function App() {
-  const [inputValue, setInputValue] = useState<string>('');
-  const [currentFocusWord, setCurrentFocusWord] = useState<string>('');
+  const [inputValue, setInputValue] = useState('');
+  const [currentFocusWord, setCurrentFocusWord] = useState<string | null>(null);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent>({});
-  const [activeContentMode, setActiveContentMode] = useState<ContentMode>('explain');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeContentMode, setActiveContentMode] = useState<ContentMode>('explain');
 
-  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
 
-  const [authInputUsername, setAuthInputUsername] = useState('');
-  const [authInputEmail, setAuthInputEmail] = useState('');
-  const [authInputPassword, setAuthInputPassword] = useState('');
-
-  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
 
   const [liveStreak, setLiveStreak] = useState<LiveStreak | null>(null);
-  const [isReviewingStreakWord, setIsReviewingStreakWord] = useState<boolean>(false);
-  const [wordForReview, setWordForReview] = useState<string>('');
+  const [userProfileData, setUserProfileData] = useState<UserProfileData | null>(null);
+  
+  // New state for page navigation
+  const [activeView, setActiveView] = useState<'main' | 'profile'>('main');
 
-  // Quiz State
-  const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState<number>(0);
+  // Quiz specific states
+  const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState(0);
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
-  const [isQuizAttemptedThisQuestion, setIsQuizAttemptedThisQuestion] = useState<boolean>(false); 
+  const [isQuizAttempted, setIsQuizAttempted] = useState(false); // For current question display
 
-  const inputRef = useRef<HTMLInputElement>(null);
-  const autoAdvanceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // For reviewing words from streak or profile
+  const [wordForReview, setWordForReview] = useState<string | null>(null);
+  const [isReviewingStreakWord, setIsReviewingStreakWord] = useState(false);
+  
+  const [isFetchingProfile, setIsFetchingProfile] = useState(false);
 
-
-  const getDisplayWord = useCallback(() => isReviewingStreakWord ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
-  const getDisplayWordSanitized = useCallback(() => sanitizeWordForId(getDisplayWord()), [getDisplayWord]);
-
-  useEffect(() => {
-    return () => {
-      if (autoAdvanceTimeoutRef.current) {
-        clearTimeout(autoAdvanceTimeoutRef.current);
-      }
-    };
-  }, []);
+  const getDisplayWord = useCallback(() => {
+    return isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord;
+  }, [isReviewingStreakWord, wordForReview, currentFocusWord]);
 
 
-  useEffect(() => {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      setAuthToken(token);
-      fetchUserProfile(token);
+  // Fetch user profile on auth token change or initial load
+  const fetchUserProfile = useCallback(async (token: string | null) => {
+    if (!token) {
+      setUserProfileData(null);
+      setCurrentUser(null); // Also clear currentUser if token is gone
+      return;
     }
-  }, []);
-
-  const fetchUserProfile = async (token: string) => {
-    if (!token) return;
-    console.log(`Fetching user profile from: ${API_BASE_URL}/profile`);
+    setIsFetchingProfile(true);
+    setError(null);
     try {
       const response = await fetch(`${API_BASE_URL}/profile`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) {
-        if (response.status === 401 || response.status === 422) {
-            console.warn("Token validation failed or token expired. Logging out.");
-            handleLogout();
-            return;
+        if (response.status === 401) { // Unauthorized
+          // Call handleLogout directly to avoid dependency cycle if fetchUserProfile is in handleLogout's deps
+          localStorage.removeItem('authToken');
+          setAuthToken(null);
+          setCurrentUser(null);
+          setUserProfileData(null);
+          setLiveStreak(null);
+          setCurrentFocusWord(null);
+          // ... reset other states as in handleLogout
+          setShowAuthModal(true);
+          setAuthError("Session expired. Please login again.");
+        } else {
+          const errData = await response.json();
+          throw new Error(errData.error || `Failed to fetch profile (${response.status})`);
         }
-        const errorData = await response.json().catch(() => ({ error: 'Failed to fetch profile' }));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        return;
       }
-      const data: UserProfile = await response.json();
-      setCurrentUser(data);
-    } catch (err) {
+      const data = await response.json();
+      setUserProfileData({
+        username: data.username,
+        email: data.email,
+        totalWordsExplored: data.total_words_explored,
+        exploredWords: data.explored_words.map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        favoriteWords: data.favorite_words.map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        streakHistory: data.streak_history.sort((a:any, b:any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()),
+      });
+      // Update currentUser with potentially refreshed data from profile
+      setCurrentUser({ username: data.username, email: data.email, id: data.user_id });
+    } catch (err: any) {
+      setError(err.message);
       console.error("Error fetching profile:", err);
+      // Don't clear userProfileData here, might be a temporary network issue
+    } finally {
+      setIsFetchingProfile(false);
     }
-  };
+  }, []); // Removed handleLogout from dependencies here
 
-  const handleAuthSuccess = (token: string, userDetails?: UserProfile) => {
-    localStorage.setItem('authToken', token);
-    setAuthToken(token);
-    if (userDetails) {
-      setCurrentUser(userDetails);
-    } else {
-      fetchUserProfile(token);
+  useEffect(() => {
+    const storedToken = localStorage.getItem('authToken');
+    if (storedToken) {
+      setAuthToken(storedToken);
+      // Fetch user profile if token exists, to get initial user data
+      if (!currentUser && !userProfileData) { // Only fetch if not already loaded
+         fetchUserProfile(storedToken);
+      }
     }
-    setShowAuthModal(false);
+  }, [fetchUserProfile, currentUser, userProfileData]); // Added currentUser and userProfileData to prevent re-fetch if already loaded
+
+
+  const handleAuthAction = async (e: FormEvent) => {
+    e.preventDefault();
     setAuthError(null);
-    setAuthInputUsername('');
-    setAuthInputEmail('');
-    setAuthInputPassword('');
+    setAuthSuccessMessage(null);
+    setIsLoading(true);
+
+    const url = authMode === 'signup' ? `${API_BASE_URL}/signup` : `${API_BASE_URL}/login`;
+    const payload = authMode === 'signup' ? { username: authUsername, email: authEmail, password: authPassword } : { email: authEmail, password: authPassword };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `${authMode === 'signup' ? 'Signup' : 'Login'} failed`);
+      }
+
+      if (authMode === 'signup') {
+        setAuthSuccessMessage('Signup successful! Please login.');
+        setAuthMode('login'); // Switch to login form
+        setAuthUsername(''); 
+        setAuthPassword(''); 
+      } else { // Login successful
+        localStorage.setItem('authToken', data.token);
+        setAuthToken(data.token);
+        setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id });
+        setShowAuthModal(false);
+        setAuthSuccessMessage('Login successful!');
+        await fetchUserProfile(data.token); // Fetch profile after login
+        setAuthEmail('');
+        setAuthPassword('');
+        setAuthUsername('');
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
+    } finally {
+      setIsLoading(false);
+      if (authMode === 'signup') setAuthPassword(''); 
+    }
   };
 
-  const handleLogout = () => {
-    endCurrentStreakIfNeeded(true); 
+  const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null) => {
+    if (!token || !streakToSave || streakToSave.score < 2) {
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE_URL}/save_streak`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }),
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to save streak');
+        }
+    } catch (err: any) {
+        console.error('Error saving streak:', err.message);
+    }
+  }, []);
+
+
+  const handleLogout = useCallback(async () => {
+    if (liveStreak && liveStreak.score >= 2 && authToken) {
+        await saveStreakToServer(liveStreak, authToken);
+    }
     localStorage.removeItem('authToken');
     setAuthToken(null);
     setCurrentUser(null);
-    setCurrentFocusWord('');
+    setUserProfileData(null);
+    setLiveStreak(null);
+    setCurrentFocusWord(null);
     setGeneratedContent({});
+    setActiveContentMode('explain');
     setError(null);
     setAuthError(null);
+    setAuthSuccessMessage(null);
     setShowAuthModal(false);
-    setShowProfileModal(false);
-    setAuthInputUsername('');
-    setAuthInputEmail('');
-    setAuthInputPassword('');
-    setIsReviewingStreakWord(false);
-    setWordForReview('');
-    setCurrentQuizQuestionIndex(0);
-    setSelectedQuizOption(null);
-    setQuizFeedback(null);
-    setIsQuizAttemptedThisQuestion(false);
-    if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-  };
+    setActiveView('main'); // Navigate to main view on logout
+    console.log("User logged out");
+  }, [liveStreak, authToken, saveStreakToServer]);
 
-  const endCurrentStreakIfNeeded = useCallback(async (forceEnd: boolean = false) => {
-    const currentLiveStreak = liveStreak; 
-    let streakWasSaved = false;
-    if (currentLiveStreak && currentLiveStreak.score >= 2 && authToken) {
-      console.log(`Attempting to save streak (Score: ${currentLiveStreak.score}, Words: ${currentLiveStreak.words.join(', ')}) to: ${API_BASE_URL}/save_streak`);
-      try {
-        const response = await fetch(`${API_BASE_URL}/save_streak`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({ words: currentLiveStreak.words, score: currentLiveStreak.score }),
-        });
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Failed to save streak. Status: ${response.status}, Body: ${errorText}`);
-        } else {
-            console.log("Streak saved successfully.");
-            streakWasSaved = true; // Mark as saved
-            if (showProfileModal && authToken) { 
-                fetchUserProfile(authToken); // Re-fetch profile if modal is open
-            }
-        }
-      } catch (err) {
-        console.error('Network error or other exception saving streak:', err);
-      }
-    }
-    
-    // Reset liveStreak if forced, or if it was eligible for save (and save was attempted), or if score was too low.
-    if (forceEnd || (currentLiveStreak && (currentLiveStreak.score >= 2 || currentLiveStreak.score < 2))) { 
-      console.log(`Resetting live streak. Force: ${forceEnd}, Previous Score: ${currentLiveStreak?.score}, Saved: ${streakWasSaved}`);
-      setLiveStreak(null);
-    }
-  }, [liveStreak, authToken, showProfileModal]); 
-  
-  const resetQuizStateForWord = (wordId: string) => {
-    console.log(`Resetting UI quiz state for word ID: ${wordId}`);
-    setCurrentQuizQuestionIndex(0);
-    setSelectedQuizOption(null);
-    setQuizFeedback(null);
-    setIsQuizAttemptedThisQuestion(false);
-    if (autoAdvanceTimeoutRef.current) {
-        clearTimeout(autoAdvanceTimeoutRef.current);
-        autoAdvanceTimeoutRef.current = null;
-    }
-  };
 
-  const handleGenerateExplanation = async (
+  const handleGenerateExplanation = useCallback(async (
     wordToFetch: string,
-    isSubTopicClick: boolean = false,
+    isNewPrimaryWordSearch: boolean = false,
     isRefreshClick: boolean = false,
-    isProfileWordClick: boolean = false,
-    targetMode: ContentMode = 'explain'
+    isSubTopicClick: boolean = false,
+    modeOverride?: ContentMode,
+    isProfileWordClick: boolean = false
   ) => {
     if (!wordToFetch.trim()) {
-      setError("Please enter a word.");
+      setError("Please enter a word or concept.");
       return;
     }
     if (!authToken) {
       setShowAuthModal(true);
-      setAuthMode('login');
-      setAuthError("Please log in to generate content.");
+      setAuthError("Please login to generate content.");
       return;
     }
 
-    const sanitizedWordToFetchId = sanitizeWordForId(wordToFetch);
-
-    setIsLoading(true); 
+    setIsLoading(true);
     setError(null);
-    setAuthError(null);
+    setQuizFeedback(null);
+    setSelectedQuizOption(null);
+    setIsQuizAttempted(false);
 
-    if (targetMode === 'quiz') {
-        console.log(`Preparing to fetch quiz for "${sanitizedWordToFetchId}". Clearing existing quiz data from UI state.`);
-        setGeneratedContent(prev => ({
-            ...prev,
-            [sanitizedWordToFetchId]: {
-                ...(prev[sanitizedWordToFetchId] || {}),
-                quiz: undefined, 
-                quiz_progress: [] 
-            }
-        }));
-        resetQuizStateForWord(sanitizedWordToFetchId); 
+    const wordId = sanitizeWordForId(wordToFetch);
+    const modeToFetch = modeOverride || activeContentMode;
+
+    if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >=1 && authToken) {
+        if (liveStreak.score >=2) await saveStreakToServer(liveStreak, authToken);
+        setLiveStreak(null); 
     }
     
-    const isNewPrimaryWordSearch = !isSubTopicClick && !isRefreshClick && !isProfileWordClick;
-
     if (isNewPrimaryWordSearch || isProfileWordClick) {
-      await endCurrentStreakIfNeeded(true); 
-      setIsReviewingStreakWord(false); 
-      setWordForReview('');
+        setCurrentFocusWord(wordToFetch);
+        setIsReviewingStreakWord(false); 
+        setWordForReview(null);
     }
-    
-    console.log(`Generating content for "${wordToFetch}", mode "${targetMode}" from: ${API_BASE_URL}/generate_explanation`);
+
     try {
+      if (!isRefreshClick && generatedContent[wordId] && generatedContent[wordId][modeToFetch]) {
+        if (modeToFetch === 'quiz') {
+          const existingQuizData = generatedContent[wordId].quiz;
+          const existingProgress = generatedContent[wordId].quiz_progress || [];
+          if (existingQuizData && existingQuizData.length > 0) {
+            const nextQuestionIdx = existingProgress.length >= existingQuizData.length ? existingQuizData.length : existingProgress.length;
+            setCurrentQuizQuestionIndex(nextQuestionIdx);
+          } else {
+             throw new Error("Cached quiz is empty, fetching new one.");
+          }
+        }
+        if (!isSubTopicClick && !isProfileWordClick) setCurrentFocusWord(wordToFetch); 
+        setActiveContentMode(modeToFetch);
+        setIsLoading(false);
+        if (isNewPrimaryWordSearch || isProfileWordClick) { 
+            setLiveStreak({ score: 1, words: [wordToFetch] });
+        }
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({
-          word: wordToFetch.trim(),
-          mode: targetMode,
-          refresh_cache: isRefreshClick, 
-        }),
+        body: JSON.stringify({ word: wordToFetch, mode: modeToFetch, refresh_cache: isRefreshClick }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "An unknown error occurred." }));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        const errData = await response.json();
+        if (response.status === 401) {
+            handleLogout(); // Use the main handleLogout
+            setShowAuthModal(true);
+            setAuthError("Session expired. Please login again.");
+        }
+        throw new Error(errData.error || `Failed to generate content (${response.status})`);
       }
 
-      const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-      const dataWord = data.word; 
-      const contentToStore = data.full_cache || data;
-      const sanitizedFetchedWordId = sanitizeWordForId(dataWord);
-
-      if (isNewPrimaryWordSearch || isProfileWordClick) {
-        setCurrentFocusWord(dataWord);
-      } else if (isSubTopicClick) {
-        setCurrentFocusWord(dataWord);
-      }
+      const data = await response.json();
       
       setGeneratedContent(prev => {
-        const newWordContent: WordContent = {
-            ...(prev[sanitizedFetchedWordId] || {}), 
-            ...contentToStore, 
-            is_favorite: data.is_favorite, 
-        };
-        if (targetMode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
-            console.log(`New quiz data received for "${dataWord}" (mode: ${targetMode}, refresh: ${isRefreshClick}). Ensuring quiz_progress is empty.`);
-            newWordContent.quiz_progress = []; 
-        } else if (targetMode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
-            console.log(`Quiz mode requested for "${dataWord}" but no questions received. Ensuring quiz_progress is empty.`);
-            newWordContent.quiz_progress = [];
+        const newWordData = { ...(prev[wordId] || {}) };
+        if (data.explanation) newWordData.explanation = data.explanation;
+        if (data.quiz) {
+            newWordData.quiz = data.quiz;
+            newWordData.quiz_progress = [];
+            setCurrentQuizQuestionIndex(0);
         }
-        return {
-            ...prev,
-            [sanitizedFetchedWordId]: newWordContent,
-        };
+        if (data.fact) newWordData.fact = data.fact;
+        if (data.image_prompt) newWordData.image_prompt = data.image_prompt;
+        if (data.image_url) newWordData.image_url = data.image_url;
+        if (data.deep_dive) newWordData.deep_dive = data.deep_dive;
+        
+        newWordData.is_favorite = data.is_favorite !== undefined ? data.is_favorite : (newWordData.is_favorite || false);
+        newWordData.first_explored_at = data.first_explored_at || newWordData.first_explored_at;
+        newWordData.last_explored_at = data.last_explored_at || new Date().toISOString();
+        
+        const currentModes = newWordData.modes_generated || [];
+        if (!currentModes.includes(modeToFetch)) {
+            newWordData.modes_generated = [...currentModes, modeToFetch];
+        }
+
+        return { ...prev, [wordId]: newWordData };
       });
 
-      setActiveContentMode(targetMode);
-      
-      if (targetMode === 'quiz') { 
-        resetQuizStateForWord(sanitizedFetchedWordId); 
+      if (isNewPrimaryWordSearch || isProfileWordClick) {
+        setCurrentFocusWord(wordToFetch); 
+        setLiveStreak({ score: 1, words: [wordToFetch] });
+        setIsReviewingStreakWord(false);
+        setWordForReview(null);
+      } else if (isSubTopicClick) {
+        setCurrentFocusWord(wordToFetch);
+        setIsReviewingStreakWord(false); 
+        setWordForReview(null);
+        
+        setLiveStreak(prevStreak => {
+            if (!prevStreak) return { score: 1, words: [wordToFetch] }; 
+            if (prevStreak.words[prevStreak.words.length -1] !== wordToFetch) {
+                 return {
+                    score: prevStreak.score + 1,
+                    words: [...prevStreak.words, wordToFetch],
+                };
+            }
+            return prevStreak;
+        });
       }
 
-
-      if (!isSubTopicClick && !isProfileWordClick) { 
-        setInputValue(''); 
+      setActiveContentMode(modeToFetch);
+      if (modeToFetch === 'quiz' && data.quiz) {
+        setCurrentQuizQuestionIndex(0); 
       }
 
-      if (isSubTopicClick && liveStreak) {
-        if (liveStreak.words[liveStreak.words.length - 1]?.toLowerCase() !== dataWord.toLowerCase()) {
-          setLiveStreak(prev => ({
-            score: (prev?.score || 0) + 1,
-            words: [...(prev?.words || []), dataWord],
-          }));
-        }
-      } else if (isNewPrimaryWordSearch || isProfileWordClick) { 
-        setLiveStreak({ score: 1, words: [dataWord] });
-      }
-
-    } catch (err) {
+    } catch (err: any) {
+      setError(err.message);
       console.error("Error generating content:", err);
-      setError((err as Error).message);
     } finally {
       setIsLoading(false);
+      if (isNewPrimaryWordSearch) setInputValue(''); 
     }
-  };
-  
-  const handleFetchNewQuizSet = () => {
-    const wordForNewQuiz = getDisplayWord();
-    if (wordForNewQuiz && authToken) {
-        console.log(`Fetching new quiz set for "${wordForNewQuiz}" via "More Questions" button.`);
-        handleGenerateExplanation(wordForNewQuiz, false, true, false, 'quiz');
-    } else if (!authToken) {
-        setShowAuthModal(true);
-        setAuthMode('login');
-        setAuthError("Please log in to get more questions.");
-    }
-  };
-  
-  const handleModeChange = async (mode: ContentMode) => {
-    setActiveContentMode(mode);
-    const wordInFocus = getDisplayWord();
-    const sanitizedWordInFocus = getDisplayWordSanitized();
+  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout]);
 
-    if (mode !== 'quiz') {
-        resetQuizStateForWord(sanitizedWordInFocus); 
-    }
-
-    if (!wordInFocus) { 
-        if (!getDisplayWord()) { 
-            setError("Please search for a word first or select a word from your history/streak.");
-        }
+  const handleModeChange = (newMode: ContentMode) => {
+    const wordToUse = getDisplayWord();
+    if (!wordToUse) {
+        setError("No word is currently in focus.");
         return;
     }
-
-    const currentWordDataForModeCheck = generatedContent[sanitizedWordInFocus];
+    setActiveContentMode(newMode); 
     
-    if (
-        authToken &&
-        sanitizedWordInFocus && 
-        (!currentWordDataForModeCheck ||
-         !currentWordDataForModeCheck[mode] ||
-         (mode === 'quiz' && (!currentWordDataForModeCheck.quiz || currentWordDataForModeCheck.quiz.length === 0))
-        )
-    ) {
-        setIsLoading(true);
-        if (mode === 'quiz') {
-            console.log(`Fetching quiz for "${sanitizedWordInFocus}" first time or due to missing data. Clearing UI quiz questions.`);
-            setGeneratedContent(prev => ({
-                ...prev,
-                [sanitizedWordInFocus]: {
-                    ...(prev[sanitizedWordInFocus] || {}),
-                    quiz: undefined, 
-                    quiz_progress: [] 
-                }
-            }));
-            resetQuizStateForWord(sanitizedWordInFocus);
-        }
-        setError(null);
-
-        console.log(`Fetching content for mode "${mode}" for word "${wordInFocus}" from: ${API_BASE_URL}/generate_explanation`); 
-        try {
-            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
-                body: JSON.stringify({ word: wordInFocus.trim(), mode: mode, refresh_cache: mode === 'quiz' }), 
-            });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for ${mode}` }));
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-            }
-            const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-            const contentToStore = data.full_cache || data;
-
-            setGeneratedContent(prev => {
-                const existingWordContent = prev[sanitizedWordInFocus] || {};
-                const updatedWordContent: WordContent = {
-                    ...existingWordContent,
-                    ...contentToStore,
-                    is_favorite: data.is_favorite !== undefined ? data.is_favorite : existingWordContent.is_favorite,
-                };
-                if (mode === 'quiz' && contentToStore.quiz && contentToStore.quiz.length > 0) {
-                    console.log(`New quiz data received for "${wordInFocus}" during mode change. Ensuring quiz_progress is empty.`);
-                    updatedWordContent.quiz_progress = [];
-                } else if (mode === 'quiz' && (!contentToStore.quiz || contentToStore.quiz.length === 0)) {
-                    updatedWordContent.quiz_progress = [];
-                }
-                return {
-                    ...prev,
-                    [sanitizedWordInFocus]: updatedWordContent,
-                };
-            });
-            if (mode === 'quiz') {
-                resetQuizStateForWord(sanitizedWordInFocus);
-            }
-
-        } catch (err) {
-            console.error(`Error fetching ${mode} for ${wordInFocus}:`, err); 
-            setError((err as Error).message);
-        } finally {
-            setIsLoading(false);
-        }
-    } else if (mode === 'quiz') {
-        resetQuizStateForWord(sanitizedWordInFocus);
+    if (newMode !== 'quiz') {
+        setSelectedQuizOption(null);
+        setQuizFeedback(null);
+        setIsAttempted(false); 
     }
+
+    const wordId = sanitizeWordForId(wordToUse);
+    if (generatedContent[wordId] && generatedContent[wordId][newMode]) {
+        if (newMode === 'quiz') {
+            const quizData = generatedContent[wordId].quiz;
+            const progress = generatedContent[wordId].quiz_progress || [];
+            if (quizData && quizData.length > 0) {
+                const nextQuestionIdx = progress.length >= quizData.length ? quizData.length : progress.length;
+                setCurrentQuizQuestionIndex(nextQuestionIdx);
+                setSelectedQuizOption(null); 
+                setQuizFeedback(null);
+                setIsAttempted(false); 
+            } else {
+                handleGenerateExplanation(wordToUse, false, false, false, newMode);
+            }
+        }
+        return; 
+    }
+    handleGenerateExplanation(wordToUse, false, false, false, newMode);
+  };
+  
+  const handleRefreshContent = () => {
+    const wordToUse = getDisplayWord();
+    if (!wordToUse) return;
+    handleGenerateExplanation(wordToUse, false, true, false, activeContentMode);
   };
 
-  const handleToggleFavorite = async (wordToFavorite: string, currentIsFavoriteStatus?: boolean) => {
-    const sanitizedWordId = sanitizeWordForId(wordToFavorite);
-    const actualCurrentFavoriteStatus = currentIsFavoriteStatus !== undefined 
-        ? currentIsFavoriteStatus 
-        : (generatedContent[sanitizedWordId]?.is_favorite || false);
-
-    if (!authToken) return;
+  const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => {
+    if (!authToken || !word) return;
+    const wordId = sanitizeWordForId(word);
 
     setGeneratedContent(prev => ({
-        ...prev,
-        [sanitizedWordId]: {
-            ...(prev[sanitizedWordId] || { word: wordToFavorite } as WordContent),
-            is_favorite: !actualCurrentFavoriteStatus,
-        }
+      ...prev,
+      [wordId]: {
+        ...(prev[wordId] || {}),
+        is_favorite: !currentStatus,
+      }
     }));
-    if (currentUser && currentUser.explored_words) {
-        setCurrentUser(prevUser => {
-            if (!prevUser) return null;
-            const updatedExploredWords = prevUser.explored_words?.map(w => 
-                w.word === wordToFavorite ? { ...w, is_favorite: !actualCurrentFavoriteStatus } : w
-            );
-            const updatedFavoriteWords = updatedExploredWords?.filter(w => w.is_favorite);
-            return { ...prevUser, explored_words: updatedExploredWords, favorite_words: updatedFavoriteWords };
-        });
+    if (userProfileData) {
+        const newExploredWords = userProfileData.exploredWords.map(w => 
+            w.word === word ? { ...w, is_favorite: !currentStatus } : w
+        );
+        const newFavoriteWords = !currentStatus 
+            ? [...userProfileData.favoriteWords, { word, last_explored_at: new Date().toISOString(), is_favorite: true, first_explored_at: generatedContent[wordId]?.first_explored_at || new Date().toISOString() }]
+            : userProfileData.favoriteWords.filter(w => w.word !== word);
+
+        setUserProfileData(prev => prev ? ({
+            ...prev,
+            exploredWords: newExploredWords,
+            favoriteWords: newFavoriteWords.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        }) : null);
     }
 
-
-    console.log(`Toggling favorite for "${wordToFavorite}" to ${!actualCurrentFavoriteStatus} at: ${API_BASE_URL}/toggle_favorite`);
     try {
       const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
         method: 'POST',
@@ -610,821 +503,588 @@ function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ word: wordToFavorite.trim() }),
+        body: JSON.stringify({ word }),
       });
       if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Failed to toggle favorite on backend: ${errorText}`);
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to toggle favorite');
       }
-      if (showProfileModal && authToken) {
-          fetchUserProfile(authToken); 
-      }
-    } catch (err) {
-      console.error("Error toggling favorite:", err);
+      const data = await response.json();
       setGeneratedContent(prev => ({
         ...prev,
-        [sanitizedWordId]: {
-          ...(prev[sanitizedWordId] || { word: wordToFavorite } as WordContent),
-          is_favorite: actualCurrentFavoriteStatus, 
+        [wordId]: {
+          ...(prev[wordId] || {}),
+          is_favorite: data.is_favorite,
         }
       }));
-       if (currentUser && currentUser.explored_words) {
-        setCurrentUser(prevUser => {
-            if (!prevUser) return null;
-            const revertedExploredWords = prevUser.explored_words?.map(w => 
-                w.word === wordToFavorite ? { ...w, is_favorite: actualCurrentFavoriteStatus } : w
-            );
-            const revertedFavoriteWords = revertedExploredWords?.filter(w => w.is_favorite);
-            return { ...prevUser, explored_words: revertedExploredWords, favorite_words: revertedFavoriteWords };
-        });
+      if (activeView === 'profile' || userProfileData) {
+          await fetchUserProfile(authToken);
+      }
+
+    } catch (err: any) {
+      setError(err.message);
+      setGeneratedContent(prev => ({
+        ...prev,
+        [wordId]: {
+          ...(prev[wordId] || {}),
+          is_favorite: currentStatus, 
+        }
+      }));
+      if (userProfileData) { 
+        const revertedExploredWords = userProfileData.exploredWords.map(w => 
+            w.word === word ? { ...w, is_favorite: currentStatus } : w
+        );
+        const revertedFavoriteWords = currentStatus 
+            ? [...userProfileData.favoriteWords, { word, last_explored_at: new Date().toISOString(), is_favorite: true, first_explored_at: generatedContent[wordId]?.first_explored_at || new Date().toISOString() }]
+            : userProfileData.favoriteWords.filter(w => w.word !== word);
+        setUserProfileData(prev => prev ? ({
+            ...prev,
+            exploredWords: revertedExploredWords,
+            favoriteWords: revertedFavoriteWords.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        }) : null);
+      }
     }
-      setError("Failed to update favorite status. Please try again.");
-    }
-  };
+  }, [authToken, fetchUserProfile, activeView, userProfileData, generatedContent]);
 
 
   const handleSubTopicClick = (subTopic: string) => {
-    setIsReviewingStreakWord(false); 
-    setWordForReview('');
-    setInputValue(subTopic); 
-    handleGenerateExplanation(subTopic, true, false, false, 'explain');
+    if (!currentFocusWord) return; 
+    handleGenerateExplanation(subTopic, false, false, true, 'explain');
   };
 
-  const handleRefreshContent = () => {
-    const wordToRefresh = getDisplayWord();
-    if (wordToRefresh) {
-      handleGenerateExplanation(wordToRefresh, false, true, false, activeContentMode);
+  const handleStreakWordClick = (clickedWord: string) => {
+    if (getDisplayWord() === clickedWord) return; 
+
+    setIsReviewingStreakWord(true);
+    setWordForReview(clickedWord);
+    setActiveContentMode('explain'); 
+    setSelectedQuizOption(null);
+    setQuizFeedback(null);
+    setIsAttempted(false);
+
+    const wordId = sanitizeWordForId(clickedWord);
+    if (!generatedContent[wordId] || !generatedContent[wordId].explanation) {
+        handleGenerateExplanation(clickedWord, false, false, false, 'explain');
+    }
+    if (activeContentMode === 'quiz') {
+        setCurrentQuizQuestionIndex(0);
     }
   };
   
   const handleWordSelectionFromProfile = (word: string) => {
-    setShowProfileModal(false);
-    setInputValue(word);
-    handleGenerateExplanation(word, false, false, true, 'explain');
+    setActiveView('main'); 
+    setInputValue(word); 
+    handleGenerateExplanation(word, false, false, false, 'explain', true);
   };
 
-  const handleStreakWordClick = (word: string) => {
-    const currentDisplayWord = getDisplayWord();
-    if (word.toLowerCase() === currentDisplayWord.toLowerCase()) {
-        return;
+  useEffect(() => {
+    const wordToUse = getDisplayWord();
+    if (activeContentMode === 'quiz' && wordToUse) {
+        const wordId = sanitizeWordForId(wordToUse);
+        const quizSet = generatedContent[wordId]?.quiz;
+        const progress = generatedContent[wordId]?.quiz_progress || [];
+
+        if (quizSet && quizSet.length > 0) {
+            const questionToDisplayIndex = currentQuizQuestionIndex < quizSet.length ? currentQuizQuestionIndex : progress.length;
+
+            if (questionToDisplayIndex < quizSet.length) { 
+                const attemptedQuestion = progress.find(p => p.question_index === questionToDisplayIndex);
+                if (attemptedQuestion) {
+                    setSelectedQuizOption(attemptedQuestion.selected_option_key);
+                    setQuizFeedback({
+                        message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${quizSet[questionToDisplayIndex].options[quizSet[questionToDisplayIndex].correctOptionKey]}`,
+                        isCorrect: attemptedQuestion.is_correct,
+                    });
+                    setIsAttempted(true);
+                } else {
+                    setSelectedQuizOption(null);
+                    setQuizFeedback(null);
+                    setIsAttempted(false);
+                }
+            }
+        } else if (!isLoading && !error) { 
+            // handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
+        }
     }
-    setIsReviewingStreakWord(true);
-    setWordForReview(word);
-    const sanitizedReviewWord = sanitizeWordForId(word);
-    resetQuizStateForWord(sanitizedReviewWord);
+  }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex, isLoading, error]);
 
 
-    if (generatedContent[sanitizedReviewWord]?.explain) {
-      setActiveContentMode('explain');
-    } else {
-      handleFetchContentForReview(word);
-    }
-  };
-
-  const handleFetchContentForReview = async (wordToReview: string) => {
+  const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string, isCorrect: boolean) => {
     if (!authToken) return;
-    setIsLoading(true);
-    setError(null);
-    console.log(`Fetching 'explain' content for review word "${wordToReview}" from: ${API_BASE_URL}/generate_explanation`);
+    const wordId = sanitizeWordForId(word);
     try {
-        const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+        const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`,
             },
-            body: JSON.stringify({ word: wordToReview.trim(), mode: 'explain' }),
+            body: JSON.stringify({
+                word: word,
+                question_index: questionIdx,
+                selected_option_key: optionKey,
+                is_correct: isCorrect,
+            }),
         });
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `Failed to fetch content for review: ${wordToReview}` }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            const errData = await response.json();
+            throw new Error(errData.error || 'Failed to save quiz attempt');
         }
-        const data: WordContent & { word: string; is_favorite: boolean; full_cache?: WordContent } = await response.json();
-        const contentToStore = data.full_cache || data;
-        const sanitizedReviewedWordId = sanitizeWordForId(data.word);
-
+        const data = await response.json();
         setGeneratedContent(prev => ({
             ...prev,
-            [sanitizedReviewedWordId]: {
-                ...(prev[sanitizedReviewedWordId] || {}),
-                ...contentToStore,
-                is_favorite: data.is_favorite !== undefined ? data.is_favorite : prev[sanitizedReviewedWordId]?.is_favorite,
-            },
-        }));
-        setActiveContentMode('explain');
-    } catch (err) {
-        console.error(`Error fetching 'explain' for review word ${wordToReview}:`, err);
-        setError((err as Error).message);
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const wordId = getDisplayWordSanitized();
-    if (activeContentMode === 'quiz' && wordId && generatedContent[wordId]?.quiz) {
-        const wordData = generatedContent[wordId];
-        const quizQuestions = wordData.quiz!; 
-        const progress = wordData.quiz_progress || []; 
-
-        const newQuestionIndex = progress.length; 
-
-        console.log(`useEffect for quiz init: wordId=${wordId}, quizQuestions.length=${quizQuestions.length}, progress.length=${progress.length}, calculated newQuestionIndex=${newQuestionIndex}`);
-
-        setCurrentQuizQuestionIndex(newQuestionIndex);
-        setSelectedQuizOption(null);
-        setQuizFeedback(null);
-        setIsQuizAttemptedThisQuestion(false);
-        if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-        
-        const attemptForCurrentQuestion = progress.find(p => p.question_index === newQuestionIndex);
-        if(attemptForCurrentQuestion && (newQuestionIndex < quizQuestions.length)){
-            setSelectedQuizOption(attemptForCurrentQuestion.selected_option_key);
-            setQuizFeedback({ 
-                message: attemptForCurrentQuestion.is_correct ? "Correct!" : "Incorrect.", 
-                isCorrect: attemptForCurrentQuestion.is_correct 
-            });
-            setIsQuizAttemptedThisQuestion(true); 
-        }
-    }
-  }, [activeContentMode, getDisplayWordSanitized, generatedContent]);
-
-
-  const handleSaveQuizAttempt = async (questionIndex: number, optionKey: string, isCorrect: boolean) => {
-    const wordBeingQuizzed = getDisplayWord();
-    const sanitizedWordBeingQuizzed = getDisplayWordSanitized();
-
-    if (!authToken || !sanitizedWordBeingQuizzed) return;
-    
-    console.log(`Saving quiz attempt for "${wordBeingQuizzed}" (Q${questionIndex + 1}) to backend.`);
-    try {
-      const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          word: wordBeingQuizzed.trim(),
-          question_index: questionIndex,
-          selected_option_key: optionKey,
-          is_correct: isCorrect,
-        }),
-      });
-      if (!response.ok) {
-        const responseText = await response.text(); 
-        console.error("Backend save_quiz_attempt failed. Status:", response.status, "Response Text:", responseText);
-        if (response.status === 0 || response.type === 'opaque' || responseText.toLowerCase().includes("cors")) { 
-             setError(`Failed to save answer: Network or CORS error with /save_quiz_attempt. Status: ${response.status}. Please check server configuration.`);
-        } else {
-            try {
-                const errorData = JSON.parse(responseText);
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-            } catch (parseError) {
-                throw new Error(`HTTP error! status: ${response.status}. Response: ${responseText.substring(0,100)}`);
+            [wordId]: {
+                ...(prev[wordId] || {}),
+                quiz_progress: data.quiz_progress,
             }
-        }
-        return; 
-      }
-
-      const newAttempt: QuizAttempt = {
-        question_index: questionIndex,
-        selected_option_key: optionKey,
-        is_correct: isCorrect,
-        timestamp: new Date().toISOString()
-      };
-
-      setGeneratedContent(prev => {
-        const existingWordData = prev[sanitizedWordBeingQuizzed] || {};
-        const existingProgress = existingWordData.quiz_progress || [];
-        
-        const updatedProgress = existingProgress.filter(att => att.question_index !== questionIndex);
-        updatedProgress.push(newAttempt);
-        updatedProgress.sort((a, b) => a.question_index - b.question_index);
-
-        console.log(`Frontend updated quiz_progress for "${sanitizedWordBeingQuizzed}". New length: ${updatedProgress.length}`);
-        
-        return {
-          ...prev,
-          [sanitizedWordBeingQuizzed]: {
-            ...existingWordData,
-            quiz_progress: updatedProgress, 
-          },
-        };
-      });
-
-      if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
-      autoAdvanceTimeoutRef.current = setTimeout(() => {
-        handleNextQuestion();
-      }, AUTO_ADVANCE_DELAY);
-
-    } catch (err) {
-      console.error("Error in handleSaveQuizAttempt (fetch or subsequent logic):", err);
-      if (!error) { 
-        setError("Failed to save your answer. " + (err as Error).message);
-      }
-      if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+        }));
+    } catch (err: any) {
+        console.error("Error saving quiz attempt:", err);
+        setError("Could not save your quiz progress. Please try again.");
     }
-  };
+  }, [authToken]);
 
-  const handleQuizOptionSelect = (optionKey: string, correctKey: string, questionIdx: number) => {
-    if (isQuizAttemptedThisQuestion) return; 
+  const handleQuizOptionSelect = (optionKey: string) => {
+    const wordToUse = getDisplayWord();
+    if (!wordToUse) return;
 
-    const isCorrect = optionKey === correctKey;
+    const wordId = sanitizeWordForId(wordToUse);
+    const quizSet = generatedContent[wordId]?.quiz;
+    if (!quizSet || currentQuizQuestionIndex >= quizSet.length) return; 
+
+    const progress = generatedContent[wordId]?.quiz_progress || [];
+    const alreadyAnsweredInDb = progress.find(p => p.question_index === currentQuizQuestionIndex);
+    if (alreadyAnsweredInDb || isQuizAttempted) return; 
+
+
+    const currentQuestion = quizSet[currentQuizQuestionIndex];
+    const isCorrect = currentQuestion.correctOptionKey === optionKey;
+
     setSelectedQuizOption(optionKey);
-    setQuizFeedback({ message: isCorrect ? "Correct!" : "Incorrect.", isCorrect });
-    setIsQuizAttemptedThisQuestion(true);
-    handleSaveQuizAttempt(questionIdx, optionKey, isCorrect);
+    setQuizFeedback({
+        message: isCorrect ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
+        isCorrect: isCorrect,
+    });
+    setIsAttempted(true); 
+
+    handleSaveQuizAttempt(wordToUse, currentQuizQuestionIndex, optionKey, isCorrect);
   };
 
   const handleNextQuestion = () => {
-    if (autoAdvanceTimeoutRef.current) { 
-        clearTimeout(autoAdvanceTimeoutRef.current);
-        autoAdvanceTimeoutRef.current = null;
-    }
+    const wordToUse = getDisplayWord();
+    if (!wordToUse) return;
+    const wordId = sanitizeWordForId(wordToUse);
+    const quizSet = generatedContent[wordId]?.quiz;
 
-    const wordBeingQuizzedSanitized = getDisplayWordSanitized();
-    const currentWordData = generatedContent[wordBeingQuizzedSanitized];
-
-    if(currentWordData?.quiz && currentWordData.quiz_progress) {
-        const quizSet = currentWordData.quiz;
-        const progress = currentWordData.quiz_progress; 
-        const nextQuestionToShowIndex = progress.length; 
-        
-        console.log(`handleNextQuestion: quizSet.length=${quizSet.length}, progress.length=${progress.length}, nextQuestionToShowIndex=${nextQuestionToShowIndex}`);
-
-        if (nextQuestionToShowIndex < quizSet.length) {
-            setCurrentQuizQuestionIndex(nextQuestionToShowIndex);
-            setSelectedQuizOption(null);
-            setQuizFeedback(null);
-            setIsQuizAttemptedThisQuestion(false);
-        } else {
-            setCurrentQuizQuestionIndex(quizSet.length);
-            setSelectedQuizOption(null); 
-            setQuizFeedback(null); 
-            setIsQuizAttemptedThisQuestion(false); 
-        }
-    } else {
-        console.warn("handleNextQuestion called but quiz data or frontend progress is missing/inconsistent.");
-        setCurrentQuizQuestionIndex(0); 
+    if (quizSet) {
+        setCurrentQuizQuestionIndex(prevIdx => prevIdx + 1);
         setSelectedQuizOption(null);
         setQuizFeedback(null);
-        setIsQuizAttemptedThisQuestion(false);
+        setIsAttempted(false);
     }
+  };
+  
+  const handleFetchNewQuizSet = () => {
+    const wordToUse = getDisplayWord();
+    if (!wordToUse) return;
+    handleGenerateExplanation(wordToUse, false, true, false, 'quiz');
   };
 
 
-  const currentDisplayWordData = generatedContent[getDisplayWordSanitized()];
-  const explanationHTML = { __html: currentDisplayWordData?.explain?.replace(/<click>(.*?)<\/click>/g, '<strong class="text-blue-500 hover:text-blue-700 cursor-pointer underline">$1</strong>') || '' };
-
-  const renderContent = () => {
-    const displayWordStr = getDisplayWord();
-    const isQuizContentLoading = activeContentMode === 'quiz' && isLoading && (!currentDisplayWordData?.quiz || currentDisplayWordData.quiz.length === 0);
-    
-    if (isQuizContentLoading && displayWordStr) {
-        return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading new quiz for "{displayWordStr}"...</span></div>;
-    }
-    if (isLoading && !isQuizContentLoading && !currentDisplayWordData?.[activeContentMode] && displayWordStr) {
-        return <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /> <span className="ml-2 text-gray-700">Loading {activeContentMode} for "{displayWordStr}"...</span></div>;
-    }
-
-    if (error && !(activeContentMode === 'quiz' && isQuizContentLoading) ) {
-      if (activeContentMode !== 'explain' || (activeContentMode === 'explain' && !currentDisplayWordData?.explain)) {
-         return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
-      }
-    }
-
-    const displayData = currentDisplayWordData;
-    if (!displayData && displayWordStr) return <div className="text-gray-500 p-4">Select a mode or generate content for "{displayWordStr}".</div>;
-    if (!displayData && !displayWordStr) return <div className="text-gray-500 p-4">Enter a word and click "Generate Explanation".</div>;
-
-
-    switch (activeContentMode) {
-      case 'explain':
-        if (error && !displayData?.explain) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>; 
-        return (
-          <div className="prose max-w-none p-1 text-gray-800" onClick={(e) => {
-            const target = e.target as HTMLElement;
-            if (target.tagName === 'STRONG' && target.classList.contains('text-blue-500')) {
-              handleSubTopicClick(target.innerText);
-            }
-          }}>
-            <div dangerouslySetInnerHTML={explanationHTML} />
-            {displayData?.explain && (
-              <button
-                onClick={handleRefreshContent}
-                className="mt-2 text-xs text-blue-500 hover:text-blue-700 flex items-center"
-                title="Refresh explanation"
-              >
-                <RefreshCw size={12} className="mr-1" /> Regenerate
-              </button>
-            )}
-          </div>
-        );
-      case 'fact':
-        if (error && !displayData?.fact) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
-        return <div className="prose max-w-none p-1 text-gray-800">{displayData?.fact || `No fact available yet for "${displayWordStr}". Try generating it.`}</div>;
-      case 'image':
-        if (error && !displayData?.image) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
-        return <div className="prose max-w-none p-1 text-gray-800">{displayData?.image || "Image feature coming soon."}</div>;
-      case 'deep_dive':
-        if (error && !displayData?.deep_dive) return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
-        return <div className="prose max-w-none p-1 text-gray-800">{displayData?.deep_dive || "Deep dive feature coming soon."}</div>;
-      case 'quiz':
-        if (error && (!displayData?.quiz || displayData.quiz.length === 0) && !isQuizContentLoading) {
-            return <div className="text-red-500 p-4 bg-red-100 rounded-md">{error}</div>;
-        }
-
-        const quizSet = displayData?.quiz; 
-        const quizProgress = displayData?.quiz_progress || []; 
-
-        if (!quizSet || quizSet.length === 0) {
-          if (!isQuizContentLoading) { 
-            return <div className="p-4 text-gray-500">No quiz available for "{displayWordStr}" yet. Try generating it or refreshing.</div>;
-          }
-          return null; 
-        }
-        
-        console.log(`Render Quiz: currentQuizQuestionIndex=${currentQuizQuestionIndex}, quizSet.length=${quizSet.length}, quizProgress.length=${quizProgress.length}`);
-
-        if (currentQuizQuestionIndex >= quizSet.length) { 
-            let correctCount = 0;
-            quizProgress.forEach(attempt => { 
-                if (attempt.is_correct) correctCount++;
-            });
-
-            return (
-                <div className="p-4 space-y-4 text-gray-800">
-                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Quiz Summary for "{getDisplayWord()}"</h3>
-                    <p className="text-lg font-medium mb-3">Your Score: {correctCount} / {quizSet.length}</p>
-                    <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar"> 
-                        {quizSet.map((quizString, index) => {
-                            const parsedQuestion = parseQuizString(quizString);
-                            if (!parsedQuestion) return <div key={index} className="text-red-500 text-sm p-2 bg-red-50 rounded-md">Error displaying summary for question {index + 1}. <details><summary className="text-xs cursor-pointer">Details</summary><pre className="text-xs whitespace-pre-wrap break-all mt-1 p-1 bg-red-100">{quizString}</pre></details></div>;
-
-                            const attempt = quizProgress.find(p => p.question_index === index);
-                            const userSelectedOption = attempt ? parsedQuestion.options.find(o => o.key === attempt.selected_option_key) : null;
-                            const correctOption = parsedQuestion.options.find(o => o.key === parsedQuestion.correctOptionKey);
-                            
-                            return (
-                                <div key={index} className={`p-3 border rounded-lg shadow-sm text-sm ${attempt?.is_correct ? 'bg-green-50 border-green-300' : (attempt ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-300')}`}>
-                                    <p className="font-semibold text-gray-800 mb-1.5">Q{index + 1}: {parsedQuestion.questionText}</p>
-                                    {attempt ? (
-                                        <>
-                                            <p className="text-xs">Your Answer: <span className={`font-medium ${attempt.is_correct ? 'text-green-700' : 'text-red-700'}`}>({attempt.selected_option_key}) {userSelectedOption?.text || 'N/A'}</span>
-                                                {attempt.is_correct ? <span className="text-green-700 font-semibold ml-1">(Correct)</span> : <span className="text-red-700 font-semibold ml-1">(Incorrect)</span>}
-                                            </p>
-                                            {!attempt.is_correct && correctOption && (
-                                                <p className="text-xs mt-1">Correct Answer: <span className="font-medium text-green-700">({correctOption.key}) {correctOption.text}</span></p>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <p className="text-xs text-orange-600">Not attempted. Correct: ({parsedQuestion.correctOptionKey}) {correctOption?.text || 'N/A'}</p>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                     <button
-                        onClick={handleFetchNewQuizSet} 
-                        disabled={isLoading}
-                        className="w-full mt-4 bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center disabled:opacity-60"
-                    >
-                       {isLoading ? <Loader2 className="animate-spin mr-2" size={18}/> : <PlusCircle size={18} className="mr-2" />}
-                        More Questions for "{getDisplayWord()}"
-                    </button>
-                </div>
-            );
-        }
-
-        const currentQuestionString = quizSet[currentQuizQuestionIndex];
-        const parsedQuestion = parseQuizString(currentQuestionString);
-
-        if (!parsedQuestion) {
-          return <div className="text-red-500 p-4">Error loading question. Please try refreshing. Original string: <pre className="text-xs whitespace-pre-wrap break-all">{currentQuestionString}</pre></div>;
-        }
-        
-        return (
-          <div className="p-4 space-y-4 text-gray-800">
-            <p className="font-semibold text-lg text-gray-700">Question {currentQuizQuestionIndex + 1} of {quizSet.length}:</p>
-            <p className="text-gray-800">{parsedQuestion.questionText}</p>
-            <div className="space-y-2">
-              {parsedQuestion.options.map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => handleQuizOptionSelect(opt.key, parsedQuestion.correctOptionKey, currentQuizQuestionIndex)}
-                  disabled={isQuizAttemptedThisQuestion} 
-                  className={`w-full text-left p-3 rounded-lg border transition-all duration-150 text-gray-700
-                    ${(selectedQuizOption === opt.key && isQuizAttemptedThisQuestion) ? 
-                        (quizFeedback?.isCorrect ? 'bg-green-200 border-green-400 ring-2 ring-green-500' : 'bg-red-200 border-red-400 ring-2 ring-red-500')
-                        : 'bg-white hover:bg-gray-100 border-gray-300'
-                    }
-                    ${(isQuizAttemptedThisQuestion && opt.key === parsedQuestion.correctOptionKey && selectedQuizOption !== opt.key) ? 'border-green-500 border-2 animate-pulse-border-green' : ''} 
-                    disabled:opacity-70 disabled:cursor-not-allowed
-                  `}
-                >
-                  ({opt.key}) {opt.text}
-                </button>
-              ))}
-            </div>
-            {isQuizAttemptedThisQuestion && quizFeedback && ( 
-              <div className={`p-2 rounded-md text-sm ${quizFeedback.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                {quizFeedback.message}
-                {!quizFeedback.isCorrect && ` Correct answer was: ${parsedQuestion.correctOptionKey}`}
-              </div>
-            )}
-             <div className="text-xs text-gray-500 mt-2">
-                Progress: {quizProgress.filter(p => p.question_index < currentQuizQuestionIndex).length + (isQuizAttemptedThisQuestion ? 1: 0)} / {quizSet.length} answered.
-                Score: {quizProgress.filter(p=>p.is_correct).length} correct.
-            </div>
-          </div>
-        );
-      default:
-        return <div className="p-4 text-gray-500">Select a content mode.</div>;
-    }
-  };
-
-  const renderProfileModal = () => {
-    if (!showProfileModal || !currentUser) return null;
-  
-    const ProfileStatCard: React.FC<{ icon: React.ElementType, label: string, value: string | number | undefined, colorClass: string }> = ({ icon: Icon, label, value, colorClass }) => (
-      <div className={`bg-opacity-10 ${colorClass.replace('text-', 'bg-').replace('-500', '-100')} p-4 rounded-xl shadow-md flex items-center space-x-3`}>
-        <div className={`p-2 rounded-full ${colorClass.replace('text-', 'bg-').replace('-500', '-200')}`}>
-          <Icon size={20} className={colorClass} />
-        </div>
-        <div>
-          <p className="text-xs text-gray-500">{label}</p>
-          <p className="text-lg font-semibold text-gray-800">{value ?? 'N/A'}</p>
-        </div>
-      </div>
-    );
-  
-    const ListSection: React.FC<{ title: string, items: any[] | undefined, renderItem: (item: any, index: number) => JSX.Element, icon: React.ElementType, emptyText?: string }> = ({ title, items, renderItem, icon: Icon, emptyText = "Nothing here yet." }) => (
-      <div className="bg-white/50 p-4 rounded-lg shadow">
-        <h4 className="text-md font-semibold text-gray-700 mb-3 flex items-center"><Icon size={18} className="mr-2 text-purple-600" />{title} ({items?.length || 0})</h4>
-        {items && items.length > 0 ? (
-          <ul className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
-            {items.map(renderItem)}
-          </ul>
-        ) : <p className="text-xs text-gray-500 italic">{emptyText}</p>}
-      </div>
-    );
-  
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 transition-opacity duration-300">
-        <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto text-gray-800 custom-scrollbar">
-          <div className="flex justify-between items-center mb-6 pb-3 border-b border-gray-300">
-            <div className="flex items-center">
-              <div className="p-3 bg-purple-500 rounded-full mr-3 shadow">
-                <User size={24} className="text-white" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-bold text-purple-700">{currentUser.username}</h3>
-                <p className="text-xs text-gray-500 flex items-center"><Mail size={12} className="mr-1"/>{currentUser.email || 'Email not provided'}</p>
-              </div>
-            </div>
-            <button onClick={() => setShowProfileModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">&times;</button>
-          </div>
-  
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            <ProfileStatCard icon={BookOpen} label="Total Words Explored" value={currentUser.total_words_explored} colorClass="text-blue-500" />
-            <ProfileStatCard icon={ShieldCheck} label="Account Tier" value={currentUser.tier || 'Standard'} colorClass="text-green-500" />
-            {currentUser.created_at && <ProfileStatCard icon={CalendarDays} label="Member Since" value={new Date(currentUser.created_at).toLocaleDateString()} colorClass="text-indigo-500" />}
-          </div>
-          
-          <div className="space-y-4">
-            <ListSection
-              title="Explored Words History"
-              icon={List}
-              items={currentUser.explored_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())}
-              renderItem={(wh: WordHistoryEntry) => (
-                <li key={wh.id} 
-                  className="p-2.5 bg-white hover:bg-purple-50 rounded-md cursor-pointer flex justify-between items-center text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
-                  <span onClick={() => handleWordSelectionFromProfile(wh.word)} className="flex-grow hover:underline">
-                    {wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span>
-                  </span>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleToggleFavorite(wh.word, wh.is_favorite); }} 
-                    title={wh.is_favorite ? "Remove from favorites" : "Add to favorites"}
-                    className="p-1.5 rounded-full hover:bg-red-100"
-                  >
-                    <Heart size={16} className={`${wh.is_favorite ? 'text-red-500 fill-current' : 'text-gray-400 hover:text-red-400'}`} />
-                  </button>
-                </li>
-              )}
-            />
-            <ListSection
-              title="Favorite Words"
-              icon={Star}
-              items={currentUser.favorite_words?.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime())}
-              renderItem={(wh: WordHistoryEntry) => (
-                <li key={wh.id} 
-                  className="p-2.5 bg-white hover:bg-purple-50 rounded-md cursor-pointer flex justify-between items-center text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
-                  <span onClick={() => handleWordSelectionFromProfile(wh.word)} className="flex-grow hover:underline">
-                    {wh.word} <span className="text-xs text-gray-400">({new Date(wh.last_explored_at).toLocaleDateString()})</span>
-                  </span>
-                   <button 
-                    onClick={(e) => { e.stopPropagation(); handleToggleFavorite(wh.word, wh.is_favorite); }} 
-                    title={wh.is_favorite ? "Remove from favorites" : "Add to favorites"}
-                    className="p-1.5 rounded-full hover:bg-red-100"
-                  >
-                    <Heart size={16} className={`${wh.is_favorite ? 'text-red-500 fill-current' : 'text-gray-400 hover:text-red-400'}`} />
-                  </button>
-                </li>
-              )}
-              emptyText="No favorite words yet."
-            />
-            <ListSection
-              title="Streak History"
-              icon={TrendingUp}
-              items={currentUser.streak_history?.sort((a,b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())}
-              renderItem={(streak: StreakEntry) => (
-                <li key={streak.id} className="p-2.5 bg-white hover:bg-purple-50 rounded-md text-sm text-gray-700 shadow-sm transition-all hover:shadow-md">
-                  <span className="font-medium text-purple-600">Score {streak.score}:</span> {streak.words.map((w, i) => (
-                    <span key={i} onClick={() => handleWordSelectionFromProfile(w)} className="cursor-pointer hover:underline">{w}</span>
-                  )).reduce((prev, curr) => <>{prev} <span className="text-purple-400">→</span> {curr}</>)}
-                  <span className="text-xs text-gray-400 ml-2">({new Date(streak.completed_at).toLocaleDateString()})</span>
-                </li>
-              )}
-              emptyText="No past streaks recorded."
-            />
-          </div>
-  
-          <button onClick={() => setShowProfileModal(false)} className="mt-6 w-full bg-purple-600 text-white py-2.5 px-4 rounded-lg hover:bg-purple-700 transition-colors font-semibold shadow hover:shadow-md">Close</button>
-        </div>
-      </div>
-    );
-  };
-  
-
+  // Render Functions
   const renderAuthModal = () => {
     if (!showAuthModal) return null;
 
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      setAuthError(null);
-
-      const currentAuthInputUsername = authInputUsername.trim();
-      const currentAuthInputEmail = authInputEmail.trim();
-      const currentAuthInputPassword = authInputPassword.trim();
-
-      let endpoint = '';
-      let payload = {};
-
-      if (authMode === 'login') {
-        if (!currentAuthInputUsername || !currentAuthInputPassword) {
-          setAuthError("Username/Email and Password are required for login.");
-          return;
-        }
-        endpoint = '/login';
-        payload = { email_or_username: currentAuthInputUsername, password: currentAuthInputPassword };
-      } else {
-        if (!currentAuthInputUsername || !currentAuthInputEmail || !currentAuthInputPassword) {
-          setAuthError("Username, Email, and Password are required for signup.");
-          return;
-        }
-        endpoint = '/signup';
-        payload = { email: currentAuthInputEmail, username: currentAuthInputUsername, password: currentAuthInputPassword };
-      }
-
-      setIsLoading(true);
-      console.log(`Attempting ${authMode} to: ${API_BASE_URL}${endpoint}`);
-      try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || `${authMode.charAt(0).toUpperCase() + authMode.slice(1)} failed. Status: ${response.status}`);
-        }
-        if (authMode === 'signup') {
-          setAuthMode('login');
-          setAuthInputUsername(currentAuthInputUsername);
-          setAuthInputEmail('');
-          setAuthInputPassword('');
-          setAuthError("Signup successful! Please login with your new credentials.");
-        } else {
-          handleAuthSuccess(data.access_token, data.user);
-        }
-      } catch (err) {
-        console.error("Auth error:", err);
-        setAuthError((err as Error).message);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm text-gray-800">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-semibold">{authMode === 'login' ? 'Login' : 'Sign Up'}</h3>
-            <button
-              onClick={() => {
-                setShowAuthModal(false);
-                setAuthError(null);
-                setAuthInputUsername('');
-                setAuthInputEmail('');
-                setAuthInputPassword('');
-              }}
-              className="text-gray-500 hover:text-gray-700"
-            >&times;</button>
-          </div>
-          {authError && <p className="text-red-600 text-sm mb-3 bg-red-100 p-2 rounded-md border border-red-300">{authError}</p>}
-          <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="bg-slate-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md relative">
+          <button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200">
+            <X size={24} />
+          </button>
+          <h2 className="text-3xl font-bold text-center text-sky-400 mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
+          {authError && <p className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm">{authError}</p>}
+          {authSuccessMessage && <p className="bg-green-500/20 text-green-400 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}
+          <form onSubmit={handleAuthAction}>
             {authMode === 'signup' && (
-              <>
+              <div className="mb-4">
+                <label className="block text-slate-300 mb-1" htmlFor="username">Username</label>
                 <input
                   type="text"
-                  name="username_signup"
-                  autoComplete="username"
-                  placeholder="Username"
-                  value={authInputUsername}
-                  onChange={(e) => setAuthInputUsername(e.target.value)}
+                  id="username"
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
                   required
-                  className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500"
                 />
-                <input
-                  type="email"
-                  name="email_signup"
-                  autoComplete="email"
-                  placeholder="Email"
-                  value={authInputEmail}
-                  onChange={(e) => setAuthInputEmail(e.target.value)}
-                  required
-                  className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500"
-                />
-              </>
+              </div>
             )}
-            {authMode === 'login' && (
+            <div className="mb-4">
+              <label className="block text-slate-300 mb-1" htmlFor="email">Email</label>
               <input
-                type="text"
-                name="username_login"
-                autoComplete="username"
-                placeholder="Username or Email"
-                value={authInputUsername}
-                onChange={(e) => setAuthInputUsername(e.target.value)}
+                type="email"
+                id="email"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
                 required
-                className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500"
               />
-            )}
-            <input
-              type="password"
-              name="password"
-              autoComplete={authMode === 'login' ? "current-password" : "new-password"}
-              placeholder="Password"
-              value={authInputPassword}
-              onChange={(e) => setAuthInputPassword(e.target.value)}
-              required
-              className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 focus:ring-purple-500 focus:border-purple-500"
-            />
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-blue-500 text-white py-2.5 px-4 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 transition-colors duration-150 font-semibold"
-            >
+            </div>
+            <div className="mb-6">
+              <label className="block text-slate-300 mb-1" htmlFor="password">Password</label>
+              <input
+                type="password"
+                id="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
+                required
+              />
+            </div>
+            <button type="submit" disabled={isLoading} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold p-3 rounded-lg transition-colors disabled:opacity-50">
               {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')}
             </button>
           </form>
-          <button
-            onClick={() => {
-              setAuthMode(authMode === 'login' ? 'signup' : 'login');
-              setAuthError(null);
-              setAuthInputUsername('');
-              setAuthInputEmail('');
-              setAuthInputPassword('');
-            }}
-            className="mt-4 text-sm text-blue-500 hover:underline w-full text-center"
-          >
-            {authMode === 'login' ? "Need an account? Sign Up" : "Already have an account? Login"}
-          </button>
+          <p className="text-center text-slate-400 mt-6 text-sm">
+            {authMode === 'login' ? (
+              <>
+                Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null);}} className="text-sky-400 hover:underline">Sign Up</button>
+              </>
+            ) : (
+              <>
+                Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null);}} className="text-sky-400 hover:underline">Login</button>
+              </>
+            )}
+          </p>
         </div>
       </div>
     );
   };
 
+  const renderContent = () => {
+    const wordToUse = getDisplayWord();
+    if (isLoading && !wordToUse) return <div className="text-center p-10 text-slate-400">Loading...</div>; 
+    if (!wordToUse) return <div className="text-center p-10 text-slate-400 text-lg">Enter a word or concept above to begin your learning journey!</div>;
 
-  const displayWord = getDisplayWord();
-  const displayWordSanitized = getDisplayWordSanitized();
-  const isFavoriteCurrent = generatedContent[displayWordSanitized]?.is_favorite || false;
+    const wordId = sanitizeWordForId(wordToUse);
+    const content = generatedContent[wordId];
 
-  const contentModes: { id: ContentMode, label: string, icon: React.ElementType }[] = [
-    { id: 'explain', label: 'Explain', icon: MessageSquare },
-    { id: 'quiz', label: 'Quiz', icon: HelpCircle },
-    { id: 'fact', label: 'Fact', icon: Brain },
-    { id: 'image', label: 'Image', icon: ImageIcon },
-    { id: 'deep_dive', label: 'Deep Dive', icon: FileText },
+    if (isLoading && (!content || !content[activeContentMode])) {
+        return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>;
+    }
+    if (error && (!content || !content[activeContentMode])) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
+    if (!content) return <div className="text-center p-10 text-slate-400">No content generated for "{wordToUse}" yet. Try generating an explanation.</div>;
+    
+    const currentIsFavorite = content.is_favorite || false;
+
+    const renderClickableText = (text: string | undefined) => {
+        if (!text) return null;
+        const parts = text.split(/(`[^`]+`)/g); 
+        return parts.map((part, index) => {
+            if (part.startsWith('`') && part.endsWith('`')) {
+                const subTopic = part.slice(1, -1);
+                return (
+                    <button
+                        key={index}
+                        onClick={() => handleSubTopicClick(subTopic)}
+                        className="text-sky-400 hover:text-sky-300 underline font-semibold transition-colors mx-1"
+                        title={`Explore: ${subTopic}`}
+                    >
+                        {subTopic}
+                    </button>
+                );
+            }
+            return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />;
+        });
+    };
+
+
+    let modeContentElement = null;
+    switch (activeContentMode) {
+      case 'explain':
+        modeContentElement = content.explanation ? (
+            <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-slate-200 leading-relaxed">
+                {renderClickableText(content.explanation)}
+            </div>
+        ) : <p className="text-slate-400">No explanation available. Try generating one.</p>;
+        break;
+      case 'quiz':
+        const quizSet = content.quiz;
+        const progress = content.quiz_progress || [];
+
+        if (!quizSet || quizSet.length === 0) {
+            modeContentElement = <p className="text-slate-400">No quiz available for "{wordToUse}". Try generating one or refreshing.</p>;
+            break;
+        }
+        if (currentQuizQuestionIndex >= quizSet.length) {
+            const score = progress.filter(p => p.is_correct).length;
+            modeContentElement = (
+                <div className="text-slate-200">
+                    <h3 className="text-xl font-semibold mb-4 text-sky-300">Quiz Summary for "{wordToUse}"</h3>
+                    <p className="text-lg mb-4">Your Score: <span className="font-bold text-emerald-400">{score}</span> / {quizSet.length}</p>
+                    <ul className="space-y-3 mb-6 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                        {quizSet.map((q, idx) => {
+                            const attempt = progress.find(p => p.question_index === idx);
+                            return (
+                                <li key={idx} className={`p-3 rounded-md ${attempt ? (attempt.is_correct ? 'bg-green-500/20' : 'bg-red-500/20') : 'bg-slate-700'}`}>
+                                    <p className="font-medium mb-1">Q{idx + 1}: {q.question}</p>
+                                    <p className="text-xs">Your answer: {attempt ? q.options[attempt.selected_option_key] : 'Not answered'}</p>
+                                    {!attempt?.is_correct && <p className="text-xs text-emerald-300">Correct: {q.options[q.correctOptionKey]}</p>}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    <button
+                        onClick={handleFetchNewQuizSet}
+                        className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
+                    >
+                       <RotateCcw size={18} className="mr-2" /> More Questions for "{wordToUse}"
+                    </button>
+                </div>
+            );
+        } else { 
+            const currentQuestion = quizSet[currentQuizQuestionIndex];
+            modeContentElement = (
+                <div className="text-slate-200">
+                    <p className="text-sm text-slate-400 mb-2">Question {currentQuizQuestionIndex + 1} of {quizSet.length}</p>
+                    <h3 className="text-lg font-semibold mb-4">{currentQuestion.question}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                        {Object.entries(currentQuestion.options).map(([key, optionText]) => (
+                            <button
+                                key={key}
+                                onClick={() => handleQuizOptionSelect(key)}
+                                disabled={isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))}
+                                className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out
+                                    ${selectedQuizOption === key 
+                                        ? (quizFeedback?.isCorrect ? 'bg-green-500 hover:bg-green-600 ring-2 ring-green-400' : 'bg-red-500 hover:bg-red-600 ring-2 ring-red-400')
+                                        : 'bg-slate-700 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'}
+                                    ${(isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))) && selectedQuizOption !== key ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
+                                `}
+                            >
+                                {optionText}
+                            </button>
+                        ))}
+                    </div>
+                    {quizFeedback && (
+                        <div className={`p-3 rounded-md my-4 text-sm ${quizFeedback.isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                            {quizFeedback.message}
+                            {!quizFeedback.isCorrect && currentQuestion.explanation && <p className="mt-1 text-xs">{currentQuestion.explanation}</p>}
+                        </div>
+                    )}
+                    {(isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))) && (
+                        <button
+                            onClick={handleNextQuestion}
+                            className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                        >
+                            {currentQuizQuestionIndex === quizSet.length - 1 ? 'View Summary' : 'Next Question'}
+                        </button>
+                    )}
+                </div>
+            );
+        }
+        break;
+      case 'fact':
+        modeContentElement = content.fact ? <p className="text-lg text-amber-300 italic leading-relaxed">{renderClickableText(content.fact)}</p> : <p className="text-slate-400">No fun fact available.</p>;
+        break;
+      case 'image':
+        modeContentElement = (
+            <div>
+                {content.image_prompt && <p className="text-sm text-slate-400 mb-2 italic">Prompt: {content.image_prompt}</p>}
+                {content.image_url ? (
+                    <img src={content.image_url} alt={`Generated for ${wordToUse}`} className="rounded-lg shadow-lg mx-auto max-w-full h-auto max-h-[400px] object-contain" />
+                ) : (
+                    <p className="text-slate-400">No image available. Try generating one.</p>
+                )}
+            </div>
+        );
+        break;
+      case 'deep_dive':
+        modeContentElement = content.deep_dive ? (
+            <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-slate-200 leading-relaxed">
+                {renderClickableText(content.deep_dive)}
+            </div>
+        ) : <p className="text-slate-400">No deep dive available.</p>;
+        break;
+      default:
+        modeContentElement = <p className="text-slate-400">Select a mode to view content.</p>;
+    }
+
+    return (
+      <div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative">
+        <div className="absolute top-3 right-3 flex items-center space-x-2">
+            <button
+                onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)}
+                className={`p-1.5 rounded-full hover:bg-slate-600 transition-colors ${currentIsFavorite ? 'text-pink-500' : 'text-slate-400'}`}
+                title={currentIsFavorite ? "Unfavorite" : "Favorite"}
+            >
+                <Heart size={20} fill={currentIsFavorite ? 'currentColor' : 'none'} />
+            </button>
+            <button 
+                onClick={handleRefreshContent}
+                className="p-1.5 rounded-full text-slate-400 hover:text-sky-300 hover:bg-slate-600 transition-colors"
+                title={`Regenerate ${activeContentMode}`}
+            >
+                <RefreshCw size={18} />
+            </button>
+        </div>
+        <h2 className="text-2xl sm:text-3xl font-bold text-sky-400 mb-4 capitalize">{wordToUse} - <span className="text-sky-500">{activeContentMode}</span></h2>
+        {modeContentElement}
+      </div>
+    );
+  };
+
+  const modeButtons: { mode: ContentMode; label: string; icon: React.ElementType }[] = [
+    { mode: 'explain', label: 'Explain', icon: MessageSquareQuote },
+    { mode: 'quiz', label: 'Quiz', icon: Lightbulb },
+    { mode: 'fact', label: 'Fact', icon: Sparkles },
+    { mode: 'image', label: 'Image', icon: ImageIcon },
+    { mode: 'deep_dive', label: 'Deep Dive', icon: Brain },
   ];
 
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-gray-100 flex flex-col items-center p-4 font-sans">
-      <div className="w-full max-w-3xl bg-white/10 backdrop-blur-md shadow-2xl rounded-xl p-6 md:p-8">
-        <header className="flex flex-col sm:flex-row justify-between items-center mb-6 pb-4 border-b border-white/20">
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 mb-2 sm:mb-0">
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+      {/* Header */}
+      <header className="bg-slate-800 shadow-md p-3 sm:p-4 sticky top-0 z-40">
+        <div className="container mx-auto flex justify-between items-center max-w-6xl">
+          <div 
+            className="text-2xl sm:text-3xl font-bold text-sky-400 cursor-pointer hover:text-sky-300 transition-colors"
+            onClick={() => {
+                setActiveView('main');
+            }}
+            title="Tiny Tutor Home"
+          >
             Tiny Tutor AI
-          </h1>
-          <div className="flex items-center space-x-3">
-            {currentUser && <span className="text-sm">Hi, {currentUser.username}!</span>}
-            {authToken ? (
+          </div>
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            {currentUser ? (
               <>
-                <button onClick={() => { if (authToken) fetchUserProfile(authToken); setShowProfileModal(true); }} title="Profile" className="p-2 rounded-full hover:bg-white/20 transition-colors"><User size={20} /></button>
-                <button onClick={handleLogout} title="Logout" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogOut size={20} /></button>
+                <span className="text-sm sm:text-base hidden md:inline">Hi, {currentUser.username}!</span>
+                <button
+                  onClick={() => {
+                    if (activeView === 'profile') {
+                        setActiveView('main');
+                    } else {
+                        if (authToken) fetchUserProfile(authToken); 
+                        setActiveView('profile');
+                    }
+                  }}
+                  className={`p-2 rounded-full hover:bg-slate-700 transition-colors ${activeView === 'profile' ? 'text-sky-400 bg-slate-700' : 'text-slate-300'}`}
+                  title={activeView === 'profile' ? "Back to Explorer" : "View Profile"}
+                >
+                  {activeView === 'profile' ? <Home size={20} /> : <User size={20} />}
+                </button>
+                <button onClick={handleLogout} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-red-400 transition-colors" title="Logout">
+                  <LogOut size={20} />
+                </button>
               </>
             ) : (
-              <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); setAuthError(null); }} title="Login" className="p-2 rounded-full hover:bg-white/20 transition-colors"><LogIn size={20} /></button>
+              <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-sky-400 transition-colors" title="Login/Signup">
+                <LogIn size={20} />
+              </button>
             )}
           </div>
-        </header>
-
-        <div className="mb-6">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleGenerateExplanation(inputValue, false, false, false, 'explain')}
-              placeholder="Enter a word or concept..."
-              className="flex-grow p-3 rounded-lg bg-white/20 border border-white/30 focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none placeholder-gray-300 text-white"
-            />
-            <button
-              onClick={() => handleGenerateExplanation(inputValue, false, false, false, 'explain')}
-              disabled={isLoading || !inputValue.trim()}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            >
-              {isLoading && !currentDisplayWordData && inputValue.trim() ? <Loader2 className="animate-spin mr-2" size={20} /> : <BookOpen size={20} className="mr-2" />}
-              Generate Explanation
-            </button>
-          </div>
         </div>
+      </header>
 
-        {liveStreak && liveStreak.score > 0 && (
-          <div className="mb-4 p-3 bg-white/10 rounded-lg text-sm">
-            <span className="font-semibold">Live Streak: {liveStreak.score} </span>
-            <span>
-              (
-              {liveStreak.words.map((word, index) => (
-                <React.Fragment key={index}>
-                  <span
-                    onClick={() => handleStreakWordClick(word)}
-                    className={`cursor-pointer hover:underline ${(isReviewingStreakWord && wordForReview.toLowerCase() === word.toLowerCase()) || (!isReviewingStreakWord && currentFocusWord.toLowerCase() === word.toLowerCase()) ? 'font-bold text-purple-300' : ''}`}
-                  >
-                    {word}
-                  </span>
-                  {index < liveStreak.words.length - 1 && ' → '}
-                </React.Fragment>
-              ))}
-              )
-            </span>
-            {isReviewingStreakWord && <span className="ml-2 text-xs italic">(Reviewing: {wordForReview})</span>}
-          </div>
-        )}
-
-        {(displayWord || (error && activeContentMode !== 'explain' && activeContentMode !== 'quiz') || authError) && (
-          <div className="bg-white/5 backdrop-blur-sm shadow-inner rounded-lg min-h-[200px]">
-            <div className="flex flex-wrap items-center justify-between p-3 border-b border-white/20">
-              <div className="flex flex-wrap gap-1">
-                {contentModes.map(modeInfo => (
-                  <button
-                    key={modeInfo.id}
-                    onClick={() => handleModeChange(modeInfo.id)}
-                    disabled={!displayWord && !error && !authError && !isLoading}
-                    className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center
-                            ${activeContentMode === modeInfo.id ? 'bg-purple-500 text-white shadow-md' : 'bg-white/10 hover:bg-white/20 text-gray-200'}
-                            ${(!displayWord && !error && !authError) ? 'opacity-50 cursor-not-allowed' : ''}
-                            ${isLoading ? 'opacity-70 cursor-wait' : ''} 
-                            `}
-                  >
-                    <modeInfo.icon size={14} className="mr-1.5" /> {modeInfo.label}
-                  </button>
-                ))}
-              </div>
-              {displayWord && (
-                <button
-                  onClick={() => handleToggleFavorite(getDisplayWord())} 
-                  title={isFavoriteCurrent ? "Remove from favorites" : "Add to favorites"}
-                  className="p-2 rounded-full hover:bg-white/20 transition-colors disabled:opacity-50"
-                  disabled={isLoading}
+      {/* Main Content Area - Conditional Rendering */}
+      {activeView === 'main' && (
+        <main className="container mx-auto p-3 sm:p-4 md:p-6 flex-grow max-w-3xl w-full">
+            <form onSubmit={(e) => { e.preventDefault(); handleGenerateExplanation(inputValue, true, false, false, 'explain'); }} className="mb-6 flex flex-col sm:flex-row items-stretch gap-2">
+                <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Enter a word or concept (e.g., photosynthesis)"
+                className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none placeholder-slate-500"
+                />
+                <button 
+                    type="submit" 
+                    disabled={isLoading || !inputValue.trim()}
+                    className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 px-4 sm:px-6 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50"
                 >
-                  <Heart size={20} className={`${isFavoriteCurrent ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
+                    <BookOpen size={20} className="mr-2 hidden sm:inline" />
+                    Generate
                 </button>
-              )}
-            </div>
+            </form>
 
-            <div className="p-2 sm:p-4 text-gray-800 bg-white rounded-b-lg">
+            {error && !isLoading && <div className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm animate-fadeIn">{error}</div>}
+            
+            {liveStreak && liveStreak.score > 0 && currentFocusWord && (
+                <div className="mb-4 p-3 bg-slate-800 rounded-lg shadow text-sm text-emerald-400">
+                    <span className="font-semibold">Live Streak: {liveStreak.score} </span>
+                    <span>
+                        (
+                        {liveStreak.words.map((word, index) => (
+                        <React.Fragment key={word + index}>
+                            <span
+                                className={`cursor-pointer hover:text-emerald-300 ${getDisplayWord() === word ? 'font-bold underline' : ''}`}
+                                onClick={() => handleStreakWordClick(word)}
+                                title={`Review: ${word}`}
+                            >
+                            {word}
+                            </span>
+                            {index < liveStreak.words.length - 1 && ' → '}
+                        </React.Fragment>
+                        ))}
+                        )
+                    </span>
+                    {isReviewingStreakWord && wordForReview && <span className="ml-2 text-xs text-slate-400">(Reviewing: {wordForReview})</span>}
+                </div>
+            )}
+
+            {getDisplayWord() && (
+            <div className="mb-6 flex flex-wrap justify-center gap-2 sm:gap-3">
+                {modeButtons.map(({ mode, label, icon: Icon }) => (
+                <button
+                    key={mode}
+                    onClick={() => handleModeChange(mode)}
+                    disabled={isLoading && activeContentMode !== mode}
+                    className={`flex items-center py-2 px-3 sm:px-4 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-105
+                                ${activeContentMode === mode ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-sky-300'}
+                                disabled:opacity-70 disabled:cursor-not-allowed`}
+                    title={label}
+                >
+                    <Icon size={16} className="mr-1.5" /> {label}
+                </button>
+                ))}
+            </div>
+            )}
+
+            <div className="animate-fadeIn">
               {renderContent()}
             </div>
-          </div>
-        )}
+        </main>
+      )}
 
-        {renderAuthModal()}
-        {renderProfileModal()}
+      {activeView === 'profile' && currentUser && userProfileData && (
+        <ProfilePageComponent
+            currentUser={currentUser}
+            userProfileData={userProfileData}
+            onWordSelect={handleWordSelectionFromProfile}
+            onToggleFavorite={handleToggleFavorite}
+            onNavigateBack={() => setActiveView('main')}
+            generatedContent={generatedContent}
+        />
+      )}
+      {activeView === 'profile' && (isLoading || isFetchingProfile) && !userProfileData && (
+         <div className="flex-grow flex items-center justify-center text-slate-400">Loading profile...</div>
+      )}
+       {activeView === 'profile' && !currentUser && !isFetchingProfile && ( 
+         <div className="flex-grow flex flex-col items-center justify-center text-slate-400 p-6">
+            <p className="mb-4 text-lg">Please log in to view your profile.</p>
+            <button 
+                onClick={() => { setShowAuthModal(true); setAuthMode('login');}} 
+                className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
+            >
+                Login
+            </button>
+         </div>
+      )}
 
-      </div>
-      <footer className="mt-8 text-center text-xs text-gray-400">
-        <p>&copy; {new Date().getFullYear()} Tiny Tutor AI. Learning enhanced by AI.</p>
+      {renderAuthModal()}
+
+      <footer className="bg-slate-800 text-center p-4 text-xs text-slate-500 border-t border-slate-700 mt-auto">
+        © {new Date().getFullYear()} Tiny Tutor AI. All rights reserved.
       </footer>
     </div>
   );

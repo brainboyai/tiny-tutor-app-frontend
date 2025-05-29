@@ -10,7 +10,7 @@ import './index.css'; // Tailwind base styles
 import ProfilePage from './ProfilePage'; // Assuming ProfilePage.tsx is in the same src/ directory
 
 // --- Constants (from original App.tsx, ensure these are defined) ---
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'; // Ensure this is correctly set in .env
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://tiny-tutor-app.onrender.com'; // Ensure this is correctly set in .env
 
 // --- Type Definitions (from original App.tsx, ensure these are defined) ---
 interface CurrentUser {

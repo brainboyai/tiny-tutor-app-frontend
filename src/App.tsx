@@ -38,8 +38,8 @@ interface GeneratedContentItem {
   explanation?: string;
   quiz?: ParsedQuizQuestion[]; 
   fact?: string;
-  image_prompt?: string; // For actual image prompt or placeholder text
-  image_url?: string;    // For actual image URL
+  image_prompt?: string; 
+  image_url?: string;    
   deep_dive?: string;
   is_favorite?: boolean;
   first_explored_at?: string;
@@ -228,18 +228,38 @@ function App() {
         return;
       }
       const data = await response.json();
+      console.log("Raw profile data from backend:", data); 
+
+      // Ensure 'word' field exists and is a non-empty string
+      const processedExploredWords = (data.explored_words || [])
+        .map((w: any) => ({ 
+            word: w.word as string, 
+            last_explored_at: w.last_explored_at,
+            is_favorite: w.is_favorite,
+            first_explored_at: w.first_explored_at 
+        }))
+        .filter((w: any) => typeof w.word === 'string' && w.word.trim() !== '')
+        .sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime());
+
+      const processedFavoriteWords = (data.favorite_words || [])
+        .map((w: any) => ({ 
+            word: w.word as string, 
+            last_explored_at: w.last_explored_at,
+            is_favorite: w.is_favorite,
+            first_explored_at: w.first_explored_at 
+        }))
+        .filter((w: any) => typeof w.word === 'string' && w.word.trim() !== '')
+        .sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime());
+      
+      console.log("Processed Explored Words for Profile:", processedExploredWords);
+      console.log("Processed Favorite Words for Profile:", processedFavoriteWords);
+
       setUserProfileData({
         username: data.username,
         email: data.email,
-        totalWordsExplored: data.total_words_explored,
-        exploredWords: (data.explored_words || [])
-            .map((w: any) => ({ ...w, word: w.word_id as string }))
-            .filter((w: any) => typeof w.word === 'string' && w.word.trim() !== '')
-            .sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
-        favoriteWords: (data.favorite_words || [])
-            .map((w: any) => ({ ...w, word: w.word_id as string }))
-            .filter((w: any) => typeof w.word === 'string' && w.word.trim() !== '')
-            .sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        totalWordsExplored: data.total_words_explored, 
+        exploredWords: processedExploredWords,
+        favoriteWords: processedFavoriteWords,
         streakHistory: (data.streak_history || []).sort((a:any, b:any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()),
       });
       setCurrentUser({ username: data.username, email: data.email, id: data.user_id });
@@ -461,7 +481,7 @@ function App() {
                 newWordData.image_prompt = data.image_prompt ?? baseCache.image_prompt ?? existingWordData.image_prompt;
             } else if (data.image) { 
                 newWordData.image_prompt = data.image; 
-                newWordData.image_url = undefined; // Ensure no old URL persists if only placeholder is new
+                newWordData.image_url = undefined; 
             } else if (baseCache.image_url) { 
                  newWordData.image_url = baseCache.image_url;
                  newWordData.image_prompt = baseCache.image_prompt ?? existingWordData.image_prompt;
@@ -664,7 +684,6 @@ function App() {
 
   const handleSubTopicClick = (subTopic: string) => {
     if (!currentFocusWord) return; 
-    // Ensure we are not in review mode when clicking a sub-topic to extend the main streak
     setIsReviewingStreakWord(false);
     setWordForReview(null);
     handleGenerateExplanation(subTopic, false, false, true, 'explain');
@@ -920,11 +939,8 @@ function App() {
     
     const currentIsFavorite = content.is_favorite || false;
 
-    // Updated renderClickableText to use <click> tags
     const renderClickableText = (text: string | undefined) => {
         if (!text) return null;
-        // Regex to find <click>sub-topic</click> and capture sub-topic
-        // It splits the string by the tags, keeping the tags in the result array for processing.
         const parts = text.split(/(<click>.*?<\/click>)/g);
         return parts.map((part, index) => {
             const clickMatch = part.match(/<click>(.*?)<\/click>/);
@@ -932,7 +948,7 @@ function App() {
                 const subTopic = clickMatch[1];
                 return (
                     <button
-                        key={`${subTopic}-${index}`} // Ensure unique key
+                        key={`${subTopic}-${index}`} 
                         onClick={() => handleSubTopicClick(subTopic)}
                         className="text-sky-400 hover:text-sky-300 underline font-semibold transition-colors mx-1"
                         title={`Explore: ${subTopic}`}
@@ -941,7 +957,6 @@ function App() {
                     </button>
                 );
             }
-            // For parts that are not <click> tags, render them normally (handle newlines)
             return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />;
         });
     };
@@ -1073,13 +1088,16 @@ function App() {
             >
                 <Heart size={20} fill={currentIsFavorite ? 'currentColor' : 'none'} />
             </button>
-            <button 
-                onClick={handleRefreshContent}
-                className="p-1.5 rounded-full text-slate-400 hover:text-sky-300 hover:bg-slate-600 transition-colors"
-                title={`Regenerate ${activeContentMode}`}
-            >
-                <RefreshCw size={18} />
-            </button>
+            {/* Conditionally render Refresh button only for 'explain' mode */}
+            {activeContentMode === 'explain' && (
+                <button 
+                    onClick={handleRefreshContent}
+                    className="p-1.5 rounded-full text-slate-400 hover:text-sky-300 hover:bg-slate-600 transition-colors"
+                    title={`Regenerate ${activeContentMode}`}
+                >
+                    <RefreshCw size={18} />
+                </button>
+            )}
         </div>
         <h2 className="text-2xl sm:text-3xl font-bold text-sky-400 mb-4 capitalize">{wordToUse} - <span className="text-sky-500">{activeContentMode}</span></h2>
         {modeContentElement}
@@ -1246,3 +1264,4 @@ function App() {
 }
 
 export default App;
+

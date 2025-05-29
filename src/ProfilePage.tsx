@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react'; 
 import { Heart, User, Home } from 'lucide-react';
 
@@ -96,17 +97,17 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
     }
   }, [userProfileData]);
 
-  const renderWordItem = (wordData: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }, index: number, listName: string) => {
-    console.log(`ProfilePage - ${listName} - Rendering item ${index}:`, wordData);
+  const renderWordItem = (wordData: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }, isFavoriteList: boolean = false) => {
+    // Defensive check: Ensure wordData and wordData.word are valid before proceeding
     if (!wordData || typeof wordData.word !== 'string' || !wordData.word.trim()) {
-        console.warn(`ProfilePage - ${listName} - renderWordItem received invalid wordData at index ${index}:`, wordData);
-        return <li key={`invalid-${listName}-${index}`} className="text-red-400 p-2">Error: Invalid word data item.</li>; 
+        console.warn("renderWordItem received invalid wordData:", wordData);
+        return <li key={`invalid-word-${Math.random()}`} className="text-red-400 p-2">Error: Invalid word data item.</li>;
     }
-    const wordId = sanitizeWordForId(wordData.word); 
+    const wordId = sanitizeWordForId(wordData.word); // wordData.word is now guaranteed to be a string
     const currentIsFavorite = generatedContent[wordId]?.is_favorite ?? wordData.is_favorite;
 
     return (
-      <li key={wordId + (listName === 'Favorites' ? '-fav' : '-exp')} className="mb-3 p-3 bg-slate-700 rounded-lg shadow hover:bg-slate-600 transition-colors">
+      <li key={wordId + (isFavoriteList ? '-fav' : '-exp')} className="mb-3 p-3 bg-slate-700 rounded-lg shadow hover:bg-slate-600 transition-colors">
         <div className="flex justify-between items-center">
           <span
             className="text-sky-300 hover:text-sky-200 cursor-pointer font-medium flex-grow mr-2"
@@ -219,7 +220,7 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
               <h3 className="text-xl font-semibold mb-4 text-sky-300">All Explored Words</h3>
               {(userProfileData.exploredWords && userProfileData.exploredWords.length > 0) ? (
                 <ul className="max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                  {userProfileData.exploredWords.map((wordData, index) => renderWordItem(wordData, index, "Explored"))}
+                  {userProfileData.exploredWords.map(word => renderWordItem(word))}
                 </ul>
               ) : (
                 <p className="text-slate-400">No words explored yet. Start learning!</p>
@@ -231,7 +232,7 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
               <h3 className="text-xl font-semibold mb-4 text-pink-400">Favorite Words</h3>
               {(userProfileData.favoriteWords && userProfileData.favoriteWords.length > 0) ? (
                 <ul className="max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                  {userProfileData.favoriteWords.map((wordData, index) => renderWordItem(wordData, index, "Favorites"))}
+                  {userProfileData.favoriteWords.map(word => renderWordItem(word, true))}
                 </ul>
               ) : (
                 <p className="text-slate-400">You haven't favorited any words yet.</p>

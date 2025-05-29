@@ -102,7 +102,7 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
         }
         
         const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line);
-        if (lines.length < 3) { // Simplified minimum: Question, one option, Correct Answer
+        if (lines.length < 3) { 
             console.warn(`Quiz string for item ${index} has too few lines:`, lines.length, "Content:", quizStr);
             return null;
         }
@@ -119,7 +119,7 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
                 parsingState = 'options';
                 continue;
             }
-            if (parsingState === 'question' && !question) { // If no header, first line is question
+            if (parsingState === 'question' && !question) { 
                 question = line;
                 parsingState = 'options';
                 continue;
@@ -128,14 +128,14 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
             const optionMatch = line.match(/^([A-D])\)\s*(.*)/i);
             if (optionMatch) {
                 options[optionMatch[1].toUpperCase()] = optionMatch[2].trim();
-                parsingState = 'options'; // Stay in options mode
+                parsingState = 'options'; 
                 continue;
             }
 
             const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i);
             if (correctMatch) {
                 correctOptionKey = correctMatch[1].toUpperCase();
-                parsingState = 'explanation'; // Move to explanation after correct answer
+                parsingState = 'explanation'; 
                 continue;
             }
             
@@ -145,7 +145,6 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
                 parsingState = 'explanation';
                 continue;
             }
-             // If in question state and it's not an option/answer, append to question
             if (parsingState === 'question' && question) {
                 question += " " + line;
             }
@@ -411,10 +410,8 @@ function App() {
             setCurrentQuizQuestionIndex(nextQuestionIdx);
           } else {
              console.warn("Cached quiz exists but is empty or invalid, fetching new one.");
-             // Proceed to fetch new data by not returning here
           }
         }
-        // If content exists and it's not an empty quiz needing refresh, return
         if (!(modeToFetch === 'quiz' && (!generatedContent[wordId].quiz || generatedContent[wordId].quiz?.length === 0))) {
             if (!isSubTopicClick && !isProfileWordClick) setCurrentFocusWord(wordToFetch); 
             setActiveContentMode(modeToFetch);
@@ -452,47 +449,39 @@ function App() {
       setGeneratedContent(prev => {
         const existingWordData = prev[wordId] || {};
         const newWordData: GeneratedContentItem = { ...existingWordData };
-
-        // Use full_cache as a base if available and if direct mode data isn't primary
         const baseCache = data.full_cache || {};
 
-        // Explanation
         newWordData.explanation = data.explain ?? baseCache.explain ?? existingWordData.explanation;
-        // Fact
         newWordData.fact = data.fact ?? baseCache.fact ?? existingWordData.fact;
-        // Deep Dive
         newWordData.deep_dive = data.deep_dive ?? baseCache.deep_dive ?? existingWordData.deep_dive;
 
-        // Image (placeholder or actual)
         if (modeToFetch === 'image') {
-            if (data.image_url) { // Actual image from backend (future)
+            if (data.image_url) { 
                 newWordData.image_url = data.image_url;
                 newWordData.image_prompt = data.image_prompt ?? baseCache.image_prompt ?? existingWordData.image_prompt;
-            } else if (data.image) { // Placeholder text from backend (current)
-                newWordData.image_prompt = data.image; // data.image contains the placeholder string
-                newWordData.image_url = undefined;
-            } else if (baseCache.image_url) { // From full_cache
+            } else if (data.image) { 
+                newWordData.image_prompt = data.image; 
+                newWordData.image_url = undefined; // Ensure no old URL persists if only placeholder is new
+            } else if (baseCache.image_url) { 
                  newWordData.image_url = baseCache.image_url;
                  newWordData.image_prompt = baseCache.image_prompt ?? existingWordData.image_prompt;
-            } else if (baseCache.image) { // Placeholder from full_cache
+            } else if (baseCache.image) { 
                  newWordData.image_prompt = baseCache.image;
                  newWordData.image_url = undefined;
             }
-        } else { // Preserve existing image data if not fetching image mode
+        } else { 
             newWordData.image_prompt = existingWordData.image_prompt;
             newWordData.image_url = existingWordData.image_url;
         }
         
-        // Quiz
         if (modeToFetch === 'quiz') {
             const quizStrings = data.quiz ?? baseCache.quiz; 
             if (quizStrings && Array.isArray(quizStrings)) {
                 newWordData.quiz = parseQuizStringToArray(quizStrings);
                 newWordData.quiz_progress = (isRefreshClick || !existingWordData.quiz_progress) ? [] : existingWordData.quiz_progress;
-                 // Always reset index for new/refreshed quiz data
                 setCurrentQuizQuestionIndex(0);
             } else {
-                newWordData.quiz = []; // Ensure it's an empty array if no quiz data
+                newWordData.quiz = []; 
                 newWordData.quiz_progress = [];
                 setCurrentQuizQuestionIndex(0);
             }
@@ -507,9 +496,9 @@ function App() {
 
         const currentModesGenerated = new Set(existingWordData.modes_generated || []);
         currentModesGenerated.add(modeToFetch);
-        if (data.modes_generated && Array.isArray(data.modes_generated)) { // From direct response
+        if (data.modes_generated && Array.isArray(data.modes_generated)) { 
             data.modes_generated.forEach((m:string) => currentModesGenerated.add(m));
-        } else if (baseCache.modes_generated && Array.isArray(baseCache.modes_generated)) { // From full_cache
+        } else if (baseCache.modes_generated && Array.isArray(baseCache.modes_generated)) { 
             baseCache.modes_generated.forEach((m:string) => currentModesGenerated.add(m));
         }
         newWordData.modes_generated = Array.from(currentModesGenerated);
@@ -675,6 +664,9 @@ function App() {
 
   const handleSubTopicClick = (subTopic: string) => {
     if (!currentFocusWord) return; 
+    // Ensure we are not in review mode when clicking a sub-topic to extend the main streak
+    setIsReviewingStreakWord(false);
+    setWordForReview(null);
     handleGenerateExplanation(subTopic, false, false, true, 'explain');
   };
 
@@ -928,15 +920,19 @@ function App() {
     
     const currentIsFavorite = content.is_favorite || false;
 
+    // Updated renderClickableText to use <click> tags
     const renderClickableText = (text: string | undefined) => {
         if (!text) return null;
-        const parts = text.split(/(`[^`]+`)/g); 
+        // Regex to find <click>sub-topic</click> and capture sub-topic
+        // It splits the string by the tags, keeping the tags in the result array for processing.
+        const parts = text.split(/(<click>.*?<\/click>)/g);
         return parts.map((part, index) => {
-            if (part.startsWith('`') && part.endsWith('`')) {
-                const subTopic = part.slice(1, -1);
+            const clickMatch = part.match(/<click>(.*?)<\/click>/);
+            if (clickMatch && clickMatch[1]) {
+                const subTopic = clickMatch[1];
                 return (
                     <button
-                        key={index}
+                        key={`${subTopic}-${index}`} // Ensure unique key
                         onClick={() => handleSubTopicClick(subTopic)}
                         className="text-sky-400 hover:text-sky-300 underline font-semibold transition-colors mx-1"
                         title={`Explore: ${subTopic}`}
@@ -945,7 +941,8 @@ function App() {
                     </button>
                 );
             }
-            return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />;
+            // For parts that are not <click> tags, render them normally (handle newlines)
+            return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />;
         });
     };
 
@@ -1047,7 +1044,7 @@ function App() {
             <div>
                 {content.image_url ? (
                     <img src={content.image_url} alt={`Generated for ${wordToUse}`} className="rounded-lg shadow-lg mx-auto max-w-full h-auto max-h-[400px] object-contain" />
-                ) : content.image_prompt ? ( // If no URL, but prompt (placeholder) exists
+                ) : content.image_prompt ? ( 
                     <p className="text-slate-400 italic">{content.image_prompt}</p>
                 ) : (
                     <p className="text-slate-400">No image available. Try generating one.</p>

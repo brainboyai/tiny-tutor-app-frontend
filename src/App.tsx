@@ -1,18 +1,13 @@
 import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import {
   BookOpen,
-  // ChevronDown, // Unused
-  // ChevronUp, // Unused
   Heart,
   ImageIcon,
   Lightbulb,
   LogIn,
   LogOut,
   RefreshCw,
-  // Search, // Unused
-  // Settings, // Unused
   Sparkles,
-  // Star, // Unused
   User,
   X,
   MessageSquareQuote,
@@ -20,21 +15,29 @@ import {
   RotateCcw,
   Home
 } from 'lucide-react';
-import './App.css'; // Assuming some base styles might be here
-import './index.css'; // For Tailwind
-import ProfilePageComponent from './ProfilePage'; // Import the new component
+import './App.css'; 
+import './index.css'; 
+import ProfilePageComponent from './ProfilePage'; 
 
-// Define types for user, content, etc.
-// It's good practice to move these to a separate types.ts file if they grow
+// --- Types ---
 interface CurrentUser {
   username: string;
   email: string;
   id: string;
 }
 
+// Represents the structure of a parsed quiz question
+interface ParsedQuizQuestion {
+  question: string;
+  options: { [key: string]: string }; // e.g., { A: "Option A", B: "Option B" }
+  correctOptionKey: string; // e.g., "A"
+  explanation?: string; // Optional explanation for the answer
+  originalString?: string; // Keep original string for debugging if needed
+}
+
 interface GeneratedContentItem {
   explanation?: string;
-  quiz?: QuizQuestion[];
+  quiz?: ParsedQuizQuestion[]; // Now stores parsed questions
   fact?: string;
   image_prompt?: string;
   image_url?: string;
@@ -50,13 +53,6 @@ interface GeneratedContent {
   [wordId: string]: GeneratedContentItem;
 }
 
-interface QuizQuestion {
-  question: string;
-  options: { [key: string]: string };
-  correctOptionKey: string;
-  explanation?: string;
-}
-
 interface QuizAttempt {
   question_index: number;
   selected_option_key: string;
@@ -66,14 +62,14 @@ interface QuizAttempt {
 
 interface LiveStreak {
   score: number;
-  words: string[]; // Array of word strings in the streak
+  words: string[]; 
 }
 
 interface StreakRecord {
-  id: string; // Firestore document ID
+  id: string; 
   words: string[];
   score: number;
-  completed_at: string; // ISO string date
+  completed_at: string; 
 }
 
 interface UserProfileData {
@@ -85,15 +81,92 @@ interface UserProfileData {
   streakHistory: StreakRecord[];
 }
 
-
 type ContentMode = 'explain' | 'quiz' | 'fact' | 'image' | 'deep_dive';
 
-const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; // Replace with your actual backend URL
+const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; 
 
-// Helper function to sanitize words for use as IDs (optional, but good practice)
 const sanitizeWordForId = (word: string): string => {
+  if (typeof word !== 'string') return "invalid_word_input"; // Guard against non-string input
   return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
+
+// --- Quiz Parsing Logic ---
+// This parser needs to be robust based on the exact format from your backend.
+// This is an example based on common formats. Adjust if your backend format differs.
+const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion[] => {
+    if (!Array.isArray(quizStringsFromBackend)) {
+        console.error("Quiz data from backend is not an array:", quizStringsFromBackend);
+        return [];
+    }
+
+    return quizStringsFromBackend.map((quizStr: string, index: number) => {
+        if (typeof quizStr !== 'string') {
+            console.error(`Quiz item at index ${index} is not a string:`, quizStr);
+            return null; // Or some default error question structure
+        }
+        // Example parsing logic (highly dependent on your backend's string format)
+        // This assumes a format like:
+        // **Question 1:** What is X?
+        // A) Opt1
+        // B) Opt2
+        // C) Opt3
+        // D) Opt4
+        // Correct Answer: A
+        // Explanation: Some explanation (optional)
+
+        const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line);
+        if (lines.length < 6) { // Minimum: Question, 4 options, Correct Answer
+            console.warn(`Quiz string for item ${index} has too few lines:`, quizStr);
+            return null;
+        }
+
+        let question = "";
+        const options: { [key: string]: string } = {};
+        let correctOptionKey = "";
+        let explanation = "";
+
+        const questionMatch = lines[0].match(/^\*\*Question \d*:\*\*\s*(.*)/i);
+        if (questionMatch) {
+            question = questionMatch[1];
+        } else {
+            // Fallback if question format is different, e.g. just the first line
+            question = lines[0]; 
+        }
+        
+        let optionParsing = true;
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            const optionMatch = line.match(/^([A-D])\)\s*(.*)/i);
+            const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i);
+            const explanationMatch = line.match(/^Explanation:\s*(.*)/i);
+
+            if (optionParsing && optionMatch) {
+                options[optionMatch[1].toUpperCase()] = optionMatch[2];
+                if (Object.keys(options).length >= 4) {
+                    optionParsing = false; // Assume 4 options max
+                }
+            } else if (correctMatch) {
+                correctOptionKey = correctMatch[1].toUpperCase();
+                optionParsing = false;
+            } else if (explanationMatch) {
+                explanation = explanationMatch[1];
+                optionParsing = false;
+            } else if (!optionParsing && !correctOptionKey && question) { // If still parsing question (multi-line)
+                question += " " + line;
+            }
+        }
+        
+        // Basic validation
+        if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) {
+             console.warn(`Failed to parse quiz string item ${index} completely. Q: "${question}", Opts: ${Object.keys(options).length}, Correct: "${correctOptionKey}"`, quizStr);
+             // Attempt to return at least the question if available, otherwise null
+             return question ? { question, options: {}, correctOptionKey: '', originalString: quizStr } : null;
+        }
+
+        return { question, options, correctOptionKey, explanation, originalString: quizStr };
+    }).filter(q => q !== null) as ParsedQuizQuestion[]; // Filter out any nulls from parsing errors
+};
+
 
 function App() {
   const [inputValue, setInputValue] = useState('');
@@ -105,8 +178,8 @@ function App() {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [authUsername, setAuthUsername] = useState(''); // Used for signup username, and login identifier
-  const [authEmail, setAuthEmail] = useState(''); // Used for signup email
+  const [authUsername, setAuthUsername] = useState(''); 
+  const [authEmail, setAuthEmail] = useState(''); 
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
@@ -117,16 +190,13 @@ function App() {
   const [liveStreak, setLiveStreak] = useState<LiveStreak | null>(null);
   const [userProfileData, setUserProfileData] = useState<UserProfileData | null>(null);
   
-  // New state for page navigation
   const [activeView, setActiveView] = useState<'main' | 'profile'>('main');
 
-  // Quiz specific states
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState(0);
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
-  const [isQuizAttempted, setIsQuizAttempted] = useState(false); // For current question display
+  const [isQuizAttempted, setIsQuizAttempted] = useState(false); 
 
-  // For reviewing words from streak or profile
   const [wordForReview, setWordForReview] = useState<string | null>(null);
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState(false);
   
@@ -137,11 +207,10 @@ function App() {
   }, [isReviewingStreakWord, wordForReview, currentFocusWord]);
 
 
-  // Fetch user profile on auth token change or initial load
   const fetchUserProfile = useCallback(async (token: string | null) => {
     if (!token) {
       setUserProfileData(null);
-      setCurrentUser(null); // Also clear currentUser if token is gone
+      setCurrentUser(null); 
       return;
     }
     setIsFetchingProfile(true);
@@ -151,15 +220,13 @@ function App() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) {
-        if (response.status === 401) { // Unauthorized
-          // Call handleLogout directly to avoid dependency cycle if fetchUserProfile is in handleLogout's deps
+        if (response.status === 401) { 
           localStorage.removeItem('authToken');
           setAuthToken(null);
           setCurrentUser(null);
           setUserProfileData(null);
           setLiveStreak(null);
           setCurrentFocusWord(null);
-          // ... reset other states as in handleLogout
           setShowAuthModal(true);
           setAuthError("Session expired. Please login again.");
         } else {
@@ -173,31 +240,28 @@ function App() {
         username: data.username,
         email: data.email,
         totalWordsExplored: data.total_words_explored,
-        exploredWords: data.explored_words.map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
-        favoriteWords: data.favorite_words.map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
-        streakHistory: data.streak_history.sort((a:any, b:any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()),
+        exploredWords: (data.explored_words || []).map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        favoriteWords: (data.favorite_words || []).map((w: any) => ({ ...w, word: w.word_id })).sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        streakHistory: (data.streak_history || []).sort((a:any, b:any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()),
       });
-      // Update currentUser with potentially refreshed data from profile
       setCurrentUser({ username: data.username, email: data.email, id: data.user_id });
     } catch (err: any) {
       setError(err.message);
       console.error("Error fetching profile:", err);
-      // Don't clear userProfileData here, might be a temporary network issue
     } finally {
       setIsFetchingProfile(false);
     }
-  }, []); // Removed handleLogout from dependencies here
+  }, []); 
 
   useEffect(() => {
     const storedToken = localStorage.getItem('authToken');
     if (storedToken) {
       setAuthToken(storedToken);
-      // Fetch user profile if token exists, to get initial user data
-      if (!currentUser && !userProfileData) { // Only fetch if not already loaded
+      if (!currentUser && !userProfileData) { 
          fetchUserProfile(storedToken);
       }
     }
-  }, [fetchUserProfile, currentUser, userProfileData]); // Added currentUser and userProfileData to prevent re-fetch if already loaded
+  }, [fetchUserProfile, currentUser, userProfileData]); 
 
 
   const handleAuthAction = async (e: FormEvent) => {
@@ -211,9 +275,7 @@ function App() {
 
     if (authMode === 'signup') {
         payload = { username: authUsername, email: authEmail, password: authPassword };
-    } else { // login mode
-        // Backend expects 'email_or_username'. We'll use the 'authUsername' field from the form for this.
-        // Assuming the first input field in login is for 'email_or_username'
+    } else { 
         payload = { email_or_username: authUsername, password: authPassword };
     }
 
@@ -232,19 +294,18 @@ function App() {
       if (authMode === 'signup') {
         setAuthSuccessMessage('Signup successful! Please login.');
         setAuthMode('login'); 
-        // Pre-fill username for login, clear others
-        setAuthEmail(''); // Clear email field as it's not directly used for login payload key now
+        setAuthEmail(''); 
         setAuthPassword(''); 
-      } else { // Login successful
-        localStorage.setItem('authToken', data.access_token); // Use access_token as per app.py
+      } else { 
+        localStorage.setItem('authToken', data.access_token); 
         setAuthToken(data.access_token);
-        setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id || '' }); // Ensure id is handled if not present
+        setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id || '' }); 
         setShowAuthModal(false);
         setAuthSuccessMessage('Login successful!');
         await fetchUserProfile(data.access_token); 
-        setAuthEmail(''); // Clear signup-specific email field
+        setAuthEmail(''); 
         setAuthPassword('');
-        setAuthUsername(''); // Clear identifier field
+        setAuthUsername(''); 
       }
     } catch (err: any) {
       setAuthError(err.message);
@@ -293,7 +354,7 @@ function App() {
     setAuthError(null);
     setAuthSuccessMessage(null);
     setShowAuthModal(false);
-    setActiveView('main'); // Navigate to main view on logout
+    setActiveView('main'); 
     console.log("User logged out");
   }, [liveStreak, authToken, saveStreakToServer]);
 
@@ -337,7 +398,6 @@ function App() {
     }
 
     try {
-      // Check cache first, unless it's a refresh click
       const contentExists = generatedContent[wordId] && 
                             (modeToFetch === 'image' ? 
                               (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) : 
@@ -345,13 +405,13 @@ function App() {
 
       if (!isRefreshClick && contentExists) {
         if (modeToFetch === 'quiz') {
-          const existingQuizData = generatedContent[wordId].quiz;
+          const existingQuizData = generatedContent[wordId].quiz; // Should be ParsedQuizQuestion[]
           const existingProgress = generatedContent[wordId].quiz_progress || [];
           if (existingQuizData && existingQuizData.length > 0) {
             const nextQuestionIdx = existingProgress.length >= existingQuizData.length ? existingQuizData.length : existingProgress.length;
             setCurrentQuizQuestionIndex(nextQuestionIdx);
           } else {
-             throw new Error("Cached quiz is empty, fetching new one.");
+             throw new Error("Cached quiz is empty or invalid, fetching new one.");
           }
         }
         if (!isSubTopicClick && !isProfileWordClick) setCurrentFocusWord(wordToFetch); 
@@ -382,30 +442,45 @@ function App() {
         throw new Error(errData.error || `Failed to generate content (${response.status})`);
       }
 
-      const data = await response.json();
+      const data = await response.json(); // data can contain { word, [mode]: content, full_cache, ... }
       
       setGeneratedContent(prev => {
-        const newWordData = { ...(prev[wordId] || {}) };
-        if (data.explanation) newWordData.explanation = data.explanation;
-        if (data.quiz) {
-            newWordData.quiz = data.quiz;
-            newWordData.quiz_progress = [];
-            setCurrentQuizQuestionIndex(0);
+        const currentWordData = prev[wordId] || {};
+        const newWordData: GeneratedContentItem = { ...currentWordData };
+
+        // Use full_cache as a base if available
+        if (data.full_cache) {
+            Object.assign(newWordData, data.full_cache);
+            // If full_cache has quiz (string array), parse it
+            if (data.full_cache.quiz && Array.isArray(data.full_cache.quiz)) {
+                newWordData.quiz = parseQuizStringToArray(data.full_cache.quiz);
+            }
         }
-        if (data.fact) newWordData.fact = data.fact;
-        if (data.image_prompt) newWordData.image_prompt = data.image_prompt;
-        if (data.image_url) newWordData.image_url = data.image_url;
-        if (data.deep_dive) newWordData.deep_dive = data.deep_dive;
+        
+        // Override with specific mode data if present in the root of `data`
+        // This handles the case where backend sends `data.explain`, `data.fact`, etc.
+        if (data[modeToFetch] !== undefined) {
+            if (modeToFetch === 'quiz') {
+                // Assuming data[modeToFetch] (i.e. data.quiz) is an array of strings from backend
+                newWordData.quiz = parseQuizStringToArray(data[modeToFetch]);
+                newWordData.quiz_progress = []; 
+                setCurrentQuizQuestionIndex(0);
+            } else if (modeToFetch === 'image') {
+                if(data.image_url) newWordData.image_url = data.image_url;
+                if(data.image_prompt) newWordData.image_prompt = data.image_prompt;
+            } else {
+                newWordData[modeToFetch as keyof GeneratedContentItem] = data[modeToFetch];
+            }
+        }
         
         newWordData.is_favorite = data.is_favorite !== undefined ? data.is_favorite : (newWordData.is_favorite || false);
-        newWordData.first_explored_at = data.first_explored_at || newWordData.first_explored_at;
+        newWordData.first_explored_at = currentWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
         newWordData.last_explored_at = data.last_explored_at || new Date().toISOString();
-        
-        const currentModes = newWordData.modes_generated || [];
-        if (!currentModes.includes(modeToFetch)) {
-            newWordData.modes_generated = [...currentModes, modeToFetch];
-        }
 
+        const currentModesGenerated = newWordData.modes_generated || [];
+        if (!currentModesGenerated.includes(modeToFetch)) {
+            newWordData.modes_generated = [...currentModesGenerated, modeToFetch];
+        }
         return { ...prev, [wordId]: newWordData };
       });
 
@@ -432,9 +507,7 @@ function App() {
       }
 
       setActiveContentMode(modeToFetch);
-      if (modeToFetch === 'quiz' && data.quiz) {
-        setCurrentQuizQuestionIndex(0); 
-      }
+      // No need to reset currentQuizQuestionIndex here as it's handled in setGeneratedContent
 
     } catch (err: any) {
       setError(err.message);
@@ -467,7 +540,7 @@ function App() {
 
     if (contentForNewModeExists) {
         if (newMode === 'quiz') {
-            const quizData = generatedContent[wordId].quiz;
+            const quizData = generatedContent[wordId].quiz; // Should be ParsedQuizQuestion[]
             const progress = generatedContent[wordId].quiz_progress || [];
             if (quizData && quizData.length > 0) {
                 const nextQuestionIdx = progress.length >= quizData.length ? quizData.length : progress.length;
@@ -475,12 +548,13 @@ function App() {
                 setSelectedQuizOption(null); 
                 setQuizFeedback(null);
                 setIsQuizAttempted(false); 
-            } else {
+            } else { // Quiz array exists but is empty, or not properly parsed
                 handleGenerateExplanation(wordToUse, false, false, false, newMode);
             }
         }
         return; 
     }
+    // Content for the new mode does not exist, fetch it.
     handleGenerateExplanation(wordToUse, false, false, false, newMode);
   };
   
@@ -601,18 +675,19 @@ function App() {
     const wordToUse = getDisplayWord();
     if (activeContentMode === 'quiz' && wordToUse) {
         const wordId = sanitizeWordForId(wordToUse);
-        const quizSet = generatedContent[wordId]?.quiz;
+        const quizSet = generatedContent[wordId]?.quiz; // Should be ParsedQuizQuestion[]
         const progress = generatedContent[wordId]?.quiz_progress || [];
 
         if (quizSet && quizSet.length > 0) {
             const questionToDisplayIndex = currentQuizQuestionIndex < quizSet.length ? currentQuizQuestionIndex : progress.length;
 
             if (questionToDisplayIndex < quizSet.length) { 
+                const currentQuestion = quizSet[questionToDisplayIndex];
                 const attemptedQuestion = progress.find(p => p.question_index === questionToDisplayIndex);
-                if (attemptedQuestion) {
+                if (attemptedQuestion && currentQuestion) { // Ensure currentQuestion is valid
                     setSelectedQuizOption(attemptedQuestion.selected_option_key);
                     setQuizFeedback({
-                        message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${quizSet[questionToDisplayIndex].options[quizSet[questionToDisplayIndex].correctOptionKey]}`,
+                        message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
                         isCorrect: attemptedQuestion.is_correct,
                     });
                     setIsQuizAttempted(true);
@@ -622,11 +697,12 @@ function App() {
                     setIsQuizAttempted(false);
                 }
             }
-        } else if (!isLoading && !error) { 
-            // handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
+        } else if (!isLoading && !error && generatedContent[wordId] && !generatedContent[wordId].quiz) { 
+             // If quiz mode is active, content for word exists, but quiz array is missing, try fetching
+            handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
         }
     }
-  }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex, isLoading, error]);
+  }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex, isLoading, error, handleGenerateExplanation]);
 
 
   const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string, isCorrect: boolean) => {
@@ -669,15 +745,19 @@ function App() {
     if (!wordToUse) return;
 
     const wordId = sanitizeWordForId(wordToUse);
-    const quizSet = generatedContent[wordId]?.quiz;
+    const quizSet = generatedContent[wordId]?.quiz; // Should be ParsedQuizQuestion[]
     if (!quizSet || currentQuizQuestionIndex >= quizSet.length) return; 
 
     const progress = generatedContent[wordId]?.quiz_progress || [];
     const alreadyAnsweredInDb = progress.find(p => p.question_index === currentQuizQuestionIndex);
     if (alreadyAnsweredInDb || isQuizAttempted) return; 
 
-
     const currentQuestion = quizSet[currentQuizQuestionIndex];
+    if (!currentQuestion || !currentQuestion.options) { // Add check for currentQuestion and its options
+        console.error("Current quiz question or its options are invalid:", currentQuestion);
+        setError("Error displaying quiz question options.");
+        return;
+    }
     const isCorrect = currentQuestion.correctOptionKey === optionKey;
 
     setSelectedQuizOption(optionKey);
@@ -755,9 +835,9 @@ function App() {
                  <div className="mb-4">
                     <label className="block text-slate-300 mb-1" htmlFor="login-identifier">Username or Email</label>
                     <input
-                    type="text" // Allows both username and email
+                    type="text" 
                     id="login-identifier"
-                    value={authUsername} // Reuse authUsername for login identifier
+                    value={authUsername} 
                     onChange={(e) => setAuthUsername(e.target.value)}
                     className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
                     required
@@ -848,27 +928,28 @@ function App() {
         ) : <p className="text-slate-400">No explanation available. Try generating one.</p>;
         break;
       case 'quiz':
-        const quizSet = content.quiz;
+        const quizSet = content.quiz; // This should now be ParsedQuizQuestion[]
         const progress = content.quiz_progress || [];
 
         if (!quizSet || quizSet.length === 0) {
             modeContentElement = <p className="text-slate-400">No quiz available for "{wordToUse}". Try generating one or refreshing.</p>;
             break;
         }
-        if (currentQuizQuestionIndex >= quizSet.length) {
+        if (currentQuizQuestionIndex >= quizSet.length) { // Summary View
             const score = progress.filter(p => p.is_correct).length;
             modeContentElement = (
                 <div className="text-slate-200">
                     <h3 className="text-xl font-semibold mb-4 text-sky-300">Quiz Summary for "{wordToUse}"</h3>
                     <p className="text-lg mb-4">Your Score: <span className="font-bold text-emerald-400">{score}</span> / {quizSet.length}</p>
                     <ul className="space-y-3 mb-6 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                        {quizSet.map((q, idx) => {
+                        {quizSet.map((parsedQ, idx) => { // Iterate over ParsedQuizQuestion
+                            if (!parsedQ) return <li key={`error-${idx}`} className="text-red-400">Error displaying question {idx + 1}.</li>;
                             const attempt = progress.find(p => p.question_index === idx);
                             return (
                                 <li key={idx} className={`p-3 rounded-md ${attempt ? (attempt.is_correct ? 'bg-green-500/20' : 'bg-red-500/20') : 'bg-slate-700'}`}>
-                                    <p className="font-medium mb-1">Q{idx + 1}: {q.question}</p>
-                                    <p className="text-xs">Your answer: {attempt ? q.options[attempt.selected_option_key] : 'Not answered'}</p>
-                                    {!attempt?.is_correct && <p className="text-xs text-emerald-300">Correct: {q.options[q.correctOptionKey]}</p>}
+                                    <p className="font-medium mb-1">Q{idx + 1}: {parsedQ.question}</p>
+                                    <p className="text-xs">Your answer: {attempt && parsedQ.options[attempt.selected_option_key] ? parsedQ.options[attempt.selected_option_key] : (attempt ? 'N/A' : 'Not answered')}</p>
+                                    {!attempt?.is_correct && parsedQ.options[parsedQ.correctOptionKey] && <p className="text-xs text-emerald-300">Correct: {parsedQ.options[parsedQ.correctOptionKey]}</p>}
                                 </li>
                             );
                         })}
@@ -881,45 +962,49 @@ function App() {
                     </button>
                 </div>
             );
-        } else { 
-            const currentQuestion = quizSet[currentQuizQuestionIndex];
-            modeContentElement = (
-                <div className="text-slate-200">
-                    <p className="text-sm text-slate-400 mb-2">Question {currentQuizQuestionIndex + 1} of {quizSet.length}</p>
-                    <h3 className="text-lg font-semibold mb-4">{currentQuestion.question}</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                        {Object.entries(currentQuestion.options).map(([key, optionText]) => (
-                            <button
-                                key={key}
-                                onClick={() => handleQuizOptionSelect(key)}
-                                disabled={isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))}
-                                className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out
-                                    ${selectedQuizOption === key 
-                                        ? (quizFeedback?.isCorrect ? 'bg-green-500 hover:bg-green-600 ring-2 ring-green-400' : 'bg-red-500 hover:bg-red-600 ring-2 ring-red-400')
-                                        : 'bg-slate-700 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'}
-                                    ${(isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))) && selectedQuizOption !== key ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
-                                `}
-                            >
-                                {optionText}
-                            </button>
-                        ))}
-                    </div>
-                    {quizFeedback && (
-                        <div className={`p-3 rounded-md my-4 text-sm ${quizFeedback.isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-                            {quizFeedback.message}
-                            {!quizFeedback.isCorrect && currentQuestion.explanation && <p className="mt-1 text-xs">{currentQuestion.explanation}</p>}
+        } else { // Question View
+            const currentQuestion = quizSet[currentQuizQuestionIndex]; // This is a ParsedQuizQuestion
+            if (!currentQuestion || typeof currentQuestion.options !== 'object' || currentQuestion.options === null) {
+                 modeContentElement = <p className="text-red-400">Error: Quiz question data is invalid or options are missing.</p>;
+            } else {
+                modeContentElement = (
+                    <div className="text-slate-200">
+                        <p className="text-sm text-slate-400 mb-2">Question {currentQuizQuestionIndex + 1} of {quizSet.length}</p>
+                        <h3 className="text-lg font-semibold mb-4">{currentQuestion.question}</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                            {Object.entries(currentQuestion.options).map(([key, optionText]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => handleQuizOptionSelect(key)}
+                                    disabled={isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))}
+                                    className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out
+                                        ${selectedQuizOption === key 
+                                            ? (quizFeedback?.isCorrect ? 'bg-green-500 hover:bg-green-600 ring-2 ring-green-400' : 'bg-red-500 hover:bg-red-600 ring-2 ring-red-400')
+                                            : 'bg-slate-700 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'}
+                                        ${(isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))) && selectedQuizOption !== key ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}
+                                    `}
+                                >
+                                    {optionText}
+                                </button>
+                            ))}
                         </div>
-                    )}
-                    {(isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))) && (
-                        <button
-                            onClick={handleNextQuestion}
-                            className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-                        >
-                            {currentQuizQuestionIndex === quizSet.length - 1 ? 'View Summary' : 'Next Question'}
-                        </button>
-                    )}
-                </div>
-            );
+                        {quizFeedback && (
+                            <div className={`p-3 rounded-md my-4 text-sm ${quizFeedback.isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                                {quizFeedback.message}
+                                {!quizFeedback.isCorrect && currentQuestion.explanation && <p className="mt-1 text-xs">{currentQuestion.explanation}</p>}
+                            </div>
+                        )}
+                        {(isQuizAttempted || !!(progress.find(p => p.question_index === currentQuizQuestionIndex))) && (
+                            <button
+                                onClick={handleNextQuestion}
+                                className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                            >
+                                {currentQuizQuestionIndex === quizSet.length - 1 ? 'View Summary' : 'Next Question'}
+                            </button>
+                        )}
+                    </div>
+                );
+            }
         }
         break;
       case 'fact':

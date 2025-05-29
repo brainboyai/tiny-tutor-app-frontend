@@ -105,8 +105,8 @@ function App() {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [authUsername, setAuthUsername] = useState('');
-  const [authEmail, setAuthEmail] = useState('');
+  const [authUsername, setAuthUsername] = useState(''); // Used for signup username, and login identifier
+  const [authEmail, setAuthEmail] = useState(''); // Used for signup email
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
@@ -207,7 +207,15 @@ function App() {
     setIsLoading(true);
 
     const url = authMode === 'signup' ? `${API_BASE_URL}/signup` : `${API_BASE_URL}/login`;
-    const payload = authMode === 'signup' ? { username: authUsername, email: authEmail, password: authPassword } : { email: authEmail, password: authPassword };
+    let payload = {};
+
+    if (authMode === 'signup') {
+        payload = { username: authUsername, email: authEmail, password: authPassword };
+    } else { // login mode
+        // Backend expects 'email_or_username'. We'll use the 'authUsername' field from the form for this.
+        // Assuming the first input field in login is for 'email_or_username'
+        payload = { email_or_username: authUsername, password: authPassword };
+    }
 
     try {
       const response = await fetch(url, {
@@ -223,19 +231,20 @@ function App() {
 
       if (authMode === 'signup') {
         setAuthSuccessMessage('Signup successful! Please login.');
-        setAuthMode('login'); // Switch to login form
-        setAuthUsername(''); 
+        setAuthMode('login'); 
+        // Pre-fill username for login, clear others
+        setAuthEmail(''); // Clear email field as it's not directly used for login payload key now
         setAuthPassword(''); 
       } else { // Login successful
-        localStorage.setItem('authToken', data.token);
-        setAuthToken(data.token);
-        setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id });
+        localStorage.setItem('authToken', data.access_token); // Use access_token as per app.py
+        setAuthToken(data.access_token);
+        setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id || '' }); // Ensure id is handled if not present
         setShowAuthModal(false);
         setAuthSuccessMessage('Login successful!');
-        await fetchUserProfile(data.token); // Fetch profile after login
-        setAuthEmail('');
+        await fetchUserProfile(data.access_token); 
+        setAuthEmail(''); // Clear signup-specific email field
         setAuthPassword('');
-        setAuthUsername('');
+        setAuthUsername(''); // Clear identifier field
       }
     } catch (err: any) {
       setAuthError(err.message);
@@ -332,7 +341,7 @@ function App() {
       const contentExists = generatedContent[wordId] && 
                             (modeToFetch === 'image' ? 
                               (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) : 
-                              generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]); // Added cast for safety, though ContentMode should align
+                              generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]); 
 
       if (!isRefreshClick && contentExists) {
         if (modeToFetch === 'quiz') {
@@ -366,7 +375,7 @@ function App() {
       if (!response.ok) {
         const errData = await response.json();
         if (response.status === 401) {
-            handleLogout(); // Use the main handleLogout
+            handleLogout(); 
             setShowAuthModal(true);
             setAuthError("Session expired. Please login again.");
         }
@@ -454,7 +463,7 @@ function App() {
     const contentForNewModeExists = generatedContent[wordId] &&
                                   (newMode === 'image' ?
                                     (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) :
-                                    generatedContent[wordId][newMode as keyof GeneratedContentItem]); // Added cast
+                                    generatedContent[wordId][newMode as keyof GeneratedContentItem]); 
 
     if (contentForNewModeExists) {
         if (newMode === 'quiz') {
@@ -718,10 +727,10 @@ function App() {
           <form onSubmit={handleAuthAction}>
             {authMode === 'signup' && (
               <div className="mb-4">
-                <label className="block text-slate-300 mb-1" htmlFor="username">Username</label>
+                <label className="block text-slate-300 mb-1" htmlFor="signup-username">Username</label>
                 <input
                   type="text"
-                  id="username"
+                  id="signup-username"
                   value={authUsername}
                   onChange={(e) => setAuthUsername(e.target.value)}
                   className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
@@ -729,17 +738,32 @@ function App() {
                 />
               </div>
             )}
-            <div className="mb-4">
-              <label className="block text-slate-300 mb-1" htmlFor="email">Email</label>
-              <input
-                type="email"
-                id="email"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
-                required
-              />
-            </div>
+            {authMode === 'signup' && (
+                 <div className="mb-4">
+                    <label className="block text-slate-300 mb-1" htmlFor="signup-email">Email</label>
+                    <input
+                    type="email"
+                    id="signup-email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
+                    required
+                    />
+                </div>
+            )}
+            {authMode === 'login' && (
+                 <div className="mb-4">
+                    <label className="block text-slate-300 mb-1" htmlFor="login-identifier">Username or Email</label>
+                    <input
+                    type="text" // Allows both username and email
+                    id="login-identifier"
+                    value={authUsername} // Reuse authUsername for login identifier
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
+                    required
+                    />
+                </div>
+            )}
             <div className="mb-6">
               <label className="block text-slate-300 mb-1" htmlFor="password">Password</label>
               <input
@@ -758,11 +782,11 @@ function App() {
           <p className="text-center text-slate-400 mt-6 text-sm">
             {authMode === 'login' ? (
               <>
-                Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null);}} className="text-sky-400 hover:underline">Sign Up</button>
+                Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-sky-400 hover:underline">Sign Up</button>
               </>
             ) : (
               <>
-                Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null);}} className="text-sky-400 hover:underline">Login</button>
+                Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-sky-400 hover:underline">Login</button>
               </>
             )}
           </p>
@@ -782,7 +806,7 @@ function App() {
     const hasContentForMode = content && 
                             (activeContentMode === 'image' ? 
                               (content.image_url || content.image_prompt) : 
-                              content[activeContentMode as keyof GeneratedContentItem]); // Added cast
+                              content[activeContentMode as keyof GeneratedContentItem]); 
 
     if (isLoading && !hasContentForMode) {
         return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>;

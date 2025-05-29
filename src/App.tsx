@@ -146,10 +146,10 @@ function App() {
     const token = localStorage.getItem('authToken');
     if (token) {
       setAuthToken(token);
-      fetchUserProfile(token); 
+      // fetchUserProfile(token); // Moved to separate useEffect to avoid race with setCurrentUser
     }
     mainInputRef.current?.focus();
-  }, []); // Removed fetchUserProfile from here to avoid duplicate calls with the one below.
+  }, []); 
 
 
   // --- Scroll to bottom of content ---
@@ -162,7 +162,12 @@ function App() {
 
   // --- Fetch User Profile ---
   const fetchUserProfile = useCallback(async (token: string | null) => {
-    if (!token) return;
+    if (!token) {
+        // If no token, ensure user is logged out and profile data is cleared
+        setCurrentUser(null);
+        setUserProfileData({ exploredWords: [], favoriteWords: [], streakHistory: [], totalWordsExplored: 0, isLoading: false, error: null, username: undefined, email: undefined });
+        return;
+    }
     setUserProfileData(prev => ({ ...prev, isLoading: true, error: null }));
     try {
       const response = await fetch(`${API_BASE_URL}/profile`, {
@@ -170,7 +175,14 @@ function App() {
       });
       if (!response.ok) {
         if (response.status === 401) { 
-          handleLogout(false); 
+          // Use a more direct way to logout if handleLogout causes dependency issues here
+          localStorage.removeItem('authToken');
+          setAuthToken(null);
+          setCurrentUser(null);
+          setUserProfileData({ exploredWords: [], favoriteWords: [], streakHistory: [], totalWordsExplored: 0, isLoading: false, error: null, username: undefined, email: undefined });
+          setActiveView('main');
+          setShowAuthModal(true); // Prompt login
+          setAuthError("Session expired. Please login again.");
           throw new Error("Session expired. Please login again.");
         }
         const errorData = await response.json();
@@ -191,18 +203,18 @@ function App() {
     } catch (err: any) {
       console.error("Error fetching profile:", err);
       setUserProfileData(prev => ({ ...prev, isLoading: false, error: err.message }));
-      if (err.message.includes("Session expired")) {
+      if (err.message.includes("Session expired") && !showAuthModal) { // Avoid multiple auth modals
         setError("Session expired. Please login again."); 
       }
     }
-  }, []); // Removed handleLogout from dependencies as it creates a cycle, manage token invalidation directly.
+  }, [showAuthModal]); // Added showAuthModal to dependencies
 
   // --- Initial data fetch if token exists ---
   useEffect(() => {
-    if (authToken && !currentUser) { 
+    if (authToken && (!currentUser || !userProfileData.username)) { // Fetch if token exists but crucial user data is missing
       fetchUserProfile(authToken);
     }
-  }, [authToken, currentUser, fetchUserProfile]);
+  }, [authToken, currentUser, userProfileData.username, fetchUserProfile]);
 
 
   // --- Authentication Handlers (login, signup, logout) ---
@@ -210,10 +222,8 @@ function App() {
     e.preventDefault();
     setAuthError(null);
     setAuthSuccessMessage(null);
-    // setIsLoading(true); // isLoading state is for content generation, not auth modal specifically
-    let processingAuth = true; // Local variable for auth button state
-    // Force re-render to update button state if needed, or manage button's disabled state directly.
-
+    // setIsLoading(true); // Using a local var for button state in renderAuthModal
+    
     const endpoint = type === 'login' ? '/login' : '/signup';
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -233,27 +243,27 @@ function App() {
       } else { 
         localStorage.setItem('authToken', data.token);
         setAuthToken(data.token);
-        setCurrentUser(data.user); // Temporarily set user from login response
+        // setCurrentUser(data.user); // User data will be fully fetched by fetchUserProfile
         setShowAuthModal(false);
         setError(null); 
-        await fetchUserProfile(data.token); // Fetch full profile for consistency
+        await fetchUserProfile(data.token); 
       }
     } catch (err: any) {
       setAuthError(err.message);
     } finally {
       // setIsLoading(false);
-      processingAuth = false;
     }
   };
 
   const handleLogout = useCallback(async (saveCurrentStreak = true) => {
-    if (saveCurrentStreak && liveStreak && liveStreak.score >= 2 && authToken) {
+    const currentAuthToken = authToken; // Capture token before it's cleared
+    if (saveCurrentStreak && liveStreak && liveStreak.score >= 2 && currentAuthToken) {
       try {
         await fetch(`${API_BASE_URL}/save_streak`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`,
+            'Authorization': `Bearer ${currentAuthToken}`,
           },
           body: JSON.stringify({ words: liveStreak.words, score: liveStreak.score }),
         });
@@ -274,7 +284,7 @@ function App() {
     setActiveView('main'); 
     setShowAuthModal(false); 
     mainInputRef.current?.focus();
-  }, [liveStreak, authToken, fetchUserProfile]); // Added fetchUserProfile to dependencies of handleLogout's useCallback
+  }, [liveStreak, authToken]); 
 
 
   // --- Content Generation and Management ---
@@ -296,11 +306,10 @@ function App() {
       return;
     }
 
-    // const wordId = sanitizeWordForId(wordToFetch); // wordId will be based on effectiveWord
     setIsLoading(true);
     setError(null);
     
-    if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >= 2 && authToken) { // Added authToken check
+    if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >= 2 && authToken) { 
       try {
         await fetch(`${API_BASE_URL}/save_streak`, {
           method: 'POST',
@@ -308,7 +317,7 @@ function App() {
           body: JSON.stringify({ words: liveStreak.words, score: liveStreak.score }),
         });
         setLiveStreak(null); 
-         if (userProfileData.username && authToken) fetchUserProfile(authToken); // Refresh profile data for streaks
+         if (userProfileData.username && authToken) fetchUserProfile(authToken); 
       } catch (err) {
         console.error("Failed to save previous streak:", err);
       }
@@ -321,7 +330,7 @@ function App() {
         setWordForReview(null);
         setActiveContentMode(modeToFetch === 'quiz' ? 'quiz' : 'explain'); 
     } else if (isSubTopicClick) {
-        setCurrentFocusWord(wordToFetch); // Sub-topic becomes the new focus
+        setCurrentFocusWord(wordToFetch); 
         if (liveStreak && liveStreak.words[liveStreak.words.length - 1] !== wordToFetch) {
             setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] });
         } else if (!liveStreak) {
@@ -336,7 +345,7 @@ function App() {
     const effectiveWordId = sanitizeWordForId(effectiveWord);
 
     try {
-      if (!isRefreshClick && activeContentMode !== modeToFetch) { // Only set if truly changing mode, not on initial load for word or refresh
+      if (!isRefreshClick && activeContentMode !== modeToFetch) { 
           setActiveContentMode(modeToFetch);
       }
 
@@ -355,9 +364,10 @@ function App() {
 
       if (!response.ok) {
         const errorData = await response.json();
-         if (response.status === 401 && authToken) { // Added authToken check
-            handleLogout(false);
-            throw new Error(errorData.error || "Session expired. Please login again.");
+         if (response.status === 401 && authToken) { 
+            handleLogout(false); // Logout if token is invalid
+            // No need to throw again if handleLogout redirects or shows modal
+            return; // Stop further processing
         }
         throw new Error(errorData.error || `Failed to generate content for ${modeToFetch}`);
       }
@@ -369,7 +379,7 @@ function App() {
         if (modeToFetch === 'explain') newContentForWord.explain = data.explanation;
         else if (modeToFetch === 'quiz') {
             newContentForWord.quiz = data.quiz_questions;
-            if (isRefreshClick || !newContentForWord.quiz_progress || data.quiz_questions_refreshed) { // Check if backend signals a refresh
+            if (isRefreshClick || !newContentForWord.quiz_progress || data.quiz_questions_refreshed) { 
                  newContentForWord.quiz_progress = [];
             }
             setCurrentQuizQuestionIndex(0); 
@@ -408,7 +418,6 @@ function App() {
       return;
     }
 
-    // setActiveContentMode(mode); // Set optimistically by handleGenerateExplanation if fetching
     const wordId = sanitizeWordForId(displayWord);
     const contentForWord = generatedContent[wordId];
 
@@ -431,7 +440,7 @@ function App() {
     if (!contentForWord || !contentForWord[mode] || (mode === 'quiz' && (!contentForWord.quiz?.length || contentForWord.quiz?.length === 0 ))) {
       handleGenerateExplanation(displayWord, false, false, false, mode, false);
     } else {
-      setActiveContentMode(mode); // If content exists, just switch mode
+      setActiveContentMode(mode); 
     }
   };
 
@@ -514,7 +523,7 @@ function App() {
             const data = await response.json();
             const wordId = sanitizeWordForId(word);
             setGeneratedContent(prev => {
-                const updatedWordContent = { ...prev[wordId] };
+                const updatedWordContent = { ...(prev[wordId] || {}) }; // Ensure prev[wordId] exists
                 updatedWordContent.quiz_progress = data.quiz_progress;
                 return { ...prev, [wordId]: updatedWordContent };
             });
@@ -569,7 +578,7 @@ function App() {
     if (!generatedContent[wordId] || !generatedContent[wordId]?.explain) {
       handleGenerateExplanation(word, false, false, false, 'explain', false);
     } else {
-        setActiveContentMode('explain'); // If content exists, just switch mode
+        setActiveContentMode('explain'); 
     }
   };
 
@@ -585,7 +594,6 @@ function App() {
         setAuthMode('login');
         return;
       }
-      // Fetch fresh data if navigating to profile, unless already loading
       if (authToken && !userProfileData.isLoading) {
           fetchUserProfile(authToken);
       }
@@ -596,7 +604,6 @@ function App() {
   const handleNavigateToWordFromProfile = (word: string) => {
     setActiveView('main'); 
     setInputValue(word); 
-    // setCurrentFocusWord(word); // This will be set by handleGenerateExplanation
     handleGenerateExplanation(word, true, false, false, 'explain', true); 
     mainInputRef.current?.focus();
   };
@@ -611,7 +618,7 @@ function App() {
   // --- Render Functions ---
   const renderAuthModal = () => {
     if (!showAuthModal) return null;
-    let isProcessingAuth = false; // Local state for button, not using global isLoading here
+    let isProcessingAuth = false; 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 dark:bg-opacity-80">
         <div className="bg-white dark:bg-slate-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md relative">
@@ -621,10 +628,11 @@ function App() {
           <h2 className="text-2xl sm:text-3xl font-bold mb-6 text-center text-slate-700 dark:text-slate-100">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
           {authError && <p className="mb-4 text-red-500 dark:text-red-400 text-sm bg-red-100 dark:bg-red-900 dark:bg-opacity-30 p-3 rounded-md">{authError}</p>}
           {authSuccessMessage && <p className="mb-4 text-green-600 dark:text-green-400 text-sm bg-green-100 dark:bg-green-700 dark:bg-opacity-20 p-3 rounded-md">{authSuccessMessage}</p>}
-          <form onSubmit={async (e) => { // make async
-            isProcessingAuth = true; // Set processing to true
-            // Manually trigger re-render or disable button directly if needed for immediate feedback
-            e.preventDefault(); // ensure this is called first
+          <form onSubmit={async (e) => { 
+            const formButton = (e.nativeEvent.submitter as HTMLButtonElement);
+            if(formButton) formButton.disabled = true; // Disable button on submit
+            isProcessingAuth = true; 
+            e.preventDefault(); 
             const target = e.target as typeof e.target & {
               username?: { value: string };
               email: { value: string };
@@ -633,8 +641,9 @@ function App() {
             const email = target.email.value;
             const password = target.password.value;
             const username = authMode === 'signup' ? target.username?.value : undefined;
-            await handleAuthAction(e, authMode, { username, email, password }); // await the action
-            isProcessingAuth = false; // Reset after completion
+            await handleAuthAction(e, authMode, { username, email, password }); 
+            isProcessingAuth = false; 
+            if(formButton) formButton.disabled = false; // Re-enable button
           }}>
             {authMode === 'signup' && (
               <div className="mb-4">
@@ -650,9 +659,10 @@ function App() {
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1" htmlFor="password">Password</label>
               <input type="password" name="password" id="password" required className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 outline-none bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100" />
             </div>
-            <button type="submit" disabled={isProcessingAuth} className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 disabled:opacity-70 flex items-center justify-center">
-              {isProcessingAuth ? <RefreshCw size={20} className="animate-spin mr-2" /> : (authMode === 'login' ? <LogIn size={20} className="mr-2"/> : <UserIcon size={20} className="mr-2"/>)}
-              {isProcessingAuth ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')}
+            <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 disabled:opacity-70 flex items-center justify-center">
+              {/* Icon logic can be more complex if tied to a rapidly changing state, consider simplifying or using CSS for spin */}
+              {authMode === 'login' ? <LogIn size={20} className="mr-2"/> : <UserIcon size={20} className="mr-2"/>}
+              {authMode === 'login' ? 'Login' : 'Sign Up'}
             </button>
           </form>
           <p className="mt-6 text-center text-sm">
@@ -673,7 +683,7 @@ function App() {
 
   const renderContent = () => {
     const displayWord = getDisplayWord();
-    if (!displayWord && !isLoading && !error && activeView === 'main') { // Added activeView check
+    if (!displayWord && !isLoading && !error && activeView === 'main') { 
         return (
             <div className="text-center text-slate-500 dark:text-slate-400 mt-12 flex flex-col items-center">
                 <Sparkles size={48} className="mb-4 text-sky-500" />
@@ -689,7 +699,6 @@ function App() {
     const wordId = sanitizeWordForId(displayWord);
     const content = generatedContent[wordId];
 
-    // More specific loading: only show if the *activeContentMode* for the *displayWord* is not yet loaded
     if (isLoading && (!content || !content[activeContentMode])) { 
       return (
         <div className="flex justify-center items-center h-64">
@@ -728,7 +737,7 @@ function App() {
                         </button>
                         );
                     }
-                    return part.split('\n').map((line, lineIndex, arr) => ( // Added arr for key
+                    return part.split('\n').map((line, lineIndex, arr) => ( 
                         <React.Fragment key={`${index}-${lineIndex}`}>
                             {line}
                             {lineIndex < arr.length - 1 && <br />}
@@ -800,17 +809,17 @@ function App() {
                         
                         let buttonClass = "w-full text-left p-3 rounded-lg border transition-all duration-150 ease-in-out text-slate-700 dark:text-slate-200 ";
 
-                        if (isQuizAttempted || questionIsAlreadyAnswered) { // Feedback shown
+                        if (isQuizAttempted || questionIsAlreadyAnswered) { 
                             if ((isSelectedUserChoice && quizFeedback?.isCorrect) || (isSavedAttemptChoice && currentQuestionAttempt?.is_correct)) {
-                                buttonClass += "bg-green-100 dark:bg-green-700 dark:bg-opacity-40 border-green-400 dark:border-green-500 ring-2 ring-green-500"; // Correctly selected
+                                buttonClass += "bg-green-100 dark:bg-green-700 dark:bg-opacity-40 border-green-400 dark:border-green-500 ring-2 ring-green-500"; 
                             } else if ((isSelectedUserChoice && !quizFeedback?.isCorrect) || (isSavedAttemptChoice && !currentQuestionAttempt?.is_correct)) {
-                                buttonClass += "bg-red-100 dark:bg-red-700 dark:bg-opacity-40 border-red-400 dark:border-red-500 ring-2 ring-red-500"; // Incorrectly selected
+                                buttonClass += "bg-red-100 dark:bg-red-700 dark:bg-opacity-40 border-red-400 dark:border-red-500 ring-2 ring-red-500"; 
                             } else if (isCorrectAnswer) {
-                                buttonClass += "bg-green-50 dark:bg-green-600 dark:bg-opacity-30 border-green-300 dark:border-green-600"; // Correct answer, not selected
+                                buttonClass += "bg-green-50 dark:bg-green-600 dark:bg-opacity-30 border-green-300 dark:border-green-600"; 
                             } else {
-                                 buttonClass += "bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 opacity-70"; // Normal, unselected, after attempt
+                                 buttonClass += "bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 opacity-70"; 
                             }
-                        } else { // No attempt yet for this question view
+                        } else { 
                              buttonClass += "bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 outline-none";
                         }
                         return (
@@ -883,7 +892,7 @@ function App() {
                         </button>
                         );
                     }
-                    return part.split('\n').map((line, lineIndex, arr) => ( // Added arr for key
+                    return part.split('\n').map((line, lineIndex, arr) => ( 
                         <React.Fragment key={`${index}-${lineIndex}`}>
                             {line}
                             {lineIndex < arr.length - 1 && <br />}
@@ -1031,9 +1040,9 @@ function App() {
           )}
 
           {/* Main Content Display Area */}
-          <div className="flex-grow bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-y-auto min-h-[300px]"> {/* Added min-h */}
+          <div className="flex-grow bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-y-auto min-h-[300px]"> 
             {renderContent()}
-            <div ref={contentEndRef} /> {/* For auto-scrolling */}
+            <div ref={contentEndRef} /> 
           </div>
 
         </main>
@@ -1044,7 +1053,6 @@ function App() {
           onSelectWord={handleNavigateToWordFromProfile}
           onNavigateBack={() => { setActiveView('main'); mainInputRef.current?.focus(); }}
           onRefreshProfile={() => authToken ? fetchUserProfile(authToken) : null}
-          // darkMode prop removed from here
         />
       )}
 
@@ -1065,4 +1073,5 @@ function App() {
 }
 
 export default App;
+
 

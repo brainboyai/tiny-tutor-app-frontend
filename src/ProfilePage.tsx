@@ -1,10 +1,7 @@
-// ProfilePage.tsx (Corrected File)
-import React from 'react'; // Ensure React is imported for JSX
-import { User as UserIcon, Mail, BookOpen, Star, ListChecks, ArrowLeft, RefreshCw, Heart, XCircle } from 'lucide-react'; // Added XCircle
+// ProfilePage.tsx (Corrected File - ensure filename is ProfilePage.tsx)
+import React from 'react';
+import { User as UserIcon, Mail, BookOpen, Star, ListChecks, ArrowLeft, RefreshCw, Heart, XCircle } from 'lucide-react';
 
-// Assuming types are defined in App.tsx or a shared types file.
-// For standalone ProfilePage.tsx, these would need to be imported or defined here.
-// If these types are identical to those in App.tsx, consider moving them to a shared types.ts file.
 interface CurrentUser {
     username: string;
     email: string;
@@ -43,10 +40,9 @@ interface ProfilePageProps {
     onSelectWord: (word: string) => void;
     onNavigateBack: () => void;
     onRefreshProfile: () => void;
-    // darkMode prop removed
 }
 
-const formatDate = (dateInput: string | Date): string => { // Explicit return type
+const formatDate = (dateInput: string | Date): string => {
     if (!dateInput) return 'N/A';
     const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
     if (isNaN(date.getTime())) return 'Invalid Date';
@@ -59,7 +55,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     onSelectWord,
     onNavigateBack,
     onRefreshProfile,
-    // darkMode prop removed
 }) => {
 
     if (userProfileData.isLoading && !userProfileData.username) {
@@ -138,7 +133,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="flex flex-wrap gap-1.5">
                 {streak.words.map((word, index) => (
                     <button
-                        key={`${streak.id}-word-${index}`} // More unique key
+                        key={`${streak.id}-word-${index}`}
                         onClick={() => onSelectWord(word)}
                         className="text-xs capitalize bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200 px-2 py-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-500 transition-colors"
                     >
@@ -233,8 +228,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                 <section className="lg:col-span-2 xl:col-span-1 bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 flex flex-col">
                     <div className="flex items-center mb-3 sm:mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-green-500 dark:text-green-400 mr-2.5">
-                            <path fillRule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071 1.056 9.75 9.75 0 014.262 1.234 1.125 1.125 0 01-1.065 1.962A8.25 8.25 0 009.75 9.75c0 1.036.232 2.03.64 2.952-.313-.086-.636-.16-.972-.236a.75.75 0 00-.86.499l-.523 1.046a.75.75 0 00.282.952l4.077 2.826a.75.75 0 001-.077l1.805-2.406a.75.75 0 00-.326-1.008A12.031 12.031 0 0012.963 2.286z" clipRule="evenodd" />
-                            <path fillRule="evenodd" d="M11.037 2.286a.75.75 0 011.071 1.056 9.75 9.75 0 00-4.262 1.234 1.125 1.125 0 001.065 1.962A8.25 8.25 0 0114.25 9.75c0 1.036-.232 2.03-.64 2.952.313-.086.636-.16.972-.236a.75.75 0 01.86.499l.523 1.046a.75.75 0 01-.282.952l-4.077 2.826a.75.75 0 01-1 .077l-1.805-2.406a.75.75 0 01.326-1.008A12.031 12.031 0 0111.037 2.286z" clipRule="evenodd" />
+                            <path fillRule="evenOdd" d="M12.963 2.286a.75.75 0 00-1.071 1.056 9.75 9.75 0 014.262 1.234 1.125 1.125 0 01-1.065 1.962A8.25 8.25 0 009.75 9.75c0 1.036.232 2.03.64 2.952-.313-.086-.636-.16-.972-.236a.75.75 0 00-.86.499l-.523 1.046a.75.75 0 00.282.952l4.077 2.826a.75.75 0 001-.077l1.805-2.406a.75.75 0 00-.326-1.008A12.031 12.031 0 0012.963 2.286z" clipRule="evenOdd" />
+                            <path fillRule="evenOdd" d="M11.037 2.286a.75.75 0 011.071 1.056 9.75 9.75 0 00-4.262 1.234 1.125 1.125 0 001.065 1.962A8.25 8.25 0 0114.25 9.75c0 1.036-.232 2.03-.64 2.952.313-.086.636-.16.972-.236a.75.75 0 01.86.499l.523 1.046a.75.75 0 01-.282.952l-4.077 2.826a.75.75 0 01-1 .077l-1.805-2.406a.75.75 0 01.326-1.008A12.031 12.031 0 0111.037 2.286z" clipRule="evenOdd" />
                         </svg>
                         <h3 className="text-lg sm:text-xl font-semibold text-slate-700 dark:text-slate-200">Streak History</h3>
                     </div>
@@ -247,7 +242,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                     )}
                 </section>
             </div>
-            {/* Removed style jsx global tag */}
         </div>
     );
 };

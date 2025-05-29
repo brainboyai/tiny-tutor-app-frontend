@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import {
   BookOpen,
-  ChevronDown,
-  ChevronUp,
+  // ChevronDown, // Unused
+  // ChevronUp, // Unused
   Heart,
   ImageIcon,
   Lightbulb,
   LogIn,
   LogOut,
   RefreshCw,
-  Search,
-  Settings,
+  // Search, // Unused
+  // Settings, // Unused
   Sparkles,
-  Star,
+  // Star, // Unused
   User,
   X,
   MessageSquareQuote,
@@ -328,7 +328,13 @@ function App() {
     }
 
     try {
-      if (!isRefreshClick && generatedContent[wordId] && generatedContent[wordId][modeToFetch]) {
+      // Check cache first, unless it's a refresh click
+      const contentExists = generatedContent[wordId] && 
+                            (modeToFetch === 'image' ? 
+                              (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) : 
+                              generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]); // Added cast for safety, though ContentMode should align
+
+      if (!isRefreshClick && contentExists) {
         if (modeToFetch === 'quiz') {
           const existingQuizData = generatedContent[wordId].quiz;
           const existingProgress = generatedContent[wordId].quiz_progress || [];
@@ -441,11 +447,16 @@ function App() {
     if (newMode !== 'quiz') {
         setSelectedQuizOption(null);
         setQuizFeedback(null);
-        setIsAttempted(false); 
+        setIsQuizAttempted(false); 
     }
 
     const wordId = sanitizeWordForId(wordToUse);
-    if (generatedContent[wordId] && generatedContent[wordId][newMode]) {
+    const contentForNewModeExists = generatedContent[wordId] &&
+                                  (newMode === 'image' ?
+                                    (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) :
+                                    generatedContent[wordId][newMode as keyof GeneratedContentItem]); // Added cast
+
+    if (contentForNewModeExists) {
         if (newMode === 'quiz') {
             const quizData = generatedContent[wordId].quiz;
             const progress = generatedContent[wordId].quiz_progress || [];
@@ -454,7 +465,7 @@ function App() {
                 setCurrentQuizQuestionIndex(nextQuestionIdx);
                 setSelectedQuizOption(null); 
                 setQuizFeedback(null);
-                setIsAttempted(false); 
+                setIsQuizAttempted(false); 
             } else {
                 handleGenerateExplanation(wordToUse, false, false, false, newMode);
             }
@@ -560,7 +571,7 @@ function App() {
     setActiveContentMode('explain'); 
     setSelectedQuizOption(null);
     setQuizFeedback(null);
-    setIsAttempted(false);
+    setIsQuizAttempted(false);
 
     const wordId = sanitizeWordForId(clickedWord);
     if (!generatedContent[wordId] || !generatedContent[wordId].explanation) {
@@ -595,11 +606,11 @@ function App() {
                         message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${quizSet[questionToDisplayIndex].options[quizSet[questionToDisplayIndex].correctOptionKey]}`,
                         isCorrect: attemptedQuestion.is_correct,
                     });
-                    setIsAttempted(true);
+                    setIsQuizAttempted(true);
                 } else {
                     setSelectedQuizOption(null);
                     setQuizFeedback(null);
-                    setIsAttempted(false);
+                    setIsQuizAttempted(false);
                 }
             }
         } else if (!isLoading && !error) { 
@@ -665,7 +676,7 @@ function App() {
         message: isCorrect ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
         isCorrect: isCorrect,
     });
-    setIsAttempted(true); 
+    setIsQuizAttempted(true); 
 
     handleSaveQuizAttempt(wordToUse, currentQuizQuestionIndex, optionKey, isCorrect);
   };
@@ -680,7 +691,7 @@ function App() {
         setCurrentQuizQuestionIndex(prevIdx => prevIdx + 1);
         setSelectedQuizOption(null);
         setQuizFeedback(null);
-        setIsAttempted(false);
+        setIsQuizAttempted(false);
     }
   };
   
@@ -768,10 +779,15 @@ function App() {
     const wordId = sanitizeWordForId(wordToUse);
     const content = generatedContent[wordId];
 
-    if (isLoading && (!content || !content[activeContentMode])) {
+    const hasContentForMode = content && 
+                            (activeContentMode === 'image' ? 
+                              (content.image_url || content.image_prompt) : 
+                              content[activeContentMode as keyof GeneratedContentItem]); // Added cast
+
+    if (isLoading && !hasContentForMode) {
         return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>;
     }
-    if (error && (!content || !content[activeContentMode])) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
+    if (error && !hasContentForMode) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
     if (!content) return <div className="text-center p-10 text-slate-400">No content generated for "{wordToUse}" yet. Try generating an explanation.</div>;
     
     const currentIsFavorite = content.is_favorite || false;

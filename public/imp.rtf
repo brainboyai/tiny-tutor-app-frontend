@@ -2,16 +2,19 @@
 \cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\froman\fcharset0 Times-Roman;\f2\froman\fcharset0 Times-Bold;
 \f3\froman\fcharset0 Times-Italic;\f4\fnil\fcharset0 Menlo-Regular;}
 {\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red194\green126\blue101;\red24\green24\blue24;
-\red70\green137\blue204;\red140\green211\blue254;\red193\green193\blue193;}
+\red70\green137\blue204;\red140\green211\blue254;\red193\green193\blue193;\red202\green202\blue202;}
 {\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\cssrgb\c80784\c56863\c47059;\cssrgb\c12157\c12157\c12157;
-\cssrgb\c33725\c61176\c83922;\cssrgb\c61176\c86275\c99608;\cssrgb\c80000\c80000\c80000;}
+\cssrgb\c33725\c61176\c83922;\cssrgb\c61176\c86275\c99608;\cssrgb\c80000\c80000\c80000;\cssrgb\c83137\c83137\c83137;}
 \paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
 \pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
 
 \f0\fs24 \cf0 Modifications of 1st stable to 2nd build \'97\'97 app.tsx, profile page.tsx(added and split from first stable) and app.py\
 \
 git add .\
-git commit -m "feat: Integrate ProfilePage"\
+git commit -m 
+\f1 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 "feat: Implement contextual prompts and Caching Option A for explanations"
+\f0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
 git push origin main\
 \
 \
@@ -20,8 +23,8 @@ cd tiny-tutor-frontend-local\
 git add src/App.tsx\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
-"Fix: Improve quiz string parsing robustness"
-\f0 \kerning1\expnd0\expndtw0 \
+\outl0\strokewidth0 \strokec2 "feat: Implement contextual prompts and Caching Option A for explanations"
+\f0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
 git push origin main\
 \
 \pard\pardeftab720\partightenfactor0
@@ -69,9 +72,10 @@ Prompt - now write me a a-z project report about this app in terms of features, 
 Prompt - \outl0\strokewidth0 \strokec2 Think correctly. do not loose any of the existing functionality and logic. what ever you want build on top of it\outl0\strokewidth0 \
 \
 \pard\pardeftab720\partightenfactor0
-
-\f4 \cf3 \cb4 Prompt - 
-\f1 \cf0 \cb1 \outl0\strokewidth0 \strokec2 I want to make the profile modal into a page just like the main app, which the user can click and toggle to. The modal is unable to fit all the details completely. Think correctly. do not loose any of the existing functionality and logic. what ever you want build on top of it. i also gave the screenshoots of my firestone dashboard\
+\cf0 \outl0\strokewidth0 \strokec2 I want you to think like a professional learning based game designer. i am giving you the deailed project report. Go through it, understand it thoroughly and come up with a detailed strategy for features and their implementation for the unique and complete gamification of this app, to become one of the top addictive entertaining learning app.\outl0\strokewidth0 \
+\pard\pardeftab720\partightenfactor0
+\cf0 \outl0\strokewidth0 \strokec2 \
+\pard\pardeftab720\partightenfactor0
 
 \f4 \cf3 \cb4 \outl0\strokewidth0 \
 "Explain the concept of '\cf5 \{\cf6 concept\cf5 \}\cf3 ' in 2 concise sentences with words or sub-topics that could extend the learning. If relevant, identify up to 2 key words or sub-topics within your explanation that deepen the understanding and wrap them in <click>tags</click> like this: <click>sub-topic</click>."\cf7 \cb1 \
@@ -80,7 +84,7 @@ Prompt - \outl0\strokewidth0 \strokec2 Think correctly. do not loose any of the 
 \f1 \cf0 \
 \pard\pardeftab720\partightenfactor0
 
-\f4 \cf3 \cb4 "Explain the concept of '\cf5 \{\cf6 \cb4 word\cf5 \cb4 \}\cf3 ' in 2 concise sentences with words or sub-topics that could extend the learning. If relevant, identify up to 2 key words or sub-topics within your explanation that can progress the concept along the learning curve to deepen the understanding and wrap them in <click>tags</click> like this: <click>sub-topic</click>."
+\f4 \cf3 \cb4 "\cf6 \cb4 prompt\cf7 \cb4  \cf8 =\cf7  \cf5 \cb4 f\cf3 "Explain the concept of '\cf5 \{\cf6 word\cf5 \}\cf3 ' in 2 simple sentences with words or sub-topics that could extend the learning. If relevant, identify up to 2 key words or sub-topics within your explanation that can progress the concept along the learning curve to deepen the understanding and wrap them in <click>tags</click> like this: <click>sub-topic</click>."
 \f1 \cf0 \cb1 \
 \
 git add requirements.txt\
@@ -91,4 +95,24 @@ Prompt - the user should have a soothing experience when he is using the app. hi
 \
 Prompt- ok it logged in.word generation is working . but the features i gave you with are missing like 1.profile page missing with clickable words under(words explored, favourites and streak history) 2.there are no clickable words in the explaination to click through. the toggle button for favouriting a word is missing.... I am giving the images of previous functionality. correct it perfectly this time without glitches
 \f4 \cf7 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf3 \cb4 Prompt - 
+\f1 \cf0 \cb1 I want to make the profile modal into a page just like the main app, which the user can click and toggle to. The modal is unable to fit all the details completely. Think correctly. do not loose any of the existing functionality and logic. what ever you want build on top of it. i also gave the screenshoots of my firestone dashboard\
+\
+\pard\pardeftab720\partightenfactor0
+\cf0 \outl0\strokewidth0 \strokec2 task - i want to modify the prompt sent to gemini in the backend app.py, to give a desired result. i want to generate an explaination in simple 2 sentences for a word, with clickable subtopics that the user can explore furthe. The prompt should be intelligent enough and well structured that it should select the clickable subtopics from the root word's explaination so that the user is taken into most important concepts, topics that are anyway related to the root word's domain of learning. Plus when the user clicks the subtopic, it should give a simple 2 sentence explaination of the subtopic with clickable words, but in the context of the root word or root word's explaination.\
+\
+Prompt - give me a explaination in simple 2 sentences for a photosynthesis, with 2 to 3 subtopics from within the photosynthesis explaination ,that the user can select. the subtoics are topics that are anyway related to the photosynthesis domain of learning. The subtopics need to take the user down the rabbit hole of learning everything related to photosynthesis.\
+\
+\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 I want the subtopics to be concise words. for example- Mixture instead of Mixture of Different Things (Understanding Mixtures)\
+Components instead of Individual Components (The Goal of Separation)\
+Physical Properties instead of Unique Physical Properties (How Separation Works)\
+Pure Substances instead of Obtaining Pure Substances (Applications of Separation)\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 \
+
+\f4 \cf7 \strokec7 \
 }

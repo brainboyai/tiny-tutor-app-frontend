@@ -618,80 +618,86 @@ function App() {
   }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
   // Make sure all dependencies for useCallback are listed if they are used inside.
   
-// ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
 
-  // App.tsx
+// Place this useEffect AFTER getDisplayWord and handleGenerateExplanation are defined
 
-  const handleModeChange = (newMode: ContentMode) => {
-    const wordToUse = getDisplayWord();
-    
-    if (!wordToUse && newMode !== 'explain') { // Allow setting explain even if no word (to show default message)
-        setError("No word is currently in focus to change mode.");
-        setActiveContentMode(newMode); // Still set the mode
+useEffect(() => {
+    const currentWord = getDisplayWord();
+    const mode = activeContentMode;
+
+    if (!currentWord) {
+        // No word in focus, nothing to do for content fetching.
         return;
     }
-    
-    // Set mode immediately.
-    setActiveContentMode(newMode); 
-    
-    // Reset specific UI states for quiz if not changing to quiz
-    // or if changing to quiz (the quiz useEffect will further refine if data already exists)
-    if (newMode !== 'quiz') {
-        setSelectedQuizOption(null);
-        setQuizFeedback(null);
-        setIsQuizAttempted(false); 
-    } else {
-        // If changing TO quiz, also reset these.
-        // The quiz UI useEffect will handle setting currentQuizQuestionIndex based on loaded data/progress.
+
+    const wordId = sanitizeWordForId(currentWord);
+    const contentItem = generatedContent[wordId];
+
+    let contentForModeExists = contentItem &&
+                             (mode === 'image' ?
+                               (contentItem.image_url || contentItem.image_prompt) :
+                               contentItem[mode as keyof GeneratedContentItem]);
+
+    if (mode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
+        contentForModeExists = false; // Treat empty quiz array as non-existent
+    }
+
+    // Log current state for debugging this effect's decision
+    console.log(`[ModeChangeEffect] Word: ${currentWord}, Mode: ${mode},isLoading: ${isLoading}, ContentExists: ${!!contentForModeExists}`);
+
+    if (!contentForModeExists && !isLoading) {
+        console.log(`[ModeChangeEffect] Content for ${currentWord}/${mode} MISSING & not loading. Triggering fetch.`);
+        // Determine flags for handleGenerateExplanation.
+        // This effect triggers for mode changes or display word changes on an *existing* focus.
+        // It's not for new primary searches or sub-topic clicks themselves.
+        handleGenerateExplanation(
+            currentWord,
+            false, // isNewPrimaryWordSearch
+            false, // isRefreshClick (explicit refresh has its own button)
+            false, // isSubTopicClick
+            mode,  // modeOverride
+            false  // isProfileWordClick
+        );
+    } else if (contentForModeExists && mode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
+        // If switching TO quiz mode AND quiz data ALREADY exists, setup quiz UI.
+        // (The quiz UI useEffect will handle ongoing UI updates based on currentQuizQuestionIndex)
+        console.log(`[ModeChangeEffect] Quiz content for ${currentWord} exists. Setting up initial quiz state.`);
+        const progress = contentItem.quiz_progress || [];
+        const quizSetLength = contentItem.quiz.length;
+        
+        let nextQuestionIdx = 0; // Default to first question
+        if (currentQuizQuestionIndex < quizSetLength && currentQuizQuestionIndex < progress.length) {
+            nextQuestionIdx = currentQuizQuestionIndex; // Try to stay on current question if valid and attempted
+        } else if (progress.length < quizSetLength) {
+            nextQuestionIdx = progress.length; // Go to first unanswered question
+        }
+        // If already at summary (currentQuizQuestionIndex >= quizSetLength), keep it there, or reset to 0 if preferred
+        // For now, let's try setting to next logical question or 0 if coming from summary
+        if (currentQuizQuestionIndex >= quizSetLength) {
+             nextQuestionIdx = 0; // Or progress.length if you want to resume at end of progress
+        }
+
+        setCurrentQuizQuestionIndex(nextQuestionIdx);
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
-        // setCurrentQuizQuestionIndex(0); // Let quiz UI useEffect handle this based on progress
     }
 
-    // If there's no word in focus, we can't fetch specific content for it.
-    if (!wordToUse) {
-        return;
-    }
+}, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]); // Added currentQuizQuestionIndex
 
-    // Now, check if we need to fetch content for this newMode for the wordToUse
-    const wordId = sanitizeWordForId(wordToUse);
-    const contentItem = generatedContent[wordId];
-    
-    let contentForNewModeActuallyExists = contentItem &&
-                                  (newMode === 'image' ?
-                                    (contentItem.image_url || contentItem.image_prompt) :
-                                    contentItem[newMode as keyof GeneratedContentItem]);
+// ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
 
-    // For quiz, if 'quiz' array exists but is empty, consider content as not existing for fetching purposes.
-    if (newMode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
-        contentForNewModeActuallyExists = false;
+  const handleModeChange = (newMode: ContentMode) => {
+    // If changing to quiz, reset specific quiz states immediately for responsiveness
+    if (newMode === 'quiz') {
+        // Consider if setCurrentQuizQuestionIndex(0) is always desired here,
+        // or if it should be handled when quiz data actually loads/exists.
+        // For now, let's ensure UI feels responsive.
+        setSelectedQuizOption(null);
+        setQuizFeedback(null);
+        setIsQuizAttempted(false);
     }
-
-    if (!contentForNewModeActuallyExists) {
-        // Content for the new mode doesn't exist or is an empty/invalid quiz, fetch it.
-        // isRefreshClick is false because this is a mode change, not an explicit refresh.
-        console.log(`handleModeChange: Mode is '${newMode}'. Content not in session cache for '${wordToUse}', fetching.`);
-        handleGenerateExplanation(wordToUse, false, false, false, newMode, false);
-    } else {
-        console.log(`handleModeChange: Mode is '${newMode}'. Content already in session cache for '${wordToUse}'.`);
-        // If it's quiz and content exists, make sure the quiz index is appropriate
-        if (newMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
-            const progress = contentItem.quiz_progress || [];
-            const quizSetLength = contentItem.quiz.length;
-            let nextQuestionIdx = currentQuizQuestionIndex; // Start with current
-            if (currentQuizQuestionIndex >= quizSetLength) { // If viewing summary
-                nextQuestionIdx = 0; // Go back to first question if user re-selects quiz mode
-            } else {
-                // If not on summary, try to stay on current or go to current progress
-                nextQuestionIdx = progress.length < quizSetLength ? progress.length : currentQuizQuestionIndex;
-                 if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) { // Just switched from summary
-                     nextQuestionIdx = 0;
-                 }
-            }
-            setCurrentQuizQuestionIndex(nextQuestionIdx);
-        }
-    }
+    setActiveContentMode(newMode);
   };
 
   const handleRefreshContent = () => {
@@ -852,7 +858,7 @@ function App() {
         setIsQuizAttempted(false);
     }
   }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex]);
-  
+
   const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string, isCorrect: boolean) => {
     if (!authToken) return;
     const wordId = sanitizeWordForId(word);

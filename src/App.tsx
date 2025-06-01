@@ -615,75 +615,75 @@ function App() {
       setIsLoading(false);
       if (isNewPrimaryWordSearch) setInputValue(''); 
     }
-  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
+  }, [authToken, activeContentMode, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
   // Make sure all dependencies for useCallback are listed if they are used inside.
   
 
 // Place this useEffect AFTER getDisplayWord and handleGenerateExplanation are defined
 
 useEffect(() => {
-    const currentWord = getDisplayWord();
-    const mode = activeContentMode;
+    const wordToUse = getDisplayWord();
+    const currentMode = activeContentMode;
 
-    if (!currentWord) {
-        // No word in focus, nothing to do for content fetching.
+    if (!wordToUse) {
+        // console.log("[Effect Mode/Word Change] No word to use, exiting.");
         return;
     }
 
-    const wordId = sanitizeWordForId(currentWord);
+    const wordId = sanitizeWordForId(wordToUse);
+    
+    // We need to access the LATEST generatedContent.
+    // The generatedContent in the dependency array ensures this effect re-runs when it changes.
+    // The problem is if it re-runs and still sees a stale version for the check.
     const contentItem = generatedContent[wordId];
-
     let contentForModeExists = contentItem &&
-                             (mode === 'image' ?
+                             (currentMode === 'image' ?
                                (contentItem.image_url || contentItem.image_prompt) :
-                               contentItem[mode as keyof GeneratedContentItem]);
+                               contentItem[currentMode as keyof GeneratedContentItem]);
 
-    if (mode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
-        contentForModeExists = false; // Treat empty quiz array as non-existent
+    if (currentMode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
+        contentForModeExists = false;
     }
 
-    // Log current state for debugging this effect's decision
-    console.log(`[ModeChangeEffect] Word: ${currentWord}, Mode: ${mode},isLoading: ${isLoading}, ContentExists: ${!!contentForModeExists}`);
+    console.log(`[Effect Mode/Word Change] Word: ${wordToUse}, Mode: ${currentMode}, isLoading: ${isLoading}, ContentExists: ${!!contentForModeExists}`);
 
     if (!contentForModeExists && !isLoading) {
-        console.log(`[ModeChangeEffect] Content for ${currentWord}/${mode} MISSING & not loading. Triggering fetch.`);
-        // Determine flags for handleGenerateExplanation.
-        // This effect triggers for mode changes or display word changes on an *existing* focus.
-        // It's not for new primary searches or sub-topic clicks themselves.
+        console.log(`[Effect Mode/Word Change] Content for ${wordToUse}/${currentMode} MISSING & not loading. Triggering fetch.`);
         handleGenerateExplanation(
-            currentWord,
-            false, // isNewPrimaryWordSearch
-            false, // isRefreshClick (explicit refresh has its own button)
-            false, // isSubTopicClick
-            mode,  // modeOverride
-            false  // isProfileWordClick
+            wordToUse, false, false, false, currentMode, false
         );
-    } else if (contentForModeExists && mode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
-        // If switching TO quiz mode AND quiz data ALREADY exists, setup quiz UI.
-        // (The quiz UI useEffect will handle ongoing UI updates based on currentQuizQuestionIndex)
-        console.log(`[ModeChangeEffect] Quiz content for ${currentWord} exists. Setting up initial quiz state.`);
+    } else if (contentForModeExists && currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
+        // Quiz setup logic from previous correct version
         const progress = contentItem.quiz_progress || [];
         const quizSetLength = contentItem.quiz.length;
-        
-        let nextQuestionIdx = 0; // Default to first question
-        if (currentQuizQuestionIndex < quizSetLength && currentQuizQuestionIndex < progress.length) {
-            nextQuestionIdx = currentQuizQuestionIndex; // Try to stay on current question if valid and attempted
-        } else if (progress.length < quizSetLength) {
-            nextQuestionIdx = progress.length; // Go to first unanswered question
+        let nextQuestionIdx = currentQuizQuestionIndex;
+        if (currentQuizQuestionIndex >= quizSetLength) { 
+            nextQuestionIdx = 0; // Reset to first question if coming from summary
+        } else { 
+            nextQuestionIdx = progress.length < quizSetLength ? progress.length : currentQuizQuestionIndex;
+             if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0){ // Redundant with above but safe
+                 nextQuestionIdx = 0;
+             }
         }
-        // If already at summary (currentQuizQuestionIndex >= quizSetLength), keep it there, or reset to 0 if preferred
-        // For now, let's try setting to next logical question or 0 if coming from summary
-        if (currentQuizQuestionIndex >= quizSetLength) {
-             nextQuestionIdx = 0; // Or progress.length if you want to resume at end of progress
+        if (currentQuizQuestionIndex !== nextQuestionIdx) { // Only set if changed to avoid potential loops
+             // setCurrentQuizQuestionIndex(nextQuestionIdx); // This might have been the cause of some quiz re-renders
         }
-
-        setCurrentQuizQuestionIndex(nextQuestionIdx);
-        setSelectedQuizOption(null);
+        // These are safe to call as they only update local UI state for quiz attempt
+        setSelectedQuizOption(null); 
         setQuizFeedback(null);
         setIsQuizAttempted(false);
     }
 
-}, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]); // Added currentQuizQuestionIndex
+// Primary triggers for this effect should be the user's intent (new word, new mode).
+// generatedContent and isLoading are conditions, not primary triggers FOR THIS EFFECT'S FETCH.
+// handleGenerateExplanation is a stable callback.
+// currentQuizQuestionIndex is for the quiz setup part.
+}, [activeContentMode, getDisplayWord, handleGenerateExplanation, isLoading, generatedContent, currentQuizQuestionIndex]);
+// ^^^ Key: ensure handleGenerateExplanation is stable (useCallback with its own correct deps)
+// ^^^ and getDisplayWord is stable (useCallback).
+// Including generatedContent and isLoading IS necessary for the effect to re-evaluate
+// when data arrives or loading state changes, to correctly decide if a fetch is *still* needed
+// or to set up the quiz UI. The trick is the condition inside.
 
 // ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
 

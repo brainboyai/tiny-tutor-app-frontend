@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, FormEvent } from 'react';
+import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
 import {
   BookOpen,
   Heart,
@@ -175,7 +175,7 @@ function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
-
+  const modeFetchGuardRef = useRef<string | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
 
@@ -645,14 +645,13 @@ useEffect(() => {
 
     if (!wordToUse) {
         // console.log("[Effect Mode/Word Change] No word to use, exiting.");
+        modeFetchGuardRef.current = null; // Reset guard if no word
         return;
     }
 
     const wordId = sanitizeWordForId(wordToUse);
-    
-    // We need to access the LATEST generatedContent.
-    // The generatedContent in the dependency array ensures this effect re-runs when it changes.
-    // The problem is if it re-runs and still sees a stale version for the check.
+    const currentFetchKey = `${wordId}-${currentMode}`; // Unique key for word/mode combo
+
     const contentItem = generatedContent[wordId];
     let contentForModeExists = contentItem &&
                              (currentMode === 'image' ?
@@ -663,45 +662,65 @@ useEffect(() => {
         contentForModeExists = false;
     }
 
-    console.log(`[Effect Mode/Word Change] Word: ${wordToUse}, Mode: ${currentMode}, isLoading: ${isLoading}, ContentExists: ${!!contentForModeExists}`);
+    console.log(`[Effect Mode/Word Change] Check for: ${currentFetchKey}. ContentExists: ${!!contentForModeExists}, IsLoading: ${isLoading}, Guard: ${modeFetchGuardRef.current}`);
 
     if (!contentForModeExists && !isLoading) {
-        console.log(`[Effect Mode/Word Change] Content for ${wordToUse}/${currentMode} MISSING & not loading. Triggering fetch.`);
+        // If content is missing and not loading:
+        // AND if this effect is NOT already trying to fetch this exact word/mode
+        if (modeFetchGuardRef.current === currentFetchKey) {
+            // This means the effect re-ran after initiating a fetch for this key,
+            // but generatedContent hasn't updated yet or isLoading didn't prevent it.
+            // We give it one cycle to settle. If content is still missing next time AND isLoading is false,
+            // and the guard is different or null, it might try again.
+            // For now, if guard matches, assume a fetch is "conceptually" in progress by this effect.
+            console.log(`[Effect Mode/Word Change] Guarded: Fetch for ${currentFetchKey} likely in progress or just completed. Waiting for state update.`);
+            return;
+        }
+
+        console.log(`[Effect Mode/Word Change] Triggering fetch for ${currentFetchKey}. Setting guard.`);
+        modeFetchGuardRef.current = currentFetchKey; // Set the guard BEFORE calling HGE
+
         handleGenerateExplanation(
             wordToUse, false, false, false, currentMode, false
         );
-    } else if (contentForModeExists && currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
-        // Quiz setup logic from previous correct version
-        const progress = contentItem.quiz_progress || [];
-        const quizSetLength = contentItem.quiz.length;
-        let nextQuestionIdx = currentQuizQuestionIndex;
-        if (currentQuizQuestionIndex >= quizSetLength) { 
-            nextQuestionIdx = 0; // Reset to first question if coming from summary
-        } else { 
-            nextQuestionIdx = progress.length < quizSetLength ? progress.length : currentQuizQuestionIndex;
-             if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0){ // Redundant with above but safe
-                 nextQuestionIdx = 0;
-             }
+    } else if (contentForModeExists) {
+        // If content now exists for what the guard was set for, clear the guard.
+        if (modeFetchGuardRef.current === currentFetchKey) {
+            console.log(`[Effect Mode/Word Change] Content for ${currentFetchKey} now exists. Clearing guard.`);
+            modeFetchGuardRef.current = null;
         }
-        if (currentQuizQuestionIndex !== nextQuestionIdx) { // Only set if changed to avoid potential loops
-             // setCurrentQuizQuestionIndex(nextQuestionIdx); // This might have been the cause of some quiz re-renders
-        }
-        // These are safe to call as they only update local UI state for quiz attempt
-        setSelectedQuizOption(null); 
-        setQuizFeedback(null);
-        setIsQuizAttempted(false);
-    }
 
-// Primary triggers for this effect should be the user's intent (new word, new mode).
-// generatedContent and isLoading are conditions, not primary triggers FOR THIS EFFECT'S FETCH.
-// handleGenerateExplanation is a stable callback.
-// currentQuizQuestionIndex is for the quiz setup part.
-}, [activeContentMode, getDisplayWord, handleGenerateExplanation, isLoading, generatedContent, currentQuizQuestionIndex]);
-// ^^^ Key: ensure handleGenerateExplanation is stable (useCallback with its own correct deps)
-// ^^^ and getDisplayWord is stable (useCallback).
-// Including generatedContent and isLoading IS necessary for the effect to re-evaluate
-// when data arrives or loading state changes, to correctly decide if a fetch is *still* needed
-// or to set up the quiz UI. The trick is the condition inside.
+        // Quiz UI setup logic (if mode is quiz and content exists)
+        if (currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
+            const progress = contentItem.quiz_progress || [];
+            const quizSetLength = contentItem.quiz.length;
+            let nextQuestionIdx = currentQuizQuestionIndex;
+
+            if (currentQuizQuestionIndex >= quizSetLength) {
+                nextQuestionIdx = 0; 
+            } else {
+                nextQuestionIdx = progress.length < quizSetLength ? progress.length : currentQuizQuestionIndex;
+                 if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0){
+                     nextQuestionIdx = 0;
+                 }
+            }
+            // Only update if necessary, and perhaps defer to quiz-specific effect for some parts
+            if (currentQuizQuestionIndex !== nextQuestionIdx) {
+                // setCurrentQuizQuestionIndex(nextQuestionIdx);
+            }
+            // These are generally safe if quiz UI needs reset when mode becomes quiz with data
+            setSelectedQuizOption(null);
+            setQuizFeedback(null);
+            setIsQuizAttempted(false);
+        }
+    }
+// Dependency array:
+// - activeContentMode, getDisplayWord: Primary triggers for "what" to display.
+// - generatedContent: To re-check if content exists after an update.
+// - isLoading: To know if a global fetch is happening.
+// - handleGenerateExplanation: Because it's called.
+// - currentQuizQuestionIndex: For the quiz setup logic.
+}, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]);
 
 // ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
 

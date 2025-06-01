@@ -499,13 +499,31 @@ function App() {
       // The setGeneratedContent logic correctly uses data[modeToFetch] for the current mode,
       // which is good. It will store the (potentially contextual) explanation fetched for this session.
       if (!response.ok) {
-        const errData = await response.json();
-        if (response.status === 401) {
+        let errorMessage = `Failed to generate content (${response.status})`;
+        if (response.status === 429) {
+            errorMessage = "Too many requests. Please try again in a little while. 🐢";
+        } else {
+            try {
+                const errData = await response.json(); // Try to parse JSON error first
+                errorMessage = errData.error || errorMessage;
+            } catch (e) {
+                // If response.json() fails, it means the error response wasn't JSON
+                const textError = await response.text(); // Get the response as text
+                console.error("Non-JSON error response from server:", textError);
+                // You might not want to show the full HTML textError to the user.
+                // So, stick with a generic message or a specific one for common statuses.
+            }
+        }
+        if (response.status === 401) { // Specific handling for 401
             handleLogout(); 
             setShowAuthModal(true);
             setAuthError("Session expired. Please login again.");
+            // Don't throw here, as handleLogout will redirect or show modal
+            // but set an error for the user to see briefly if needed.
+            setError("Your session has expired. Please log in.");
+            return; // Exit after handling 401
         }
-        throw new Error(errData.error || `Failed to generate content (${response.status})`);
+        throw new Error(errorMessage);
       }
 
       const data = await response.json(); 

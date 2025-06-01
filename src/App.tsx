@@ -432,50 +432,49 @@ function App() {
     }
 
     try {
-      // --- REVISED Frontend Cache Check Logic ---
-      const contentAlreadyInFrontend = generatedContent[wordId] &&
+// Inside handleGenerateExplanation > try block
+      // --- REFINED Frontend Cache Check Logic ---
+      const wordItem = generatedContent[wordId]; // Get the item for the wordId once
+
+      let contentActuallyAlreadyInFrontend = wordItem &&
                                  (modeToFetch === 'image' ?
-                                   (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) :
-                                   generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]);
-      
-      // When should we fetch from the backend?
-      // 1. User explicitly clicked refresh.
-      // 2. It's a new primary word search (or profile word click) - to get the canonical generic version from the backend.
-      // 3. The content for the requested mode is simply not yet in the frontend's current session cache.
+                                   (wordItem.image_url || wordItem.image_prompt) :
+                                   wordItem[modeToFetch as keyof GeneratedContentItem]);
+
+      // For quiz, if 'quiz' array exists but is empty, consider content as NOT existing for fetching purposes.
+      if (modeToFetch === 'quiz' && wordItem && wordItem.quiz && wordItem.quiz.length === 0) {
+          contentActuallyAlreadyInFrontend = false;
+      }
+
       const shouldFetchFromBackend = isRefreshClick ||
                                      isNewPrimaryWordSearch ||
                                      isProfileWordClick ||
-                                     !contentAlreadyInFrontend;
+                                     !contentActuallyAlreadyInFrontend; // Use the refined check
 
       if (!shouldFetchFromBackend) {
-        // Serve from frontend cache (this will now correctly serve previously fetched contextual explanations too)
+        // Serve from frontend cache
         if (modeToFetch === 'quiz') {
-          const existingQuizData = generatedContent[wordId].quiz;
-          const existingProgress = generatedContent[wordId].quiz_progress || [];
-          if (existingQuizData && existingQuizData.length > 0) {
+            // If we are here for quiz, contentActuallyAlreadyInFrontend was true,
+            // meaning wordItem.quiz is defined and wordItem.quiz.length > 0.
+            const existingQuizData = wordItem.quiz!; // Assert non-null as it passed the check
+            const existingProgress = wordItem.quiz_progress || [];
             const nextQuestionIdx = existingProgress.length >= existingQuizData.length ? existingQuizData.length : existingProgress.length;
             setCurrentQuizQuestionIndex(nextQuestionIdx);
-          } else {
-             console.warn("Cached quiz exists but is empty or invalid, will attempt to fetch new one if logic proceeds.");
-             // This might still fall through if the outer condition was !shouldFetchFromBackend but quiz invalid.
-             // However, our new `shouldFetchFromBackend` condition `!contentAlreadyInFrontend` handles this better.
-          }
+            // Reset attempt state when serving quiz from cache to ensure fresh interaction for the question
+            setSelectedQuizOption(null);
+            setQuizFeedback(null);
+            setIsQuizAttempted(false);
         }
         
-        // Update focus and mode, but don't alter streak for simple mode changes/cache hits.
-        // Only set currentFocusWord if it's not a sub-topic click, not a profile word click,
-        // and not already reviewing (because wordForReview handles display there).
-        // isNewPrimaryWordSearch already sets currentFocusWord.
         if (!isSubTopicClick && !isProfileWordClick && !isNewPrimaryWordSearch && !isReviewingStreakWord) {
             setCurrentFocusWord(wordToFetch);
         }
-        setActiveContentMode(modeToFetch);
+        setActiveContentMode(modeToFetch); // Ensure mode is set if HGE was called with override
         setIsLoading(false);
-        // Note: Streak initialization for isNewPrimaryWordSearch is handled after successful fetch.
         console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (session).`);
         return;
       }
-      // --- END: REVISED Frontend Cache Check Logic ---
+      // --- END: REFINED Frontend Cache Check Logic ---
 
       // If we reach here, we are fetching from the backend.
       // The 'refresh_cache' sent to backend should ONLY be true if it's an explicit user refresh action.
@@ -620,71 +619,77 @@ function App() {
   // Make sure all dependencies for useCallback are listed if they are used inside.
 
 
-  // Place AFTER handleGenerateExplanation and getDisplayWord are defined
+// useEffect to handle fetching content when activeContentMode or getDisplayWord() changes
+// This useEffect should primarily initiate a fetch if content for the
+// current word/mode combination is missing and no fetch is already in progress.
 
   useEffect(() => {
     const wordToUse = getDisplayWord();
     const currentMode = activeContentMode;
 
     if (!wordToUse) {
-        return;
+        return; // No word in focus, do nothing.
     }
 
     const wordId = sanitizeWordForId(wordToUse);
-    const contentItem = generatedContent[wordId];
-    let contentForModeExists = contentItem &&
-                             (currentMode === 'image' ?
-                               (contentItem.image_url || contentItem.image_prompt) :
-                               contentItem[currentMode as keyof GeneratedContentItem]);
+    const contentItem = generatedContent[wordId]; 
 
+    let contentForModeActuallyExists = contentItem &&
+                                 (currentMode === 'image' ?
+                                   (contentItem.image_url || contentItem.image_prompt) :
+                                   contentItem[currentMode as keyof GeneratedContentItem]);
+    
     if (currentMode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
-        contentForModeExists = false;
+        contentForModeActuallyExists = false;
     }
 
-    // Only fetch if content doesn't exist AND we are not currently loading.
-    // The isLoading check prevents re-fetching if another fetch was triggered almost simultaneously.
-    if (!contentForModeExists && !isLoading) { 
-        console.log(`Effect: Mode is '${currentMode}'. Content not in session cache for '${wordToUse}', fetching.`);
-        handleGenerateExplanation(wordToUse, false, false, false, currentMode, false);
-    } else if (contentForModeExists && currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
-        // If quiz content exists, ensure quiz UI state (like index) is appropriate
+    if (!contentForModeActuallyExists && !isLoading) {
+        console.log(`Effect for ${wordToUse}/${currentMode}: Content MISSING and NOT loading. Triggering fetch.`);
+        // Call handleGenerateExplanation:
+        // isNewPrimaryWordSearch = false (this effect is for existing focus/mode changes)
+        // isRefreshClick = false (explicit refresh has its own button/handler)
+        // isSubTopicClick = false (subtopic clicks call HGE directly)
+        // modeOverride = currentMode
+        // isProfileWordClick = false
+        // streakContext will be determined by handleGenerateExplanation based on these flags and component state.
+        handleGenerateExplanation(
+            wordToUse,
+            false, // isNewPrimaryWordSearch
+            false, // isRefreshClick
+            false, // isSubTopicClick
+            currentMode, // modeOverride
+            false  // isProfileWordClick
+        );
+    } else if (contentForModeActuallyExists && currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
+        // If quiz content EXISTS, set up the quiz display state.
         const progress = contentItem.quiz_progress || [];
         const quizSetLength = contentItem.quiz.length;
-        
-        // If current index is beyond available questions (e.g. after completing quiz), show summary (index = length)
-        // Else, if progress exists, show current progress.
-        // Else (no progress), show first question (index = 0).
         let nextQuestionIdx = currentQuizQuestionIndex;
-        if (currentQuizQuestionIndex >= quizSetLength) {
-            nextQuestionIdx = quizSetLength; // Go to summary
-        } else {
+
+        if (currentQuizQuestionIndex >= quizSetLength) { 
+            nextQuestionIdx = quizSetLength; 
+        } else { 
             nextQuestionIdx = progress.length < quizSetLength ? progress.length : 0;
-             // If current index is already valid for an incomplete quiz, keep it, otherwise go to current progress point or 0.
-            if (currentQuizQuestionIndex < progress.length && currentQuizQuestionIndex < quizSetLength) {
-                nextQuestionIdx = currentQuizQuestionIndex;
-            } else {
-                nextQuestionIdx = progress.length < quizSetLength ? progress.length : 0;
-            }
-            // If user was on summary and switches mode then back to quiz, reset to first question.
-            if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) {
-                nextQuestionIdx = 0;
+            if(currentQuizQuestionIndex < progress.length && currentQuizQuestionIndex < quizSetLength) {
+                 nextQuestionIdx = currentQuizQuestionIndex;
+            } else if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) { 
+                 nextQuestionIdx = 0;
             }
         }
-        
         setCurrentQuizQuestionIndex(nextQuestionIdx);
-        // Reset attempt state; the other quiz useEffect will fill it if already attempted for this index
         setSelectedQuizOption(null); 
         setQuizFeedback(null);
         setIsQuizAttempted(false);
     }
 
-}, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]); // Added currentQuizQuestionIndex
+}, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]); // Removed liveStreak, currentFocusWord, etc. as HGE gets them from its own closure/state
 
 // ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
  // App.tsx
 
   // App.tsx
 
+  // App.tsx
   const handleModeChange = (newMode: ContentMode) => {
     const wordToUse = getDisplayWord();
     if (!wordToUse && newMode !== 'explain') { 
@@ -692,16 +697,25 @@ function App() {
         return;
     }
     
+    // Only action: set the active mode.
+    // The useEffect listening to activeContentMode will handle fetching or UI setup.
     setActiveContentMode(newMode);
 
+    // Reset specific UI states for quiz immediately if changing AWAY from quiz
+    // or if changing TO quiz (the useEffect will further refine quiz UI state).
     if (newMode !== 'quiz') {
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
+        // setCurrentQuizQuestionIndex(0); // Let useEffect manage this based on loaded content
+    } else {
+        // If changing TO quiz, also reset these. useEffect will set them based on loaded data/progress.
+        setSelectedQuizOption(null);
+        setQuizFeedback(null);
+        setIsQuizAttempted(false);
     }
-    // The useEffect listening to activeContentMode will now handle fetching or setting up quiz.
   };
-  
+
   const handleRefreshContent = () => {
     const wordToUse = getDisplayWord();
     if (!wordToUse) return;

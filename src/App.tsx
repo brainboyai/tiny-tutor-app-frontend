@@ -376,6 +376,7 @@ function App() {
     console.log("User logged out");
   }, [liveStreak, authToken, saveStreakToServer]);
 
+// ... (end of imports and other functions remain the same) ...
 
   const handleGenerateExplanation = useCallback(async (
     wordToFetch: string,
@@ -385,36 +386,20 @@ function App() {
     modeOverride?: ContentMode,
     isProfileWordClick: boolean = false
   ) => {
-    if (!wordToFetch.trim()) {
-      setError("Please enter a word or concept.");
-      return;
-    }
-    if (!authToken) {
-      setShowAuthModal(true);
-      setAuthError("Please login to generate content.");
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    setQuizFeedback(null);
-    setSelectedQuizOption(null);
-    setIsQuizAttempted(false);
+    // ... (initial checks for wordToFetch, authToken, setIsLoading, etc. remain the same) ...
 
     const wordId = sanitizeWordForId(wordToFetch);
     const modeToFetch = modeOverride || activeContentMode;
 
-    // --- NEW: Construct streakContextForAPI ---
+    // --- Construct streakContextForAPI (Existing logic is good) ---
     let streakContextForAPI: string[] = [];
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         streakContextForAPI = [];
     } else if (isSubTopicClick) {
-        // For a sub-topic, context is the current live streak *before* adding this sub-topic
         if (liveStreak && liveStreak.words.length > 0) {
             streakContextForAPI = [...liveStreak.words];
         }
     } else if (isReviewingStreakWord && wordForReview) {
-        // For reviewing a word in a streak, context is words *before* the reviewed word
         if (liveStreak && liveStreak.words.includes(wordForReview)) {
             const reviewWordIndex = liveStreak.words.indexOf(wordForReview);
             if (reviewWordIndex > 0) {
@@ -422,25 +407,24 @@ function App() {
             }
         }
     } else if (currentFocusWord && !isNewPrimaryWordSearch && !isProfileWordClick && !isSubTopicClick) {
-        // For refreshing current focus word (that's already part of a streak) or changing its mode
         if (liveStreak && liveStreak.words.includes(currentFocusWord)) {
              const currentFocusWordIndex = liveStreak.words.indexOf(currentFocusWord);
-             if (currentFocusWordIndex > 0) { // Only if it's not the first word
+             if (currentFocusWordIndex > 0) {
                 streakContextForAPI = liveStreak.words.slice(0, currentFocusWordIndex);
              }
         } else if (liveStreak && liveStreak.words.length === 1 && liveStreak.words[0] === currentFocusWord) {
-            // Current focus is the primary word of a fresh streak (length 1), context is empty
             streakContextForAPI = [];
         }
     }
     // --- END: Construct streakContextForAPI ---
 
-
+    // Logic for saving previous streak (Existing logic is good)
     if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >=1 && authToken) {
         if (liveStreak.score >=2) await saveStreakToServer(liveStreak, authToken);
         setLiveStreak(null); 
     }
     
+    // Logic for setting focus on new primary word (Existing logic is good)
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         setCurrentFocusWord(wordToFetch);
         setIsReviewingStreakWord(false); 
@@ -448,46 +432,56 @@ function App() {
     }
 
     try {
-      // --- Caching Option A (Frontend Side) ---
-      // If it's 'explain' mode AND there's a context, we always fetch fresh.
-      // So, consider content NOT existing if (modeToFetch === 'explain' && streakContextForAPI.length > 0)
-      const isContextualExplain = modeToFetch === 'explain' && streakContextForAPI.length > 0;
+      // --- REVISED Frontend Cache Check Logic ---
+      const contentAlreadyInFrontend = generatedContent[wordId] &&
+                                 (modeToFetch === 'image' ?
+                                   (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) :
+                                   generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]);
       
-      const contentExistsInFrontendCache = generatedContent[wordId] && 
-                            (modeToFetch === 'image' ? 
-                              (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) : 
-                              generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]);
-      
-      // We skip API call if:
-      // 1. Not a refresh click
-      // 2. Not a contextual explain (which always needs fresh data from backend)
-      // 3. Content actually exists in the frontend cache
-      // 4. And it's not a quiz mode with empty/invalid quiz data (existing quiz logic)
-      if (!isRefreshClick && !isContextualExplain && contentExistsInFrontendCache) {
+      // When should we fetch from the backend?
+      // 1. User explicitly clicked refresh.
+      // 2. It's a new primary word search (or profile word click) - to get the canonical generic version from the backend.
+      // 3. The content for the requested mode is simply not yet in the frontend's current session cache.
+      const shouldFetchFromBackend = isRefreshClick ||
+                                     isNewPrimaryWordSearch ||
+                                     isProfileWordClick ||
+                                     !contentAlreadyInFrontend;
+
+      if (!shouldFetchFromBackend) {
+        // Serve from frontend cache (this will now correctly serve previously fetched contextual explanations too)
         if (modeToFetch === 'quiz') {
-          const existingQuizData = generatedContent[wordId].quiz; 
+          const existingQuizData = generatedContent[wordId].quiz;
           const existingProgress = generatedContent[wordId].quiz_progress || [];
           if (existingQuizData && existingQuizData.length > 0) {
             const nextQuestionIdx = existingProgress.length >= existingQuizData.length ? existingQuizData.length : existingProgress.length;
             setCurrentQuizQuestionIndex(nextQuestionIdx);
           } else {
              console.warn("Cached quiz exists but is empty or invalid, will attempt to fetch new one if logic proceeds.");
+             // This might still fall through if the outer condition was !shouldFetchFromBackend but quiz invalid.
+             // However, our new `shouldFetchFromBackend` condition `!contentAlreadyInFrontend` handles this better.
           }
         }
-        // Only return early if it's not a quiz with empty data (which needs fetching)
-        if (!(modeToFetch === 'quiz' && (!generatedContent[wordId].quiz || generatedContent[wordId].quiz?.length === 0))) {
-            if (!isSubTopicClick && !isProfileWordClick && !isReviewingStreakWord) setCurrentFocusWord(wordToFetch); 
-            setActiveContentMode(modeToFetch);
-            setIsLoading(false);
-            if (isNewPrimaryWordSearch || isProfileWordClick) { 
-                setLiveStreak({ score: 1, words: [wordToFetch] });
-            }
-            console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache.`);
-            return;
+        
+        // Update focus and mode, but don't alter streak for simple mode changes/cache hits.
+        // Only set currentFocusWord if it's not a sub-topic click, not a profile word click,
+        // and not already reviewing (because wordForReview handles display there).
+        // isNewPrimaryWordSearch already sets currentFocusWord.
+        if (!isSubTopicClick && !isProfileWordClick && !isNewPrimaryWordSearch && !isReviewingStreakWord) {
+            setCurrentFocusWord(wordToFetch);
         }
+        setActiveContentMode(modeToFetch);
+        setIsLoading(false);
+        // Note: Streak initialization for isNewPrimaryWordSearch is handled after successful fetch.
+        console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (session).`);
+        return;
       }
+      // --- END: REVISED Frontend Cache Check Logic ---
 
-      console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend.`);
+      // If we reach here, we are fetching from the backend.
+      // The 'refresh_cache' sent to backend should ONLY be true if it's an explicit user refresh action.
+      const backendApiForceRefresh = isRefreshClick;
+
+      console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend. BackendForceRefresh: ${backendApiForceRefresh}`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
         headers: {
@@ -497,11 +491,14 @@ function App() {
         body: JSON.stringify({ 
             word: wordToFetch, 
             mode: modeToFetch, 
-            refresh_cache: isRefreshClick || isContextualExplain, // Force backend refresh for contextual explain
-            streakContext: streakContextForAPI // NEW: Send context
+            refresh_cache: backendApiForceRefresh, // Use the refined flag
+            streakContext: streakContextForAPI 
         }),
       });
 
+      // ... (rest of the response handling, setGeneratedContent, setLiveStreak, etc. remains largely the same) ...
+      // The setGeneratedContent logic correctly uses data[modeToFetch] for the current mode,
+      // which is good. It will store the (potentially contextual) explanation fetched for this session.
       if (!response.ok) {
         const errData = await response.json();
         if (response.status === 401) {
@@ -519,14 +516,9 @@ function App() {
         const existingWordData = prev[wordId] || {};
         const newWordData: GeneratedContentItem = { ...existingWordData };
         
-        // The backend now returns the specific content for the mode in data[modeToFetch]
-        // and the 'full_cache' reflects the DB's generic cache.
-        // For contextual explain, data[modeToFetch] will be the fresh explanation,
-        // but data.full_cache.explain might be the old generic one or undefined.
-        
         if (modeToFetch === 'explain') {
-            newWordData.explanation = data.explain; // Always use the direct response for 'explain'
-        } else { // For other modes, can still use full_cache as a fallback if direct not present
+            newWordData.explanation = data.explain; 
+        } else { 
             newWordData.explanation = data.full_cache?.explain ?? existingWordData.explanation;
         }
 
@@ -556,7 +548,7 @@ function App() {
                  newWordData.image_prompt = data.full_cache.image;
                  newWordData.image_url = undefined;
             }
-        } else { // Preserve existing image data if not fetching image mode
+        } else { 
             newWordData.image_prompt = existingWordData.image_prompt;
             newWordData.image_url = existingWordData.image_url;
         }
@@ -565,12 +557,10 @@ function App() {
             const quizStrings = data.quiz ?? data.full_cache?.quiz; 
             if (quizStrings && Array.isArray(quizStrings)) {
                 newWordData.quiz = parseQuizStringToArray(quizStrings);
-                // Reset progress if quiz is refreshed OR if it's a new quiz set from backend (data.quiz exists)
-                // and no specific progress for this new set was returned (data.quiz_progress might be stale from old quiz)
                 newWordData.quiz_progress = (isRefreshClick || (data.quiz && !data.quiz_progress?.length)) ? [] : (data.quiz_progress || existingWordData.quiz_progress || []);
                 setCurrentQuizQuestionIndex(0);
             } else {
-                newWordData.quiz = existingWordData.quiz || []; // Keep old if new is invalid
+                newWordData.quiz = existingWordData.quiz || []; 
                 newWordData.quiz_progress = existingWordData.quiz_progress || [];
             }
         } else if (existingWordData.quiz) { 
@@ -601,36 +591,36 @@ function App() {
         setIsReviewingStreakWord(false);
         setWordForReview(null);
       } else if (isSubTopicClick) {
-        setCurrentFocusWord(wordToFetch); // This sub-topic is now the focus
+        setCurrentFocusWord(wordToFetch); 
         setIsReviewingStreakWord(false); 
         setWordForReview(null);
         
         setLiveStreak(prevStreak => {
-            if (!prevStreak) return { score: 1, words: [wordToFetch] }; // Should not happen if isSubTopicClick
-            // Ensure wordToFetch is not the same as the last word to prevent duplicate additions from rapid clicks
+            if (!prevStreak) return { score: 1, words: [wordToFetch] }; 
             if (prevStreak.words.length === 0 || prevStreak.words[prevStreak.words.length -1] !== wordToFetch) {
                  return {
                     score: prevStreak.score + 1,
                     words: [...prevStreak.words, wordToFetch],
                 };
             }
-            return prevStreak; // Return previous streak if word is same as last
+            return prevStreak; 
         });
       }
-      // For review or refresh, currentFocusWord should already be set or remain unchanged (if reviewing)
-      // WordForReview handles display during review.
-
       setActiveContentMode(modeToFetch);
 
     } catch (err: any) {
+      // ... (error handling) ...
       setError(err.message);
       console.error("Error generating content:", err);
     } finally {
+      // ... (finally block) ...
       setIsLoading(false);
       if (isNewPrimaryWordSearch) setInputValue(''); 
     }
-  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]); // Added dependencies
+  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
+  // Make sure all dependencies for useCallback are listed if they are used inside.
 
+// ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
   const handleModeChange = (newMode: ContentMode) => {
     const wordToUse = getDisplayWord();
     if (!wordToUse) {

@@ -617,102 +617,80 @@ function App() {
     }
   }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
   // Make sure all dependencies for useCallback are listed if they are used inside.
-
-
-// useEffect to handle fetching content when activeContentMode or getDisplayWord() changes
-// This useEffect should primarily initiate a fetch if content for the
-// current word/mode combination is missing and no fetch is already in progress.
-
-  useEffect(() => {
-    const wordToUse = getDisplayWord();
-    const currentMode = activeContentMode;
-
-    if (!wordToUse) {
-        return; // No word in focus, do nothing.
-    }
-
-    const wordId = sanitizeWordForId(wordToUse);
-    const contentItem = generatedContent[wordId]; 
-
-    let contentForModeActuallyExists = contentItem &&
-                                 (currentMode === 'image' ?
-                                   (contentItem.image_url || contentItem.image_prompt) :
-                                   contentItem[currentMode as keyof GeneratedContentItem]);
-    
-    if (currentMode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
-        contentForModeActuallyExists = false;
-    }
-
-    if (!contentForModeActuallyExists && !isLoading) {
-        console.log(`Effect for ${wordToUse}/${currentMode}: Content MISSING and NOT loading. Triggering fetch.`);
-        // Call handleGenerateExplanation:
-        // isNewPrimaryWordSearch = false (this effect is for existing focus/mode changes)
-        // isRefreshClick = false (explicit refresh has its own button/handler)
-        // isSubTopicClick = false (subtopic clicks call HGE directly)
-        // modeOverride = currentMode
-        // isProfileWordClick = false
-        // streakContext will be determined by handleGenerateExplanation based on these flags and component state.
-        handleGenerateExplanation(
-            wordToUse,
-            false, // isNewPrimaryWordSearch
-            false, // isRefreshClick
-            false, // isSubTopicClick
-            currentMode, // modeOverride
-            false  // isProfileWordClick
-        );
-    } else if (contentForModeActuallyExists && currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
-        // If quiz content EXISTS, set up the quiz display state.
-        const progress = contentItem.quiz_progress || [];
-        const quizSetLength = contentItem.quiz.length;
-        let nextQuestionIdx = currentQuizQuestionIndex;
-
-        if (currentQuizQuestionIndex >= quizSetLength) { 
-            nextQuestionIdx = quizSetLength; 
-        } else { 
-            nextQuestionIdx = progress.length < quizSetLength ? progress.length : 0;
-            if(currentQuizQuestionIndex < progress.length && currentQuizQuestionIndex < quizSetLength) {
-                 nextQuestionIdx = currentQuizQuestionIndex;
-            } else if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) { 
-                 nextQuestionIdx = 0;
-            }
-        }
-        setCurrentQuizQuestionIndex(nextQuestionIdx);
-        setSelectedQuizOption(null); 
-        setQuizFeedback(null);
-        setIsQuizAttempted(false);
-    }
-
-}, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]); // Removed liveStreak, currentFocusWord, etc. as HGE gets them from its own closure/state
-
+  
 // ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
- // App.tsx
 
   // App.tsx
 
-  // App.tsx
   const handleModeChange = (newMode: ContentMode) => {
     const wordToUse = getDisplayWord();
-    if (!wordToUse && newMode !== 'explain') { 
+    
+    if (!wordToUse && newMode !== 'explain') { // Allow setting explain even if no word (to show default message)
         setError("No word is currently in focus to change mode.");
+        setActiveContentMode(newMode); // Still set the mode
         return;
     }
     
-    // Only action: set the active mode.
-    // The useEffect listening to activeContentMode will handle fetching or UI setup.
-    setActiveContentMode(newMode);
-
-    // Reset specific UI states for quiz immediately if changing AWAY from quiz
-    // or if changing TO quiz (the useEffect will further refine quiz UI state).
+    // Set mode immediately.
+    setActiveContentMode(newMode); 
+    
+    // Reset specific UI states for quiz if not changing to quiz
+    // or if changing to quiz (the quiz useEffect will further refine if data already exists)
     if (newMode !== 'quiz') {
         setSelectedQuizOption(null);
         setQuizFeedback(null);
-        setIsQuizAttempted(false);
-        // setCurrentQuizQuestionIndex(0); // Let useEffect manage this based on loaded content
+        setIsQuizAttempted(false); 
     } else {
-        // If changing TO quiz, also reset these. useEffect will set them based on loaded data/progress.
+        // If changing TO quiz, also reset these.
+        // The quiz UI useEffect will handle setting currentQuizQuestionIndex based on loaded data/progress.
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
+        // setCurrentQuizQuestionIndex(0); // Let quiz UI useEffect handle this based on progress
+    }
+
+    // If there's no word in focus, we can't fetch specific content for it.
+    if (!wordToUse) {
+        return;
+    }
+
+    // Now, check if we need to fetch content for this newMode for the wordToUse
+    const wordId = sanitizeWordForId(wordToUse);
+    const contentItem = generatedContent[wordId];
+    
+    let contentForNewModeActuallyExists = contentItem &&
+                                  (newMode === 'image' ?
+                                    (contentItem.image_url || contentItem.image_prompt) :
+                                    contentItem[newMode as keyof GeneratedContentItem]);
+
+    // For quiz, if 'quiz' array exists but is empty, consider content as not existing for fetching purposes.
+    if (newMode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
+        contentForNewModeActuallyExists = false;
+    }
+
+    if (!contentForNewModeActuallyExists) {
+        // Content for the new mode doesn't exist or is an empty/invalid quiz, fetch it.
+        // isRefreshClick is false because this is a mode change, not an explicit refresh.
+        console.log(`handleModeChange: Mode is '${newMode}'. Content not in session cache for '${wordToUse}', fetching.`);
+        handleGenerateExplanation(wordToUse, false, false, false, newMode, false);
+    } else {
+        console.log(`handleModeChange: Mode is '${newMode}'. Content already in session cache for '${wordToUse}'.`);
+        // If it's quiz and content exists, make sure the quiz index is appropriate
+        if (newMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
+            const progress = contentItem.quiz_progress || [];
+            const quizSetLength = contentItem.quiz.length;
+            let nextQuestionIdx = currentQuizQuestionIndex; // Start with current
+            if (currentQuizQuestionIndex >= quizSetLength) { // If viewing summary
+                nextQuestionIdx = 0; // Go back to first question if user re-selects quiz mode
+            } else {
+                // If not on summary, try to stay on current or go to current progress
+                nextQuestionIdx = progress.length < quizSetLength ? progress.length : currentQuizQuestionIndex;
+                 if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) { // Just switched from summary
+                     nextQuestionIdx = 0;
+                 }
+            }
+            setCurrentQuizQuestionIndex(nextQuestionIdx);
+        }
     }
   };
 
@@ -836,6 +814,8 @@ function App() {
  // App.tsx
 // Place AFTER handleGenerateExplanation and getDisplayWord are defined
 
+ // App.tsx
+// (Ensure this is the version of the quiz useEffect you are using)
   useEffect(() => {
     const wordToUse = getDisplayWord();
     if (activeContentMode === 'quiz' && wordToUse) {
@@ -848,21 +828,21 @@ function App() {
             if (currentQuizQuestionIndex < quizSet.length) { 
                 const currentQuestion = quizSet[currentQuizQuestionIndex];
                 const attemptedQuestion = progress.find(p => p.question_index === currentQuizQuestionIndex);
-                
-                // Ensure currentQuestion and its options are valid before accessing them
                 if (attemptedQuestion && currentQuestion && currentQuestion.options && currentQuestion.options[currentQuestion.correctOptionKey] !== undefined) { 
                     setSelectedQuizOption(attemptedQuestion.selected_option_key);
-                    setQuizFeedback({ // Corrected object
+                    setQuizFeedback({ 
                         message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
                         isCorrect: attemptedQuestion.is_correct,
                     });
                     setIsQuizAttempted(true);
-                } else if (currentQuestion) { // If not attempted, or if question data is incomplete for feedback
+                } else if (currentQuestion) { 
                     setSelectedQuizOption(null);
                     setQuizFeedback(null);
                     setIsQuizAttempted(false);
                 }
             }
+            // If currentQuizQuestionIndex >= quizSet.length, it's summary view.
+            // No specific option/feedback to set from here for summary view.
         }
     }
     
@@ -872,7 +852,7 @@ function App() {
         setIsQuizAttempted(false);
     }
   }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex]);
-
+  
   const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string, isCorrect: boolean) => {
     if (!authToken) return;
     const wordId = sanitizeWordForId(word);

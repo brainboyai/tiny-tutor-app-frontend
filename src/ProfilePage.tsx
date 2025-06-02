@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect } from 'react'; 
+import React, { useState, useEffect } from 'react';
 import { Heart, User, Home } from 'lucide-react';
 
 // --- Helper Functions ---
-const sanitizeWordForId = (word: string | undefined): string => { 
+const sanitizeWordForId = (word: string | undefined): string => {
   if (typeof word !== 'string' || !word.trim()) {
     // console.warn("sanitizeWordForId received invalid word:", word);
-    return `invalid_word_${Math.random().toString(36).substring(7)}`; 
+    return `invalid_word_${Math.random().toString(36).substring(7)}`;
   }
   return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
@@ -55,16 +55,19 @@ interface GeneratedContent {
 }
 
 interface StreakRecord {
-  id: string; 
+  id: string;
   words: string[];
   score: number;
-  completed_at: string; 
+  completed_at: string;
 }
 
 interface UserProfileData {
   username: string;
   email: string;
   totalWordsExplored: number;
+  quiz_points?: number;
+  total_quiz_questions_answered?: number;
+  total_quiz_questions_correct?: number;
   exploredWords: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }[];
   favoriteWords: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }[];
   streakHistory: StreakRecord[];
@@ -72,11 +75,11 @@ interface UserProfileData {
 
 interface ProfilePageProps {
   currentUser: CurrentUser;
-  userProfileData: UserProfileData | null; 
+  userProfileData: UserProfileData | null;
   onWordSelect: (word: string) => void;
   onToggleFavorite: (word: string, currentStatus: boolean) => Promise<void>;
   onNavigateBack: () => void;
-  generatedContent: GeneratedContent; 
+  generatedContent: GeneratedContent;
 }
 
 const ProfilePageComponent: React.FC<ProfilePageProps> = ({
@@ -92,16 +95,16 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
   useEffect(() => {
     console.log("ProfilePage received userProfileData:", userProfileData);
     if (userProfileData) {
-        console.log("ProfilePage - Explored Words (count):", userProfileData.exploredWords?.length, userProfileData.exploredWords);
-        console.log("ProfilePage - Favorite Words (count):", userProfileData.favoriteWords?.length, userProfileData.favoriteWords);
+      console.log("ProfilePage - Explored Words (count):", userProfileData.exploredWords?.length, userProfileData.exploredWords);
+      console.log("ProfilePage - Favorite Words (count):", userProfileData.favoriteWords?.length, userProfileData.favoriteWords);
     }
   }, [userProfileData]);
 
   const renderWordItem = (wordData: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }, isFavoriteList: boolean = false) => {
     // Defensive check: Ensure wordData and wordData.word are valid before proceeding
     if (!wordData || typeof wordData.word !== 'string' || !wordData.word.trim()) {
-        console.warn("renderWordItem received invalid wordData:", wordData);
-        return <li key={`invalid-word-${Math.random()}`} className="text-red-400 p-2">Error: Invalid word data item.</li>;
+      console.warn("renderWordItem received invalid wordData:", wordData);
+      return <li key={`invalid-word-${Math.random()}`} className="text-red-400 p-2">Error: Invalid word data item.</li>;
     }
     const wordId = sanitizeWordForId(wordData.word); // wordData.word is now guaranteed to be a string
     const currentIsFavorite = generatedContent[wordId]?.is_favorite ?? wordData.is_favorite;
@@ -125,10 +128,10 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
           </button>
         </div>
         {wordData.last_explored_at && (
-            <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             Last explored: {new Date(wordData.last_explored_at).toLocaleDateString()}
             {wordData.first_explored_at && ` (First: ${new Date(wordData.first_explored_at).toLocaleDateString()})`}
-            </p>
+          </p>
         )}
       </li>
     );
@@ -141,14 +144,14 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
       <div className="text-sm text-slate-300">
         Words: {(streak.words || []).map((w, i) => (
           <span
-            key={w + i} 
+            key={w + i}
             className="hover:text-sky-200 cursor-pointer underline"
             onClick={() => {
-                if (typeof w === 'string' && w.trim()) {
-                    onWordSelect(w);
-                } else {
-                    console.warn("Attempted to select invalid word from streak:", w);
-                }
+              if (typeof w === 'string' && w.trim()) {
+                onWordSelect(w);
+              } else {
+                console.warn("Attempted to select invalid word from streak:", w);
+              }
             }}
           >
             {w || "N/A"}
@@ -157,12 +160,12 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
       </div>
     </li>
   );
-  
-  if (!userProfileData) { 
+
+  if (!userProfileData) {
     return (
-        <div className="p-4 md:p-6 bg-slate-800 text-slate-100 min-h-screen flex items-center justify-center">
-            <p>Loading profile data...</p>
-        </div>
+      <div className="p-4 md:p-6 bg-slate-800 text-slate-100 min-h-screen flex items-center justify-center">
+        <p>Loading profile data...</p>
+      </div>
     );
   }
 
@@ -189,6 +192,28 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
             </div>
           </div>
           <p className="text-slate-300">Total Words Explored: <span className="font-bold text-sky-300">{userProfileData.totalWordsExplored}</span></p>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-slate-600">
+          <h3 className="text-lg font-semibold text-sky-300 mb-2">Quiz Stats</h3>
+          <p className="text-slate-300">
+            Quiz Points: <span className="font-bold text-emerald-400">{userProfileData.quiz_points || 0}</span>
+          </p>
+          <p className="text-slate-300">
+            Total Questions Answered: <span className="font-bold text-sky-300">{userProfileData.total_quiz_questions_answered || 0}</span>
+          </p>
+          <p className="text-slate-300">
+            Correct Answers: <span className="font-bold text-green-400">{userProfileData.total_quiz_questions_correct || 0}</span>
+          </p>
+          {userProfileData.total_quiz_questions_answered && userProfileData.total_quiz_questions_answered > 0 ? (
+            <p className="text-slate-300">
+              Accuracy: <span className="font-bold text-amber-400">
+                {(((userProfileData.total_quiz_questions_correct || 0) / userProfileData.total_quiz_questions_answered) * 100).toFixed(1)}%
+              </span>
+            </p>
+          ) : (
+            <p className="text-slate-300">Accuracy: <span className="font-bold text-amber-400">N/A</span></p>
+          )}
         </div>
 
         <div className="mb-6">

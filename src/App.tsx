@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
+import React, { useState, useEffect, useCallback, FormEvent} from 'react';
 import {
   BookOpen,
   Heart,
@@ -175,7 +175,7 @@ function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
-  const modeFetchGuardRef = useRef<string | null>(null);
+  //const modeFetchGuardRef = useRef<string | null>(null);
   
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
@@ -641,7 +641,7 @@ function App() {
 
 // The useEffect hook that should be using modeFetchGuardRef:
 
-useEffect(() => {
+/* useEffect(() => {
     const wordToUse = getDisplayWord();
     const currentMode = activeContentMode;
 
@@ -705,25 +705,65 @@ useEffect(() => {
     }
 
 }, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]);
-// ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
+*/// ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
+
 
 // App.tsx
-  const handleModeChange = (newMode: ContentMode) => {
+const handleModeChange = (newMode: ContentMode) => {
+    const wordToUse = getDisplayWord();
+    
+    // Set mode immediately. This causes a re-render.
     setActiveContentMode(newMode);
 
-    // Reset specific UI states for quiz if not changing to quiz,
-    // or if changing to quiz (the quiz UI useEffect will further refine if data already exists)
+    // Reset quiz UI states immediately for responsiveness
     if (newMode !== 'quiz') {
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false); 
     } else {
-        // When switching TO quiz, also reset these.
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
+        // If quiz data already exists when switching to quiz, prepare for display
+        if (wordToUse) {
+            const wordId = sanitizeWordForId(wordToUse);
+            const contentItem = generatedContent[wordId]; // Read current state
+            if (contentItem?.quiz && contentItem.quiz.length > 0) {
+                const progress = contentItem.quiz_progress || [];
+                const quizSetLength = contentItem.quiz.length;
+                let nextQuestionIdx = (currentQuizQuestionIndex >= quizSetLength || progress.length >= quizSetLength) ? 0 : progress.length;
+                if (currentQuizQuestionIndex < quizSetLength && currentQuizQuestionIndex < progress.length) {
+                     nextQuestionIdx = currentQuizQuestionIndex;
+                }
+                setCurrentQuizQuestionIndex(nextQuestionIdx);
+            }
+        }
     }
-  };
+
+    if (!wordToUse) {
+        if (newMode !== 'explain') setError("No word is currently in focus to change mode.");
+        return; 
+    }
+
+    const wordId = sanitizeWordForId(wordToUse);
+    const contentItem = generatedContent[wordId]; // Read current state again
+    
+    let contentForNewModeActuallyExists = contentItem &&
+                                  (newMode === 'image' ?
+                                    (contentItem.image_url || contentItem.image_prompt) :
+                                    contentItem[newMode as keyof GeneratedContentItem]);
+
+    if (newMode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
+        contentForNewModeActuallyExists = false;
+    }
+
+    if (!contentForNewModeActuallyExists) {
+        console.log(`[handleModeChange] Mode is '<span class="math-inline">\{newMode\}'\. Content for '</span>{wordToUse}' NOT in session cache. Fetching.`);
+        handleGenerateExplanation(wordToUse, false, false, false, newMode, false);
+    } else {
+        console.log(`[handleModeChange] Mode is '<span class="math-inline">\{newMode\}'\. Content for '</span>{wordToUse}' IS in session cache. No fetch needed by handleModeChange.`);
+    }
+};
 
   const handleRefreshContent = () => {
     const wordToUse = getDisplayWord();

@@ -435,14 +435,12 @@ function App() {
     try {
 // Inside handleGenerateExplanation > try block
       // --- REFINED Frontend Cache Check Logic ---
-      const wordItem = generatedContent[wordId]; // Get the item for the wordId once
-
+     const wordItem = generatedContent[wordId];
       let contentActuallyAlreadyInFrontend = wordItem &&
                                  (modeToFetch === 'image' ?
                                    (wordItem.image_url || wordItem.image_prompt) :
                                    wordItem[modeToFetch as keyof GeneratedContentItem]);
 
-      // For quiz, if 'quiz' array exists but is empty, consider content as NOT existing for fetching purposes.
       if (modeToFetch === 'quiz' && wordItem && wordItem.quiz && wordItem.quiz.length === 0) {
           contentActuallyAlreadyInFrontend = false;
       }
@@ -450,32 +448,15 @@ function App() {
       const shouldFetchFromBackend = isRefreshClick ||
                                      isNewPrimaryWordSearch ||
                                      isProfileWordClick ||
-                                     !contentActuallyAlreadyInFrontend; // Use the refined check
+                                     !contentActuallyAlreadyInFrontend;
 
       if (!shouldFetchFromBackend) {
-        // Serve from frontend cache
-        if (modeToFetch === 'quiz') {
-            // If we are here for quiz, contentActuallyAlreadyInFrontend was true,
-            // meaning wordItem.quiz is defined and wordItem.quiz.length > 0.
-            const existingQuizData = wordItem.quiz!; // Assert non-null as it passed the check
-            const existingProgress = wordItem.quiz_progress || [];
-            const nextQuestionIdx = existingProgress.length >= existingQuizData.length ? existingQuizData.length : existingProgress.length;
-            setCurrentQuizQuestionIndex(nextQuestionIdx);
-            // Reset attempt state when serving quiz from cache to ensure fresh interaction for the question
-            setSelectedQuizOption(null);
-            setQuizFeedback(null);
-            setIsQuizAttempted(false);
-        }
-        
-        if (!isSubTopicClick && !isProfileWordClick && !isNewPrimaryWordSearch && !isReviewingStreakWord) {
-            setCurrentFocusWord(wordToFetch);
-        }
-        setActiveContentMode(modeToFetch); // Ensure mode is set if HGE was called with override
-        setIsLoading(false);
-        console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (session).`);
-        return;
+        // ... serve from cache ...
+        setIsLoading(false); // <<< GOOD - isLoading is reset
+        console.log(`Serving '<span class="math-inline">\{modeToFetch\}' for '</span>{wordToFetch}' from frontend cache (session).`);
+        return; // <<< GOOD - exits function
       }
-      // --- END: REFINED Frontend Cache Check Logic ---
+            // --- END: REFINED Frontend Cache Check Logic ---
 
       // If we reach here, we are fetching from the backend.
       // The 'refresh_cache' sent to backend should ONLY be true if it's an explicit user refresh action.

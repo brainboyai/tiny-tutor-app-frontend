@@ -639,18 +639,18 @@ function App() {
 
 // Place this useEffect AFTER getDisplayWord and handleGenerateExplanation are defined
 
+
 useEffect(() => {
     const wordToUse = getDisplayWord();
     const currentMode = activeContentMode;
 
     if (!wordToUse) {
-        // console.log("[Effect Mode/Word Change] No word to use, exiting.");
         modeFetchGuardRef.current = null; // Reset guard if no word
         return;
     }
 
     const wordId = sanitizeWordForId(wordToUse);
-    const currentFetchKey = `${wordId}-${currentMode}`; // Unique key for word/mode combo
+    const currentFetchKey = `<span class="math-inline">\{wordId\}\-</span>{currentMode}`;
 
     const contentItem = generatedContent[wordId];
     let contentForModeExists = contentItem &&
@@ -665,77 +665,73 @@ useEffect(() => {
     console.log(`[Effect Mode/Word Change] Check for: ${currentFetchKey}. ContentExists: ${!!contentForModeExists}, IsLoading: ${isLoading}, Guard: ${modeFetchGuardRef.current}`);
 
     if (!contentForModeExists && !isLoading) {
-        // If content is missing and not loading:
-        // AND if this effect is NOT already trying to fetch this exact word/mode
         if (modeFetchGuardRef.current === currentFetchKey) {
-            // This means the effect re-ran after initiating a fetch for this key,
-            // but generatedContent hasn't updated yet or isLoading didn't prevent it.
-            // We give it one cycle to settle. If content is still missing next time AND isLoading is false,
-            // and the guard is different or null, it might try again.
-            // For now, if guard matches, assume a fetch is "conceptually" in progress by this effect.
-            console.log(`[Effect Mode/Word Change] Guarded: Fetch for ${currentFetchKey} likely in progress or just completed. Waiting for state update.`);
-            return;
+            console.log(`[Effect Mode/Word Change] Guarded: Fetch for ${currentFetchKey} was recently initiated by this effect. Waiting for state update.`);
+            return; 
         }
 
         console.log(`[Effect Mode/Word Change] Triggering fetch for ${currentFetchKey}. Setting guard.`);
-        modeFetchGuardRef.current = currentFetchKey; // Set the guard BEFORE calling HGE
+        modeFetchGuardRef.current = currentFetchKey; 
 
         handleGenerateExplanation(
             wordToUse, false, false, false, currentMode, false
         );
     } else if (contentForModeExists) {
-        // If content now exists for what the guard was set for, clear the guard.
         if (modeFetchGuardRef.current === currentFetchKey) {
             console.log(`[Effect Mode/Word Change] Content for ${currentFetchKey} now exists. Clearing guard.`);
             modeFetchGuardRef.current = null;
         }
 
-        // Quiz UI setup logic (if mode is quiz and content exists)
+        // Specific UI setup for quiz when mode becomes 'quiz' and content is already there
         if (currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
             const progress = contentItem.quiz_progress || [];
             const quizSetLength = contentItem.quiz.length;
-            let nextQuestionIdx = currentQuizQuestionIndex;
+            let nextQuestionIdx = 0; 
+            if (currentQuizQuestionIndex < quizSetLength && currentQuizQuestionIndex < progress.length) {
+                nextQuestionIdx = currentQuizQuestionIndex;
+            } else if (progress.length < quizSetLength) {
+                nextQuestionIdx = progress.length;
+            }
+            if(currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) {
+               nextQuestionIdx = 0; // Reset to first question if coming from summary
+            }
 
-            if (currentQuizQuestionIndex >= quizSetLength) {
-                nextQuestionIdx = 0; 
-            } else {
-                nextQuestionIdx = progress.length < quizSetLength ? progress.length : currentQuizQuestionIndex;
-                 if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0){
-                     nextQuestionIdx = 0;
-                 }
+            // Only update if index needs to change or if quiz options need reset
+            if (currentQuizQuestionIndex !== nextQuestionIdx || selectedQuizOption !== null || quizFeedback !== null || isQuizAttempted !== false) {
+                setCurrentQuizQuestionIndex(nextQuestionIdx);
+                setSelectedQuizOption(null); 
+                setQuizFeedback(null);
+                setIsQuizAttempted(false);
             }
-            // Only update if necessary, and perhaps defer to quiz-specific effect for some parts
-            if (currentQuizQuestionIndex !== nextQuestionIdx) {
-                // setCurrentQuizQuestionIndex(nextQuestionIdx);
-            }
-            // These are generally safe if quiz UI needs reset when mode becomes quiz with data
-            setSelectedQuizOption(null);
-            setQuizFeedback(null);
-            setIsQuizAttempted(false);
         }
     }
-// Dependency array:
+// Dependencies:
 // - activeContentMode, getDisplayWord: Primary triggers for "what" to display.
-// - generatedContent: To re-check if content exists after an update.
-// - isLoading: To know if a global fetch is happening.
-// - handleGenerateExplanation: Because it's called.
-// - currentQuizQuestionIndex: For the quiz setup logic.
+// - generatedContent: To re-check if content exists after an update from ANY source.
+// - isLoading: To avoid fetching if another fetch (e.g. primary search, subtopic click) is active.
+// - handleGenerateExplanation: Because it's called by this effect.
+// - currentQuizQuestionIndex: To correctly re-evaluate quiz setup logic.
 }, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]);
 
 // ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
 
-  const handleModeChange = (newMode: ContentMode) => {
-    // If changing to quiz, reset specific quiz states immediately for responsiveness
-    if (newMode === 'quiz') {
-        // Consider if setCurrentQuizQuestionIndex(0) is always desired here,
-        // or if it should be handled when quiz data actually loads/exists.
-        // For now, let's ensure UI feels responsive.
+  // App.tsx
+const handleModeChange = (newMode: ContentMode) => {
+    // console.log(`[handleModeChange] Setting activeContentMode to: ${newMode}`);
+    setActiveContentMode(newMode);
+
+    // Minimal UI resets for quiz, if any. Most quiz UI setup should be in the quiz display useEffect.
+    if (newMode !== 'quiz') {
+        setSelectedQuizOption(null);
+        setQuizFeedback(null);
+        setIsQuizAttempted(false);
+    } else {
+        // When switching TO quiz, reset these. The quiz UI useEffect will set based on progress.
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
     }
-    setActiveContentMode(newMode);
-  };
+};
 
   const handleRefreshContent = () => {
     const wordToUse = getDisplayWord();
@@ -859,6 +855,7 @@ useEffect(() => {
 
  // App.tsx
 // (Ensure this is the version of the quiz useEffect you are using)
+// App.tsx - Quiz UI useEffect
   useEffect(() => {
     const wordToUse = getDisplayWord();
     if (activeContentMode === 'quiz' && wordToUse) {
@@ -871,7 +868,7 @@ useEffect(() => {
             if (currentQuizQuestionIndex < quizSet.length) { 
                 const currentQuestion = quizSet[currentQuizQuestionIndex];
                 const attemptedQuestion = progress.find(p => p.question_index === currentQuizQuestionIndex);
-                if (attemptedQuestion && currentQuestion && currentQuestion.options && currentQuestion.options[currentQuestion.correctOptionKey] !== undefined) { 
+                if (attemptedQuestion && currentQuestion?.options && currentQuestion.options[currentQuestion.correctOptionKey] !== undefined) { 
                     setSelectedQuizOption(attemptedQuestion.selected_option_key);
                     setQuizFeedback({ 
                         message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
@@ -884,18 +881,16 @@ useEffect(() => {
                     setIsQuizAttempted(false);
                 }
             }
-            // If currentQuizQuestionIndex >= quizSet.length, it's summary view.
-            // No specific option/feedback to set from here for summary view.
         }
     }
-    
+    // Reset quiz UI state if not in quiz mode or no word is active
     if (activeContentMode !== 'quiz' || !wordToUse) {
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
+        // setCurrentQuizQuestionIndex(0); // Generally, don't reset index just because mode changed away.
     }
   }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex]);
-
   const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string, isCorrect: boolean) => {
     if (!authToken) return;
     const wordId = sanitizeWordForId(word);

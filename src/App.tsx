@@ -176,6 +176,7 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
   const modeFetchGuardRef = useRef<string | null>(null);
+  
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
 
@@ -639,18 +640,18 @@ function App() {
 
 // Place this useEffect AFTER getDisplayWord and handleGenerateExplanation are defined
 
-
+// The useEffect hook that should be using modeFetchGuardRef:
 useEffect(() => {
     const wordToUse = getDisplayWord();
     const currentMode = activeContentMode;
 
     if (!wordToUse) {
-        modeFetchGuardRef.current = null; // Reset guard if no word
+        modeFetchGuardRef.current = null; // WRITE operation on the ref
         return;
     }
 
     const wordId = sanitizeWordForId(wordToUse);
-    const currentFetchKey = `<span class="math-inline">\{wordId\}\-</span>{currentMode}`;
+    const currentFetchKey = `${wordId}-${currentMode}`; 
 
     const contentItem = generatedContent[wordId];
     let contentForModeExists = contentItem &&
@@ -662,57 +663,66 @@ useEffect(() => {
         contentForModeExists = false;
     }
 
+    // READ operation on the ref in the log
     console.log(`[Effect Mode/Word Change] Check for: ${currentFetchKey}. ContentExists: ${!!contentForModeExists}, IsLoading: ${isLoading}, Guard: ${modeFetchGuardRef.current}`);
 
     if (!contentForModeExists && !isLoading) {
+        // READ operation on the ref
         if (modeFetchGuardRef.current === currentFetchKey) {
-            console.log(`[Effect Mode/Word Change] Guarded: Fetch for ${currentFetchKey} was recently initiated by this effect. Waiting for state update.`);
+            console.log(`[Effect Mode/Word Change] Guarded: Fetch for ${currentFetchKey} likely in progress by this effect. Waiting for state update.`);
             return; 
         }
 
         console.log(`[Effect Mode/Word Change] Triggering fetch for ${currentFetchKey}. Setting guard.`);
-        modeFetchGuardRef.current = currentFetchKey; 
+        modeFetchGuardRef.current = currentFetchKey; // WRITE operation on the ref
 
         handleGenerateExplanation(
             wordToUse, false, false, false, currentMode, false
         );
+        return; 
+// App.tsx
+// Inside the useEffect hook that handles mode/word changes
+
+    // ... (previous code in the useEffect) ...
+
     } else if (contentForModeExists) {
         if (modeFetchGuardRef.current === currentFetchKey) {
             console.log(`[Effect Mode/Word Change] Content for ${currentFetchKey} now exists. Clearing guard.`);
             modeFetchGuardRef.current = null;
         }
-
-        // Specific UI setup for quiz when mode becomes 'quiz' and content is already there
+        
         if (currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
             const progress = contentItem.quiz_progress || [];
             const quizSetLength = contentItem.quiz.length;
-            let nextQuestionIdx = 0; 
+            let nextQuestionIdx = 0; // Default to first question
+
+            // Determine the logical next question index
             if (currentQuizQuestionIndex < quizSetLength && currentQuizQuestionIndex < progress.length) {
-                nextQuestionIdx = currentQuizQuestionIndex;
+                // If current index is valid and an attempt exists for it (or before it),
+                // consider staying or moving to current progress.
+                // For simplicity on mode switch, let's try starting from current progress or 0.
+                nextQuestionIdx = progress.length < quizSetLength ? progress.length : 0;
             } else if (progress.length < quizSetLength) {
-                nextQuestionIdx = progress.length;
+                nextQuestionIdx = progress.length; // Go to first unanswered
             }
-            if(currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) {
-               nextQuestionIdx = 0; // Reset to first question if coming from summary
+            // If already on summary or beyond, and switching back to quiz, go to first question.
+            if (currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) {
+                nextQuestionIdx = 0;
             }
 
-            // Only update if index needs to change or if quiz options need reset
-            if (currentQuizQuestionIndex !== nextQuestionIdx || selectedQuizOption !== null || quizFeedback !== null || isQuizAttempted !== false) {
-                setCurrentQuizQuestionIndex(nextQuestionIdx);
-                setSelectedQuizOption(null); 
-                setQuizFeedback(null);
-                setIsQuizAttempted(false);
+            // Only update if the index needs to change significantly
+            if (currentQuizQuestionIndex !== nextQuestionIdx) {
+                setCurrentQuizQuestionIndex(nextQuestionIdx); // USE nextQuestionIdx
             }
+            
+            // Always reset attempt state when quiz mode becomes active with content
+            setSelectedQuizOption(null); 
+            setQuizFeedback(null);
+            setIsQuizAttempted(false);
         }
     }
-// Dependencies:
-// - activeContentMode, getDisplayWord: Primary triggers for "what" to display.
-// - generatedContent: To re-check if content exists after an update from ANY source.
-// - isLoading: To avoid fetching if another fetch (e.g. primary search, subtopic click) is active.
-// - handleGenerateExplanation: Because it's called by this effect.
-// - currentQuizQuestionIndex: To correctly re-evaluate quiz setup logic.
+// ... (rest of useEffect and its dependency array)
 }, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]);
-
 // ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
 
   // App.tsx

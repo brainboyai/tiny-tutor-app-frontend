@@ -192,9 +192,7 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
             </div>
           </div>
           <p className="text-slate-300">Total Words Explored: <span className="font-bold text-sky-300">{userProfileData.totalWordsExplored}</span></p>
-        </div>
-
-        <div className="mt-4 pt-4 border-t border-slate-600">
+                <div className="mt-4 pt-4 border-t border-slate-600">
           <h3 className="text-lg font-semibold text-sky-300 mb-2">Quiz Stats</h3>
           <p className="text-slate-300">
             Quiz Points: <span className="font-bold text-emerald-400">{userProfileData.quiz_points || 0}</span>
@@ -215,6 +213,9 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
             <p className="text-slate-300">Accuracy: <span className="font-bold text-amber-400">N/A</span></p>
           )}
         </div>
+        </div>
+
+
 
         <div className="mb-6">
           <div className="flex border-b border-slate-600">

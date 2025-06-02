@@ -9,7 +9,10 @@
 \pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
 
 \f0\fs24 \cf0 Modifications of 1st stable to 2nd build \'97\'97 app.tsx, profile page.tsx(added and split from first stable) and app.py\
+Stable 3 - prompt upgrades and contextual streak\
+Stable 4 - stable no error prompt upgrades and contextual streak\
 \
+Modification stable 2-3 : changes in app.tsx and app.py (additional context functionality in streak)\
 git add .\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
@@ -23,7 +26,7 @@ cd tiny-tutor-frontend-local\
 git add src/App.tsx\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
-\outl0\strokewidth0 \strokec2 "feat: Implement contextual prompts and Caching Option A for explanations"
+\outl0\strokewidth0 \strokec2 "feat: Implement quiz from explanation and display metrics in App.tsx"
 \f0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
 git push origin main\
 \
@@ -47,7 +50,7 @@ cd tiny-tutor-backend-local\
 git add app.py\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
-"ADD: Detailed logging to /login route for debugging 400 error"
+"\outl0\strokewidth0 \strokec2 feat: Update quiz generation and add user metrics in app.py\outl0\strokewidth0 "
 \f0 \kerning1\expnd0\expndtw0 \
 git push origin main\
 \
@@ -112,7 +115,7 @@ Components instead of Individual Components (The Goal of Separation)\
 Physical Properties instead of Unique Physical Properties (How Separation Works)\
 Pure Substances instead of Obtaining Pure Substances (Applications of Separation)\
 \pard\pardeftab720\partightenfactor0
-\cf0 \strokec2 \
-
-\f4 \cf7 \strokec7 \
-}
+\cf0 \strokec2 Prompt - I want these modified such that - 1. there should more intelligence in the context between the primary word and subtopic. 2. there should more intelligence in the contexts between every subtopic 3. the user dives down a rabithole from the primary word down the subtopics in the streak, so make the prompts more intelligent and aware, they have to think like a human, how a human explores anything in real life, for example" we first learn one concept and then learn all the things associated with the primary thing, we become more intelligent as we explore the different aspects of the primary concept and the sub topic and sub\'a0 topic with in subtopic. 4. we are passing the information of all the words the user explored in a streak for the generation of contextually aware explainations for the current word in the streak.5. do not disturb the existing rules and functionality and rules of current prompts. You need to make the prompts aware that they are doing a teacher's job of taking the student down a rabbithole and thereby giving knowledge and IQ. I m also giving the backend file(app.py for logic reference, if you might have anything to say.\
+\
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 Prompt - the loop stopped. but the explain regenerating for contextual or subtopic word explain when toggled between quiz or fact and back to explain.. only explain functionality is regenerating. quiz fact etc are not. I have an idea, evaluate. Since we are making a concept learning game .. what if the user might want to save his contextual word meanings too, other than just a new primary word, can we save every word without just caching in the front end? What if we assign a new tag to the primary word called subject (subject is also fetched by the llm along with the explaination- the prompt should generate the subject along with the explaination, for example if word is photosynthesis, subject is biology, for magnetism - physics, for algebra - math, digestive system - biology, current president of usa - current affairs, louis vitton - lifestyle brand, noun - english, constitution - civics, world war 1 - history, chemical reaction - chemistry, machine learning - computer science etc etc) all these broad subjects that are deduced based on the primary word explaination. and theis subject derived is tagged and stored along with the primary word and all the words in that particular context or streak. I thought of this because, the same word of different subjects wouldnt clash in the database, plus when the user sees his streak history, he could see the subject of the streak and also when he clicks on that particular subject words either primary or subtopics, he should be able to see the subject and the streak context based explaination for the word. also in favourites and all explored words, the words will also have a subject tag , so the user can click on any of the word and go to contextual explaination, as the context / subject is already shown to user. and also we can track which subject is the user more interested and use it for our algorithms later to create more engagement with user subject and word data. what do you think of this idea? do you think we can do something like this at this stage? Im giving current app.py, app.tsx, profilepage. tsx}

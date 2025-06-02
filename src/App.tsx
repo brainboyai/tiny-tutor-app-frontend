@@ -71,7 +71,6 @@ interface StreakRecord {
   completed_at: string; 
 }
 
-// This is the type for elements in exploredWords and favoriteWords arrays
 interface ExploredWordEntry {
   word: string;
   last_explored_at: string;
@@ -86,6 +85,10 @@ interface UserProfileData {
   exploredWords: ExploredWordEntry[];
   favoriteWords: ExploredWordEntry[];
   streakHistory: StreakRecord[];
+  // NEW Fields for quiz metrics
+  quiz_points?: number;
+  total_quiz_questions_answered?: number;
+  total_quiz_questions_correct?: number;
 }
 
 type ContentMode = 'explain' | 'quiz' | 'fact' | 'image' | 'deep_dive';
@@ -268,6 +271,10 @@ function App() {
         exploredWords: processedExploredWords,
         favoriteWords: processedFavoriteWords,
         streakHistory: (data.streak_history || []).sort((a:any, b:any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()),
+        // Add new quiz metrics from backend
+        quiz_points: data.quiz_points,
+        total_quiz_questions_answered: data.total_quiz_questions_answered,
+        total_quiz_questions_correct: data.total_quiz_questions_correct,
       });
       setCurrentUser({ username: data.username, email: data.email, id: data.user_id });
     } catch (err: any) {
@@ -461,6 +468,10 @@ function App() {
               contentExistsInFrontendCache = (typeof currentWordItem.image_url === 'string' && currentWordItem.image_url.length > 0) || 
                                            (typeof currentWordItem.image_prompt === 'string' && currentWordItem.image_prompt.length > 0);
           } else if (modeToFetch === 'quiz') {
+              // For quiz, "exists" means it's an array with items, AND it was generated from the current explanation.
+              // This second part is tricky to check without storing explanation hash with quiz.
+              // For now, if quiz array has items, we consider it "existing" for simple cache check.
+              // The new logic will generate quiz from explanation, so this cache hit means user saw this quiz from this explanation.
               contentExistsInFrontendCache = Array.isArray(currentWordItem.quiz) && currentWordItem.quiz.length > 0;
           }
       }
@@ -482,6 +493,34 @@ function App() {
         return;
       }
 
+      // Prepare body for API call
+      const requestBody: any = { 
+          word: wordToFetch, 
+          mode: modeToFetch, 
+          refresh_cache: isRefreshClick || isContextualExplainCall, // Backend refreshes for contextual explain
+          streakContext: streakContextForAPI 
+      };
+
+      // NEW: If mode is quiz, send current explanation text
+      if (modeToFetch === 'quiz') {
+          const explanationForQuiz = generatedContent[wordId]?.explanation;
+          if (explanationForQuiz) {
+              requestBody.explanation_text = explanationForQuiz;
+          } else {
+              // This case means user clicked 'quiz' before 'explain' was ever loaded for the word.
+              // Backend will require explanation_text. So, we should probably fetch explanation first, then quiz.
+              // Or, show an error/message to user. For now, let backend handle missing explanation_text if it must.
+              // A better UX might be to fetch 'explain' first if 'quiz' is clicked and no explanation exists.
+              // However, to keep this function focused, let's assume backend will error if explanation_text is required and missing.
+              console.warn(`Attempting to fetch quiz for "${wordToFetch}" but no explanation text found in cache. Backend might require it.`);
+              // If explanation_text is absolutely required, we could do:
+              // setError("Please generate an explanation first before taking a quiz for this word.");
+              // setIsLoading(false);
+              // return;
+          }
+      }
+
+
       console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend.`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
@@ -489,12 +528,7 @@ function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ 
-            word: wordToFetch, 
-            mode: modeToFetch, 
-            refresh_cache: isRefreshClick || isContextualExplainCall,
-            streakContext: streakContextForAPI 
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -504,7 +538,14 @@ function App() {
             setShowAuthModal(true);
             setAuthError("Session expired. Please login again.");
         }
-        throw new Error(errData.error || `Failed to generate content (${response.status})`);
+        // Handle specific error from backend if explanation_text was missing for quiz
+        if (modeToFetch === 'quiz' && errData.error === "Explanation text is required to generate a quiz") {
+            setError("Please view the explanation for this word before generating a quiz.");
+        } else {
+            setError(errData.error || `Failed to generate content (${response.status})`);
+        }
+        setIsLoading(false); // Ensure isLoading is false on error
+        return; // Stop further processing
       }
 
       const data = await response.json(); 
@@ -592,13 +633,14 @@ function App() {
       setActiveContentMode(modeToFetch);
 
     } catch (err: any) {
-      setError(err.message);
+      // setError was already set if it's an API error handled above
+      if (!error) setError(err.message); // Set error only if not already set by API response handling
       console.error("Error generating content:", err);
     } finally {
       setIsLoading(false);
       if (isNewPrimaryWordSearch) setInputValue(''); 
     }
-  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
+  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview, error]); // Added `error` to dependency array
 
 
   const handleModeChange = (newMode: ContentMode) => {
@@ -620,7 +662,7 @@ function App() {
         console.log(`[handleModeChange] No existing content object for ${wordId}.`);
     }
     
-    setActiveContentMode(newMode); 
+    // setActiveContentMode(newMode); // Moved down to after cache check or before calling handleGenerateExplanation
     
     if (newMode !== 'quiz') {
         setSelectedQuizOption(null);
@@ -647,7 +689,8 @@ function App() {
     console.log(`[handleModeChange] contentForNewModeExists for ${newMode}: ${modeSpecificContentExists}`);
 
     if (modeSpecificContentExists) {
-        if (newMode === 'quiz' && item) { // Ensure item is defined for quiz logic
+        setActiveContentMode(newMode); // Set active mode when serving from cache
+        if (newMode === 'quiz' && item) { 
             const quizData = item.quiz; 
             const progress = item.quiz_progress || [];
             if (quizData && quizData.length > 0) { 
@@ -658,7 +701,7 @@ function App() {
                 setIsQuizAttempted(false); 
             } else { 
                 console.warn(`[handleModeChange] Quiz found for ${wordToUse}, but it's empty. Re-fetching.`);
-                handleGenerateExplanation(wordToUse, false, false, false, newMode);
+                handleGenerateExplanation(wordToUse, false, false, false, newMode); // newMode is passed as override
             }
         }
         console.log(`[handleModeChange] Serving ${newMode} for ${wordToUse} from cache.`);
@@ -666,7 +709,8 @@ function App() {
     }
     
     console.log(`[handleModeChange] Content for ${newMode} for ${wordToUse} not found or invalid, calling handleGenerateExplanation.`);
-    handleGenerateExplanation(wordToUse, false, false, false, newMode);
+    // setActiveContentMode(newMode); // Set before calling handleGenerateExplanation if it relies on activeContentMode
+    handleGenerateExplanation(wordToUse, false, false, false, newMode); // Pass newMode as override
   };
   
   const handleRefreshContent = () => {
@@ -675,12 +719,10 @@ function App() {
     handleGenerateExplanation(wordToUse, false, true, false, activeContentMode);
   };
 
-  // *** MODIFIED SECTION: handleToggleFavorite to fix TypeScript error TS2345 ***
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => {
     if (!authToken || !word) return;
     const wordId = sanitizeWordForId(word);
 
-    // Optimistic UI update for generatedContent state
     setGeneratedContent(prev => {
         const currentItem = prev[wordId] || {};
         return {
@@ -688,50 +730,41 @@ function App() {
             [wordId]: {
                 ...currentItem,
                 is_favorite: !currentStatus,
-                // Ensure timestamps are present if it's a new item being created implicitly
                 last_explored_at: currentItem.last_explored_at || new Date().toISOString(),
                 first_explored_at: currentItem.first_explored_at || new Date().toISOString(),
             }
         };
     });
 
-    // Optimistic UI update for userProfileData state
     if (userProfileData) {
       setUserProfileData(prevProfileData => {
         if (!prevProfileData) return null;
-
         const newExploredWords = prevProfileData.exploredWords.map(w =>
           w.word === word ? { ...w, is_favorite: !currentStatus } : w
         );
-
         let newFavoriteWords: ExploredWordEntry[];
+        let entryForFavoriteList: ExploredWordEntry;
+        const existingExplored = prevProfileData.exploredWords.find(ew => ew.word === word);
 
-        if (!currentStatus) { // Adding to favorites
-          // Find if word already exists in exploredWords to get its details
-          let entryToAdd = prevProfileData.exploredWords.find(ew => ew.word === word);
-          if (entryToAdd) {
-            // Use details from exploredWords, but update favorite status and last_explored_at
-            entryToAdd = { ...entryToAdd, is_favorite: true, last_explored_at: new Date().toISOString() };
+        if (!currentStatus) { // Add to favorites
+          if (existingExplored) {
+            entryForFavoriteList = { ...existingExplored, is_favorite: true, last_explored_at: new Date().toISOString() };
           } else {
-            // Word is not in explored_words, create a new entry for favorites.
-            // Try to get first_explored_at from generatedContent if available
             const gContentItem = generatedContent[wordId];
-            entryToAdd = {
+            entryForFavoriteList = {
               word: word,
               last_explored_at: new Date().toISOString(),
               is_favorite: true,
               first_explored_at: gContentItem?.first_explored_at || new Date().toISOString(),
             };
           }
-          // Add to favorites, ensuring no duplicates by word
           newFavoriteWords = [
             ...prevProfileData.favoriteWords.filter(fw => fw.word !== word),
-            entryToAdd
+            entryForFavoriteList
           ];
         } else { // Removing from favorites
           newFavoriteWords = prevProfileData.favoriteWords.filter(fw => fw.word !== word);
         }
-
         return {
           ...prevProfileData,
           exploredWords: newExploredWords,
@@ -743,37 +776,25 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/toggle_favorite`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({ word }),
       });
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || 'Failed to toggle favorite');
       }
-      const data = await response.json(); // Backend confirms status
-      
-      // Sync generatedContent with backend status
+      const data = await response.json(); 
       setGeneratedContent(prev => ({
         ...prev,
-        [wordId]: {
-          ...(prev[wordId] || {}),
-          is_favorite: data.is_favorite,
-        }
+        [wordId]: { ...(prev[wordId] || {}), is_favorite: data.is_favorite }
       }));
-      // Refresh profile data from backend to ensure full consistency
       if (authToken) await fetchUserProfile(authToken);
-
     } catch (err: any) {
       setError((err as Error).message);
-      // Revert optimistic UI updates on error by re-fetching profile
-      console.error("Error toggling favorite, reverting with fetchUserProfile:", err);
-      if (authToken) await fetchUserProfile(authToken);
+      console.error("Error toggling favorite, reverting by fetching profile:", err);
+      if (authToken) await fetchUserProfile(authToken); // Re-fetch to revert to DB state
     }
   }, [authToken, fetchUserProfile, userProfileData, generatedContent]);
-  // *** END OF MODIFIED SECTION for handleToggleFavorite ***
 
 
   const handleSubTopicClick = (subTopic: string) => {
@@ -792,7 +813,7 @@ function App() {
 
     setIsReviewingStreakWord(true);
     setWordForReview(clickedWord);
-    setActiveContentMode('explain'); 
+    // setActiveContentMode('explain'); // Set by handleGenerateExplanation
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttempted(false);
@@ -836,12 +857,21 @@ function App() {
                     }
                 }
             } else if (!isLoading && !error && (!quizSet || quizSet.length === 0)) { 
-                console.log(`[useEffect] Quiz mode for ${wordToUse}, but no quiz data. Fetching.`);
-                handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
+                // Check if explanation exists before trying to generate quiz from it
+                const explanationForQuiz = currentWordContent.explanation;
+                if(explanationForQuiz){
+                    console.log(`[useEffect] Quiz mode for ${wordToUse}, but no quiz data. Explanation exists. Fetching quiz.`);
+                    handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
+                } else {
+                    console.log(`[useEffect] Quiz mode for ${wordToUse}, but no quiz data AND no explanation. Fetching explanation first.`);
+                    // Fetch explanation, then quiz will be fetched if user stays in quiz mode (or handleModeChange will call it)
+                    handleGenerateExplanation(wordToUse, false, false, false, 'explain');
+                }
             }
         } else if (!isLoading && !error) {
-             console.log(`[useEffect] Quiz mode for ${wordToUse}, but no content object. Fetching quiz.`);
-            handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
+             console.log(`[useEffect] Quiz mode for ${wordToUse}, but no content object. Fetching explanation then quiz.`);
+            // Fetch explanation first, then quiz can be derived or fetched by other logic
+            handleGenerateExplanation(wordToUse, false, false, false, 'explain');
         }
     }
   }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex, isLoading, error, handleGenerateExplanation]);
@@ -876,11 +906,14 @@ function App() {
                 quiz_progress: data.quiz_progress,
             }
         }));
+        // Fetch user profile to update quiz stats on screen if profile is active or to get latest points
+        if (authToken) await fetchUserProfile(authToken);
+
     } catch (err: any) {
         console.error("Error saving quiz attempt:", err);
         setError("Could not save your quiz progress. Please try again.");
     }
-  }, [authToken]);
+  }, [authToken, fetchUserProfile]); // Added fetchUserProfile
 
   const handleQuizOptionSelect = (optionKey: string) => {
     const wordToUse = getDisplayWord();
@@ -938,6 +971,7 @@ function App() {
   const handleFetchNewQuizSet = () => {
     const wordToUse = getDisplayWord();
     if (!wordToUse) return;
+    // Now this will force a refresh, and if explanation exists, it will be sent to backend for new quiz
     handleGenerateExplanation(wordToUse, false, true, false, 'quiz');
   };
 
@@ -1053,9 +1087,18 @@ function App() {
     if (isLoading && !modeContentAvailable) {
         return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>;
     }
-    if (error && !modeContentAvailable) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
+    // Updated error condition to be more specific
+    if (error && activeContentMode !== 'explain' && !modeContentAvailable) { // If error and trying to show non-explain content that's not loaded
+      return <div className="text-center p-10 text-red-400">Error: {error}. Try generating an explanation first.</div>;
+    } else if (error && !modeContentAvailable){ // General error if content for current mode (even explain) failed
+       return <div className="text-center p-10 text-red-400">Error: {error}</div>;
+    }
+
     if (!content) return <div className="text-center p-10 text-slate-400">No content generated for "{wordToUse}" yet. Try generating an explanation.</div>;
     if (!modeContentAvailable && !isLoading) { 
+        if(activeContentMode === 'quiz' && !content.explanation && !isLoading){
+            return <div className="text-center p-10 text-slate-400">Please generate an explanation first to create a quiz.</div>;
+        }
         return <div className="text-center p-10 text-slate-400">No {activeContentMode} content currently available for "{wordToUse}". Try generating or refreshing.</div>;
     }
     
@@ -1097,7 +1140,7 @@ function App() {
         const progress = content.quiz_progress || [];
 
         if (!quizSet || quizSet.length === 0) {
-            modeContentElement = <p className="text-slate-400">No quiz available for "{wordToUse}". Try generating one or refreshing.</p>;
+            modeContentElement = <p className="text-slate-400">No quiz available for "{wordToUse}". Try generating one from the explanation.</p>;
             break;
         }
         if (currentQuizQuestionIndex >= quizSet.length) { 

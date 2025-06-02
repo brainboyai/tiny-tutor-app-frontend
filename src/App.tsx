@@ -71,12 +71,20 @@ interface StreakRecord {
   completed_at: string; 
 }
 
+// This is the type for elements in exploredWords and favoriteWords arrays
+interface ExploredWordEntry {
+  word: string;
+  last_explored_at: string;
+  is_favorite: boolean;
+  first_explored_at?: string;
+}
+
 interface UserProfileData {
   username: string;
   email: string;
   totalWordsExplored: number;
-  exploredWords: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }[];
-  favoriteWords: { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }[];
+  exploredWords: ExploredWordEntry[];
+  favoriteWords: ExploredWordEntry[];
   streakHistory: StreakRecord[];
 }
 
@@ -230,8 +238,7 @@ function App() {
       const data = await response.json();
       console.log("Raw profile data from backend:", data); 
 
-      // Ensure 'word' field exists and is a non-empty string
-      const processedExploredWords = (data.explored_words || [])
+      const processedExploredWords: ExploredWordEntry[] = (data.explored_words || [])
         .map((w: any) => ({ 
             word: w.word as string, 
             last_explored_at: w.last_explored_at,
@@ -241,7 +248,7 @@ function App() {
         .filter((w: any) => typeof w.word === 'string' && w.word.trim() !== '')
         .sort((a:any, b:any) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime());
 
-      const processedFavoriteWords = (data.favorite_words || [])
+      const processedFavoriteWords: ExploredWordEntry[] = (data.favorite_words || [])
         .map((w: any) => ({ 
             word: w.word as string, 
             last_explored_at: w.last_explored_at,
@@ -404,17 +411,14 @@ function App() {
     const wordId = sanitizeWordForId(wordToFetch);
     const modeToFetch = modeOverride || activeContentMode;
 
-    // --- NEW: Construct streakContextForAPI ---
     let streakContextForAPI: string[] = [];
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         streakContextForAPI = [];
     } else if (isSubTopicClick) {
-        // For a sub-topic, context is the current live streak *before* adding this sub-topic
         if (liveStreak && liveStreak.words.length > 0) {
             streakContextForAPI = [...liveStreak.words];
         }
     } else if (isReviewingStreakWord && wordForReview) {
-        // For reviewing a word in a streak, context is words *before* the reviewed word
         if (liveStreak && liveStreak.words.includes(wordForReview)) {
             const reviewWordIndex = liveStreak.words.indexOf(wordForReview);
             if (reviewWordIndex > 0) {
@@ -422,19 +426,15 @@ function App() {
             }
         }
     } else if (currentFocusWord && !isNewPrimaryWordSearch && !isProfileWordClick && !isSubTopicClick) {
-        // For refreshing current focus word (that's already part of a streak) or changing its mode
         if (liveStreak && liveStreak.words.includes(currentFocusWord)) {
              const currentFocusWordIndex = liveStreak.words.indexOf(currentFocusWord);
-             if (currentFocusWordIndex > 0) { // Only if it's not the first word
+             if (currentFocusWordIndex > 0) {
                 streakContextForAPI = liveStreak.words.slice(0, currentFocusWordIndex);
              }
         } else if (liveStreak && liveStreak.words.length === 1 && liveStreak.words[0] === currentFocusWord) {
-            // Current focus is the primary word of a fresh streak (length 1), context is empty
             streakContextForAPI = [];
         }
     }
-    // --- END: Construct streakContextForAPI ---
-
 
     if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >=1 && authToken) {
         if (liveStreak.score >=2) await saveStreakToServer(liveStreak, authToken);
@@ -448,46 +448,39 @@ function App() {
     }
 
     try {
-      // --- Caching Option A (Frontend Side) ---
-      // If it's 'explain' mode AND there's a context, we always fetch fresh.
-      // So, consider content NOT existing if (modeToFetch === 'explain' && streakContextForAPI.length > 0)
-      // Inside handleGenerateExplanation, the initial caching 'if' block:
-// ...
+      let contentExistsInFrontendCache = false;
+      const currentWordItem = generatedContent[wordId];
+      if (currentWordItem) {
+          if (modeToFetch === 'explain') {
+              contentExistsInFrontendCache = typeof currentWordItem.explanation === 'string';
+          } else if (modeToFetch === 'fact') {
+              contentExistsInFrontendCache = typeof currentWordItem.fact === 'string';
+          } else if (modeToFetch === 'deep_dive') {
+              contentExistsInFrontendCache = typeof currentWordItem.deep_dive === 'string';
+          } else if (modeToFetch === 'image') {
+              contentExistsInFrontendCache = (typeof currentWordItem.image_url === 'string' && currentWordItem.image_url.length > 0) || 
+                                           (typeof currentWordItem.image_prompt === 'string' && currentWordItem.image_prompt.length > 0);
+          } else if (modeToFetch === 'quiz') {
+              contentExistsInFrontendCache = Array.isArray(currentWordItem.quiz) && currentWordItem.quiz.length > 0;
+          }
+      }
+      
+      const isContextualExplainCall = modeToFetch === 'explain' && streakContextForAPI.length > 0;
 
-// ... (after wordId, modeToFetch, streakContextForAPI are defined)
-const isContextualExplain = modeToFetch === 'explain' && streakContextForAPI.length > 0;
-const contentExistsInFrontendCache = generatedContent[wordId] && 
-                          (modeToFetch === 'image' ? 
-                            (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) : 
-                            generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]);
-
-// MODIFIED Condition: Removed the '!isContextualExplain' part.
-if (!isRefreshClick && contentExistsInFrontendCache) {
-  let serveFromCache = true;
-  // Special handling for quiz: if cached quiz array is empty, force fetch.
-  if (modeToFetch === 'quiz' && (!generatedContent[wordId].quiz || generatedContent[wordId].quiz?.length === 0)) {
-    serveFromCache = false; 
-    console.warn("Cached quiz for '" + wordToFetch + "' is empty/invalid, attempting to fetch new one.");
-  }
-
-  if (serveFromCache) {
-    if (!isSubTopicClick && !isProfileWordClick && !isReviewingStreakWord) {
-        // This logic ensures currentFocusWord is updated correctly if this isn't a sub-action
-         if(isNewPrimaryWordSearch || (currentFocusWord === wordToFetch && !isSubTopicClick && !isProfileWordClick)){
-             setCurrentFocusWord(wordToFetch);
+      if (!isRefreshClick && contentExistsInFrontendCache) {
+        if (!isSubTopicClick && !isProfileWordClick && !isReviewingStreakWord) {
+            if(isNewPrimaryWordSearch || (currentFocusWord === wordToFetch && !isSubTopicClick && !isProfileWordClick)){
+                setCurrentFocusWord(wordToFetch);
+           }
         }
-    }
-    setActiveContentMode(modeToFetch); // Ensure active mode reflects what's being served
-    setIsLoading(false);
-    if (isNewPrimaryWordSearch || isProfileWordClick) { 
-        setLiveStreak({ score: 1, words: [wordToFetch] });
-    }
-    console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (handleGenerateExplanation).`);
-    return; // Serve from cache
-  }
-}
-// ... API call logic follows if not returned
-
+        setActiveContentMode(modeToFetch);
+        setIsLoading(false);
+        if (isNewPrimaryWordSearch || isProfileWordClick) { 
+            setLiveStreak({ score: 1, words: [wordToFetch] });
+        }
+        console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (handleGenerateExplanation).`);
+        return;
+      }
 
       console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend.`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -499,8 +492,8 @@ if (!isRefreshClick && contentExistsInFrontendCache) {
         body: JSON.stringify({ 
             word: wordToFetch, 
             mode: modeToFetch, 
-            refresh_cache: isRefreshClick || isContextualExplain, // Force backend refresh for contextual explain
-            streakContext: streakContextForAPI // NEW: Send context
+            refresh_cache: isRefreshClick || isContextualExplainCall,
+            streakContext: streakContextForAPI 
         }),
       });
 
@@ -517,105 +510,85 @@ if (!isRefreshClick && contentExistsInFrontendCache) {
       const data = await response.json(); 
       console.log("Data received from backend:", data);
       
-// Inside the handleGenerateExplanation useCallback, find the setGeneratedContent call:
+      setGeneratedContent(prev => {
+        const existingWordData = prev[wordId] || {};
+        const newWordData: GeneratedContentItem = { ...existingWordData };
 
-setGeneratedContent(prev => {
-  const wordId = sanitizeWordForId(wordToFetch); // Ensure wordToFetch is in scope
-  const existingWordData = prev[wordId] || {};
-  // Start with a copy of the existing data for the word.
-  // Properties will be updated if new data for them is explicitly part of the current fetch.
-  const newWordData: GeneratedContentItem = { ...existingWordData };
+        if (modeToFetch === 'explain') {
+          if (data.explain !== undefined) {
+            newWordData.explanation = data.explain;
+          }
+        } else if (modeToFetch === 'fact') {
+          if (data.fact !== undefined) {
+            newWordData.fact = data.fact;
+          }
+        } else if (modeToFetch === 'deep_dive') {
+          if (data.deep_dive !== undefined) {
+            newWordData.deep_dive = data.deep_dive;
+          }
+        } else if (modeToFetch === 'image') {
+          if (data.image_url !== undefined) {
+            newWordData.image_url = data.image_url;
+            if (data.image_prompt !== undefined) {
+              newWordData.image_prompt = data.image_prompt;
+            }
+          } else if (data.image !== undefined) {
+            newWordData.image_prompt = data.image;
+            newWordData.image_url = undefined;
+          }
+        } else if (modeToFetch === 'quiz') {
+          const quizStrings = data.quiz; 
+          if (quizStrings && Array.isArray(quizStrings)) {
+            newWordData.quiz = parseQuizStringToArray(quizStrings);
+            newWordData.quiz_progress = (isRefreshClick || (data.quiz && !data.quiz_progress?.length)) 
+                                      ? [] 
+                                      : (data.quiz_progress || existingWordData.quiz_progress || []);
+            setCurrentQuizQuestionIndex(0);
+          }
+        }
 
-  // --- Update specific content based on modeToFetch ---
-  if (modeToFetch === 'explain') {
-    // Only update explanation if it was fetched and is defined in the direct response
-    if (data.explain !== undefined) {
-      newWordData.explanation = data.explain;
-    }
-  } else if (modeToFetch === 'fact') {
-    if (data.fact !== undefined) {
-      newWordData.fact = data.fact;
-    }
-  } else if (modeToFetch === 'deep_dive') {
-    if (data.deep_dive !== undefined) {
-      newWordData.deep_dive = data.deep_dive;
-    }
-  } else if (modeToFetch === 'image') {
-    // Handle image data carefully, prioritizing direct response fields
-    if (data.image_url !== undefined) {
-      newWordData.image_url = data.image_url;
-      // If image_url is provided, image_prompt might also be updated or preserved
-      if (data.image_prompt !== undefined) {
-        newWordData.image_prompt = data.image_prompt;
-      }
-    } else if (data.image !== undefined) { // 'data.image' is likely the prompt if image_url is absent
-      newWordData.image_prompt = data.image;
-      newWordData.image_url = undefined; // Explicitly clear URL if only a new prompt is given
-    }
-    // If neither image_url nor image(prompt) is in 'data' for an 'image' mode fetch,
-    // newWordData retains the existing image_url/image_prompt due to the initial spread.
-  } else if (modeToFetch === 'quiz') {
-    // For quiz mode, only use quiz data from the direct API response 'data.quiz'
-    const quizStrings = data.quiz; 
-    if (quizStrings && Array.isArray(quizStrings)) {
-      newWordData.quiz = parseQuizStringToArray(quizStrings);
-      // Reset progress if quiz is refreshed OR if it's a new quiz set from backend
-      newWordData.quiz_progress = (isRefreshClick || (data.quiz && !data.quiz_progress?.length)) 
-                                ? [] 
-                                : (data.quiz_progress || existingWordData.quiz_progress || []);
-      setCurrentQuizQuestionIndex(0);
-    }
-    // If data.quiz is not available from this 'quiz' mode fetch, 
-    // existingWordData.quiz and its progress are preserved due to the initial spread.
-  }
+        if (data.is_favorite !== undefined) {
+          newWordData.is_favorite = data.is_favorite;
+        }
+        newWordData.first_explored_at = existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
+        if (data.last_explored_at) {
+          newWordData.last_explored_at = data.last_explored_at;
+        } else if (modeToFetch) {
+           newWordData.last_explored_at = new Date().toISOString();
+        }
+        
+        const currentModesGenerated = new Set(existingWordData.modes_generated || []);
+        currentModesGenerated.add(modeToFetch);
+        if (data.modes_generated && Array.isArray(data.modes_generated)) {
+          data.modes_generated.forEach((m: string) => currentModesGenerated.add(m));
+        }
+        newWordData.modes_generated = Array.from(currentModesGenerated);
+        
+        console.log(`Processed newWordData for ${wordId} (mode: ${modeToFetch}):`, newWordData);
+        return { ...prev, [wordId]: newWordData };
+      });
 
-  // --- Update shared metadata ---
-  // is_favorite should reflect the latest from the backend for this word
-  newWordData.is_favorite = data.is_favorite !== undefined 
-                            ? data.is_favorite 
-                            : (existingWordData.is_favorite || false);
-  // first_explored_at should be set once and then preserved
-  newWordData.first_explored_at = existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
-  // last_explored_at should reflect this current interaction
-  newWordData.last_explored_at = data.last_explored_at || new Date().toISOString();
-
-  // Consolidate modes_generated:
-  // Start with existing modes, add the current mode, and merge with modes known by the backend.
-  const currentModesGenerated = new Set(existingWordData.modes_generated || []);
-  currentModesGenerated.add(modeToFetch);
-  if (data.modes_generated && Array.isArray(data.modes_generated)) {
-    data.modes_generated.forEach((m: string) => currentModesGenerated.add(m));
-  }
-  newWordData.modes_generated = Array.from(currentModesGenerated);
-  
-  console.log("Processed newWordData for", wordId, ":", newWordData); // Keep this for debugging
-  return { ...prev, [wordId]: newWordData };
-});
       if (isNewPrimaryWordSearch || isProfileWordClick) {
         setCurrentFocusWord(wordToFetch); 
         setLiveStreak({ score: 1, words: [wordToFetch] });
         setIsReviewingStreakWord(false);
         setWordForReview(null);
       } else if (isSubTopicClick) {
-        setCurrentFocusWord(wordToFetch); // This sub-topic is now the focus
+        setCurrentFocusWord(wordToFetch); 
         setIsReviewingStreakWord(false); 
         setWordForReview(null);
         
         setLiveStreak(prevStreak => {
-            if (!prevStreak) return { score: 1, words: [wordToFetch] }; // Should not happen if isSubTopicClick
-            // Ensure wordToFetch is not the same as the last word to prevent duplicate additions from rapid clicks
+            if (!prevStreak) return { score: 1, words: [wordToFetch] }; 
             if (prevStreak.words.length === 0 || prevStreak.words[prevStreak.words.length -1] !== wordToFetch) {
                  return {
                     score: prevStreak.score + 1,
                     words: [...prevStreak.words, wordToFetch],
                 };
             }
-            return prevStreak; // Return previous streak if word is same as last
+            return prevStreak; 
         });
       }
-      // For review or refresh, currentFocusWord should already be set or remain unchanged (if reviewing)
-      // WordForReview handles display during review.
-
       setActiveContentMode(modeToFetch);
 
     } catch (err: any) {
@@ -625,7 +598,8 @@ setGeneratedContent(prev => {
       setIsLoading(false);
       if (isNewPrimaryWordSearch) setInputValue(''); 
     }
-  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]); // Added dependencies
+  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
+
 
   const handleModeChange = (newMode: ContentMode) => {
     const wordToUse = getDisplayWord();
@@ -633,6 +607,19 @@ setGeneratedContent(prev => {
         setError("No word is currently in focus.");
         return;
     }
+    
+    const wordId = sanitizeWordForId(wordToUse);
+    console.log(`[handleModeChange] Attempting to switch to mode: ${newMode} for word: ${wordToUse} (ID: ${wordId})`);
+    if (generatedContent[wordId]) {
+        try {
+            console.log(`[handleModeChange] Existing content for ${wordId}:`, JSON.parse(JSON.stringify(generatedContent[wordId])));
+        } catch (e) {
+            console.log(`[handleModeChange] Existing content for ${wordId} (could not stringify):`, generatedContent[wordId]);
+        }
+    } else {
+        console.log(`[handleModeChange] No existing content object for ${wordId}.`);
+    }
+    
     setActiveContentMode(newMode); 
     
     if (newMode !== 'quiz') {
@@ -641,28 +628,44 @@ setGeneratedContent(prev => {
         setIsQuizAttempted(false); 
     }
 
-    const wordId = sanitizeWordForId(wordToUse);
-    const contentForNewModeExists = generatedContent[wordId] &&
-                                  (newMode === 'image' ?
-                                    (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) :
-                                    generatedContent[wordId][newMode as keyof GeneratedContentItem]); 
+    const item = generatedContent[wordId];
+    let modeSpecificContentExists = false;
+    if (item) {
+        if (newMode === 'explain') {
+            modeSpecificContentExists = typeof item.explanation === 'string';
+        } else if (newMode === 'fact') {
+            modeSpecificContentExists = typeof item.fact === 'string';
+        } else if (newMode === 'deep_dive') {
+            modeSpecificContentExists = typeof item.deep_dive === 'string';
+        } else if (newMode === 'image') {
+            modeSpecificContentExists = (typeof item.image_url === 'string' && item.image_url.length > 0) || 
+                                       (typeof item.image_prompt === 'string' && item.image_prompt.length > 0);
+        } else if (newMode === 'quiz') {
+            modeSpecificContentExists = Array.isArray(item.quiz) && item.quiz.length > 0;
+        }
+    }
+    console.log(`[handleModeChange] contentForNewModeExists for ${newMode}: ${modeSpecificContentExists}`);
 
-    if (contentForNewModeExists) {
-        if (newMode === 'quiz') {
-            const quizData = generatedContent[wordId].quiz; 
-            const progress = generatedContent[wordId].quiz_progress || [];
-            if (quizData && quizData.length > 0) {
+    if (modeSpecificContentExists) {
+        if (newMode === 'quiz' && item) { // Ensure item is defined for quiz logic
+            const quizData = item.quiz; 
+            const progress = item.quiz_progress || [];
+            if (quizData && quizData.length > 0) { 
                 const nextQuestionIdx = progress.length >= quizData.length ? quizData.length : progress.length;
                 setCurrentQuizQuestionIndex(nextQuestionIdx);
                 setSelectedQuizOption(null); 
                 setQuizFeedback(null);
                 setIsQuizAttempted(false); 
             } else { 
+                console.warn(`[handleModeChange] Quiz found for ${wordToUse}, but it's empty. Re-fetching.`);
                 handleGenerateExplanation(wordToUse, false, false, false, newMode);
             }
         }
+        console.log(`[handleModeChange] Serving ${newMode} for ${wordToUse} from cache.`);
         return; 
     }
+    
+    console.log(`[handleModeChange] Content for ${newMode} for ${wordToUse} not found or invalid, calling handleGenerateExplanation.`);
     handleGenerateExplanation(wordToUse, false, false, false, newMode);
   };
   
@@ -672,30 +675,69 @@ setGeneratedContent(prev => {
     handleGenerateExplanation(wordToUse, false, true, false, activeContentMode);
   };
 
+  // *** MODIFIED SECTION: handleToggleFavorite to fix TypeScript error TS2345 ***
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => {
     if (!authToken || !word) return;
     const wordId = sanitizeWordForId(word);
 
-    setGeneratedContent(prev => ({
-      ...prev,
-      [wordId]: {
-        ...(prev[wordId] || {}),
-        is_favorite: !currentStatus,
-      }
-    }));
-    if (userProfileData) {
-        const newExploredWords = userProfileData.exploredWords.map(w => 
-            w.word === word ? { ...w, is_favorite: !currentStatus } : w
-        );
-        const newFavoriteWords = !currentStatus 
-            ? [...userProfileData.favoriteWords, { word, last_explored_at: new Date().toISOString(), is_favorite: true, first_explored_at: generatedContent[wordId]?.first_explored_at || new Date().toISOString() }]
-            : userProfileData.favoriteWords.filter(w => w.word !== word);
-
-        setUserProfileData(prev => prev ? ({
+    // Optimistic UI update for generatedContent state
+    setGeneratedContent(prev => {
+        const currentItem = prev[wordId] || {};
+        return {
             ...prev,
-            exploredWords: newExploredWords,
-            favoriteWords: newFavoriteWords.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
-        }) : null);
+            [wordId]: {
+                ...currentItem,
+                is_favorite: !currentStatus,
+                // Ensure timestamps are present if it's a new item being created implicitly
+                last_explored_at: currentItem.last_explored_at || new Date().toISOString(),
+                first_explored_at: currentItem.first_explored_at || new Date().toISOString(),
+            }
+        };
+    });
+
+    // Optimistic UI update for userProfileData state
+    if (userProfileData) {
+      setUserProfileData(prevProfileData => {
+        if (!prevProfileData) return null;
+
+        const newExploredWords = prevProfileData.exploredWords.map(w =>
+          w.word === word ? { ...w, is_favorite: !currentStatus } : w
+        );
+
+        let newFavoriteWords: ExploredWordEntry[];
+
+        if (!currentStatus) { // Adding to favorites
+          // Find if word already exists in exploredWords to get its details
+          let entryToAdd = prevProfileData.exploredWords.find(ew => ew.word === word);
+          if (entryToAdd) {
+            // Use details from exploredWords, but update favorite status and last_explored_at
+            entryToAdd = { ...entryToAdd, is_favorite: true, last_explored_at: new Date().toISOString() };
+          } else {
+            // Word is not in explored_words, create a new entry for favorites.
+            // Try to get first_explored_at from generatedContent if available
+            const gContentItem = generatedContent[wordId];
+            entryToAdd = {
+              word: word,
+              last_explored_at: new Date().toISOString(),
+              is_favorite: true,
+              first_explored_at: gContentItem?.first_explored_at || new Date().toISOString(),
+            };
+          }
+          // Add to favorites, ensuring no duplicates by word
+          newFavoriteWords = [
+            ...prevProfileData.favoriteWords.filter(fw => fw.word !== word),
+            entryToAdd
+          ];
+        } else { // Removing from favorites
+          newFavoriteWords = prevProfileData.favoriteWords.filter(fw => fw.word !== word);
+        }
+
+        return {
+          ...prevProfileData,
+          exploredWords: newExploredWords,
+          favoriteWords: newFavoriteWords.sort((a, b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
+        };
+      });
     }
 
     try {
@@ -711,7 +753,9 @@ setGeneratedContent(prev => {
         const errData = await response.json();
         throw new Error(errData.error || 'Failed to toggle favorite');
       }
-      const data = await response.json();
+      const data = await response.json(); // Backend confirms status
+      
+      // Sync generatedContent with backend status
       setGeneratedContent(prev => ({
         ...prev,
         [wordId]: {
@@ -719,45 +763,32 @@ setGeneratedContent(prev => {
           is_favorite: data.is_favorite,
         }
       }));
-      if (activeView === 'profile' || userProfileData) {
-          await fetchUserProfile(authToken);
-      }
+      // Refresh profile data from backend to ensure full consistency
+      if (authToken) await fetchUserProfile(authToken);
 
     } catch (err: any) {
-      setError(err.message);
-      setGeneratedContent(prev => ({
-        ...prev,
-        [wordId]: {
-          ...(prev[wordId] || {}),
-          is_favorite: currentStatus, 
-        }
-      }));
-      if (userProfileData) { 
-        const revertedExploredWords = userProfileData.exploredWords.map(w => 
-            w.word === word ? { ...w, is_favorite: currentStatus } : w
-        );
-        const revertedFavoriteWords = currentStatus 
-            ? [...userProfileData.favoriteWords, { word, last_explored_at: new Date().toISOString(), is_favorite: true, first_explored_at: generatedContent[wordId]?.first_explored_at || new Date().toISOString() }]
-            : userProfileData.favoriteWords.filter(w => w.word !== word);
-        setUserProfileData(prev => prev ? ({
-            ...prev,
-            exploredWords: revertedExploredWords,
-            favoriteWords: revertedFavoriteWords.sort((a,b) => new Date(b.last_explored_at).getTime() - new Date(a.last_explored_at).getTime()),
-        }) : null);
-      }
+      setError((err as Error).message);
+      // Revert optimistic UI updates on error by re-fetching profile
+      console.error("Error toggling favorite, reverting with fetchUserProfile:", err);
+      if (authToken) await fetchUserProfile(authToken);
     }
-  }, [authToken, fetchUserProfile, activeView, userProfileData, generatedContent]);
+  }, [authToken, fetchUserProfile, userProfileData, generatedContent]);
+  // *** END OF MODIFIED SECTION for handleToggleFavorite ***
 
 
   const handleSubTopicClick = (subTopic: string) => {
-    if (!currentFocusWord) return; 
+    if (!currentFocusWord && (!liveStreak || liveStreak.words.length === 0)) {
+        console.warn("SubTopicClick: No current focus word or live streak. Treating as new primary search.");
+        handleGenerateExplanation(subTopic, true, false, false, 'explain');
+        return;
+    }
     setIsReviewingStreakWord(false);
     setWordForReview(null);
     handleGenerateExplanation(subTopic, false, false, true, 'explain');
   };
 
   const handleStreakWordClick = (clickedWord: string) => {
-    if (getDisplayWord() === clickedWord) return; 
+    if (getDisplayWord() === clickedWord && activeContentMode === 'explain' && isReviewingStreakWord) return; 
 
     setIsReviewingStreakWord(true);
     setWordForReview(clickedWord);
@@ -765,14 +796,8 @@ setGeneratedContent(prev => {
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttempted(false);
-
-    const wordId = sanitizeWordForId(clickedWord);
-    if (!generatedContent[wordId] || !generatedContent[wordId].explanation) {
-        handleGenerateExplanation(clickedWord, false, false, false, 'explain');
-    }
-    if (activeContentMode === 'quiz') {
-        setCurrentQuizQuestionIndex(0);
-    }
+    
+    handleGenerateExplanation(clickedWord, false, false, false, 'explain');
   };
   
   const handleWordSelectionFromProfile = (word: string) => {
@@ -786,29 +811,36 @@ setGeneratedContent(prev => {
     if (activeContentMode === 'quiz' && wordToUse) {
         const wordId = sanitizeWordForId(wordToUse);
         const currentWordContent = generatedContent[wordId];
-        const quizSet = currentWordContent?.quiz; 
-        const progress = currentWordContent?.quiz_progress || [];
+        
+        if (currentWordContent) {
+            const quizSet = currentWordContent.quiz; 
+            const progress = currentWordContent.quiz_progress || [];
 
-        if (quizSet && quizSet.length > 0) {
-            const questionToDisplayIndex = currentQuizQuestionIndex < quizSet.length ? currentQuizQuestionIndex : progress.length;
+            if (quizSet && quizSet.length > 0) {
+                const questionToDisplayIndex = currentQuizQuestionIndex < quizSet.length ? currentQuizQuestionIndex : progress.length;
 
-            if (questionToDisplayIndex < quizSet.length) { 
-                const currentQuestion = quizSet[questionToDisplayIndex];
-                const attemptedQuestion = progress.find(p => p.question_index === questionToDisplayIndex);
-                if (attemptedQuestion && currentQuestion && currentQuestion.options) { 
-                    setSelectedQuizOption(attemptedQuestion.selected_option_key);
-                    setQuizFeedback({
-                        message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
-                        isCorrect: attemptedQuestion.is_correct,
-                    });
-                    setIsQuizAttempted(true);
-                } else {
-                    setSelectedQuizOption(null);
-                    setQuizFeedback(null);
-                    setIsQuizAttempted(false);
+                if (questionToDisplayIndex < quizSet.length) { 
+                    const currentQuestion = quizSet[questionToDisplayIndex];
+                    const attemptedQuestion = progress.find(p => p.question_index === questionToDisplayIndex);
+                    if (attemptedQuestion && currentQuestion && currentQuestion.options) { 
+                        setSelectedQuizOption(attemptedQuestion.selected_option_key);
+                        setQuizFeedback({
+                            message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
+                            isCorrect: attemptedQuestion.is_correct,
+                        });
+                        setIsQuizAttempted(true);
+                    } else {
+                        setSelectedQuizOption(null);
+                        setQuizFeedback(null);
+                        setIsQuizAttempted(false);
+                    }
                 }
+            } else if (!isLoading && !error && (!quizSet || quizSet.length === 0)) { 
+                console.log(`[useEffect] Quiz mode for ${wordToUse}, but no quiz data. Fetching.`);
+                handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
             }
-        } else if (!isLoading && !error && currentWordContent && !currentWordContent.quiz) { 
+        } else if (!isLoading && !error) {
+             console.log(`[useEffect] Quiz mode for ${wordToUse}, but no content object. Fetching quiz.`);
             handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
         }
     }
@@ -855,10 +887,15 @@ setGeneratedContent(prev => {
     if (!wordToUse) return;
 
     const wordId = sanitizeWordForId(wordToUse);
-    const quizSet = generatedContent[wordId]?.quiz; 
+    const currentGeneratedContent = generatedContent[wordId]; 
+    if (!currentGeneratedContent) {
+        console.error("No generated content found for word:", wordToUse);
+        return;
+    }
+    const quizSet = currentGeneratedContent.quiz; 
     if (!quizSet || currentQuizQuestionIndex >= quizSet.length) return; 
 
-    const progress = generatedContent[wordId]?.quiz_progress || [];
+    const progress = currentGeneratedContent.quiz_progress || [];
     const alreadyAnsweredInDb = progress.find(p => p.question_index === currentQuizQuestionIndex);
     if (alreadyAnsweredInDb || isQuizAttempted) return; 
 
@@ -886,8 +923,12 @@ setGeneratedContent(prev => {
     const wordId = sanitizeWordForId(wordToUse);
     const quizSet = generatedContent[wordId]?.quiz;
 
-    if (quizSet) {
-        setCurrentQuizQuestionIndex(prevIdx => prevIdx + 1);
+    if (quizSet) { 
+        if (currentQuizQuestionIndex < quizSet.length - 1) {
+             setCurrentQuizQuestionIndex(prevIdx => prevIdx + 1);
+        } else {
+            setCurrentQuizQuestionIndex(quizSet.length); 
+        }
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false);
@@ -990,19 +1031,33 @@ setGeneratedContent(prev => {
     if (isLoading && !wordToUse) return <div className="text-center p-10 text-slate-400">Loading...</div>; 
     if (!wordToUse) return <div className="text-center p-10 text-slate-400 text-lg">Enter a word or concept above to begin your learning journey!</div>;
 
-    const wordId = sanitizeWordForId(wordToUse);
-    const content = generatedContent[wordId];
+    const wordIdForContent = sanitizeWordForId(wordToUse); 
+    const content = generatedContent[wordIdForContent];
 
-    const hasContentForMode = content && 
-                            (activeContentMode === 'image' ? 
-                              (content.image_url || content.image_prompt) : 
-                              content[activeContentMode as keyof GeneratedContentItem]); 
+    let modeContentAvailable = false;
+    if (content) {
+        if (activeContentMode === 'explain') {
+            modeContentAvailable = typeof content.explanation === 'string' && content.explanation.length > 0;
+        } else if (activeContentMode === 'fact') {
+            modeContentAvailable = typeof content.fact === 'string' && content.fact.length > 0;
+        } else if (activeContentMode === 'deep_dive') {
+            modeContentAvailable = typeof content.deep_dive === 'string' && content.deep_dive.length > 0;
+        } else if (activeContentMode === 'image') {
+            modeContentAvailable = (typeof content.image_url === 'string' && content.image_url.length > 0) || 
+                                 (typeof content.image_prompt === 'string' && content.image_prompt.length > 0);
+        } else if (activeContentMode === 'quiz') {
+            modeContentAvailable = Array.isArray(content.quiz) && content.quiz.length > 0;
+        }
+    }
 
-    if (isLoading && !hasContentForMode) {
+    if (isLoading && !modeContentAvailable) {
         return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>;
     }
-    if (error && !hasContentForMode) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
+    if (error && !modeContentAvailable) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
     if (!content) return <div className="text-center p-10 text-slate-400">No content generated for "{wordToUse}" yet. Try generating an explanation.</div>;
+    if (!modeContentAvailable && !isLoading) { 
+        return <div className="text-center p-10 text-slate-400">No {activeContentMode} content currently available for "{wordToUse}". Try generating or refreshing.</div>;
+    }
     
     const currentIsFavorite = content.is_favorite || false;
 
@@ -1027,7 +1082,6 @@ setGeneratedContent(prev => {
             return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />;
         });
     };
-
 
     let modeContentElement = null;
     switch (activeContentMode) {
@@ -1124,9 +1178,9 @@ setGeneratedContent(prev => {
       case 'image':
         modeContentElement = (
             <div>
-                {content.image_url ? (
+                {(content.image_url && content.image_url.length > 0) ? (
                     <img src={content.image_url} alt={`Generated for ${wordToUse}`} className="rounded-lg shadow-lg mx-auto max-w-full h-auto max-h-[400px] object-contain" />
-                ) : content.image_prompt ? ( 
+                ) : (content.image_prompt && content.image_prompt.length > 0) ? ( 
                     <p className="text-slate-400 italic">{content.image_prompt}</p>
                 ) : (
                     <p className="text-slate-400">No image available. Try generating one.</p>
@@ -1155,7 +1209,6 @@ setGeneratedContent(prev => {
             >
                 <Heart size={20} fill={currentIsFavorite ? 'currentColor' : 'none'} />
             </button>
-            {/* Conditionally render Refresh button only for 'explain' mode */}
             {activeContentMode === 'explain' && (
                 <button 
                     onClick={handleRefreshContent}
@@ -1331,4 +1384,3 @@ setGeneratedContent(prev => {
 }
 
 export default App;
-

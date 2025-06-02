@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, FormEvent} from 'react';
+import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import {
   BookOpen,
   Heart,
@@ -175,8 +175,7 @@ function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
-  //const modeFetchGuardRef = useRef<string | null>(null);
-  
+
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('authToken'));
 
@@ -377,7 +376,6 @@ function App() {
     console.log("User logged out");
   }, [liveStreak, authToken, saveStreakToServer]);
 
-// ... (end of imports and other functions remain the same) ...
 
   const handleGenerateExplanation = useCallback(async (
     wordToFetch: string,
@@ -387,20 +385,36 @@ function App() {
     modeOverride?: ContentMode,
     isProfileWordClick: boolean = false
   ) => {
-    // ... (initial checks for wordToFetch, authToken, setIsLoading, etc. remain the same) ...
+    if (!wordToFetch.trim()) {
+      setError("Please enter a word or concept.");
+      return;
+    }
+    if (!authToken) {
+      setShowAuthModal(true);
+      setAuthError("Please login to generate content.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setQuizFeedback(null);
+    setSelectedQuizOption(null);
+    setIsQuizAttempted(false);
 
     const wordId = sanitizeWordForId(wordToFetch);
     const modeToFetch = modeOverride || activeContentMode;
 
-    // --- Construct streakContextForAPI (Existing logic is good) ---
+    // --- NEW: Construct streakContextForAPI ---
     let streakContextForAPI: string[] = [];
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         streakContextForAPI = [];
     } else if (isSubTopicClick) {
+        // For a sub-topic, context is the current live streak *before* adding this sub-topic
         if (liveStreak && liveStreak.words.length > 0) {
             streakContextForAPI = [...liveStreak.words];
         }
     } else if (isReviewingStreakWord && wordForReview) {
+        // For reviewing a word in a streak, context is words *before* the reviewed word
         if (liveStreak && liveStreak.words.includes(wordForReview)) {
             const reviewWordIndex = liveStreak.words.indexOf(wordForReview);
             if (reviewWordIndex > 0) {
@@ -408,24 +422,25 @@ function App() {
             }
         }
     } else if (currentFocusWord && !isNewPrimaryWordSearch && !isProfileWordClick && !isSubTopicClick) {
+        // For refreshing current focus word (that's already part of a streak) or changing its mode
         if (liveStreak && liveStreak.words.includes(currentFocusWord)) {
              const currentFocusWordIndex = liveStreak.words.indexOf(currentFocusWord);
-             if (currentFocusWordIndex > 0) {
+             if (currentFocusWordIndex > 0) { // Only if it's not the first word
                 streakContextForAPI = liveStreak.words.slice(0, currentFocusWordIndex);
              }
         } else if (liveStreak && liveStreak.words.length === 1 && liveStreak.words[0] === currentFocusWord) {
+            // Current focus is the primary word of a fresh streak (length 1), context is empty
             streakContextForAPI = [];
         }
     }
     // --- END: Construct streakContextForAPI ---
 
-    // Logic for saving previous streak (Existing logic is good)
+
     if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >=1 && authToken) {
         if (liveStreak.score >=2) await saveStreakToServer(liveStreak, authToken);
         setLiveStreak(null); 
     }
     
-    // Logic for setting focus on new primary word (Existing logic is good)
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         setCurrentFocusWord(wordToFetch);
         setIsReviewingStreakWord(false); 
@@ -433,36 +448,46 @@ function App() {
     }
 
     try {
-// Inside handleGenerateExplanation > try block
-      // --- REFINED Frontend Cache Check Logic ---
-     const wordItem = generatedContent[wordId];
-      let contentActuallyAlreadyInFrontend = wordItem &&
-                                 (modeToFetch === 'image' ?
-                                   (wordItem.image_url || wordItem.image_prompt) :
-                                   wordItem[modeToFetch as keyof GeneratedContentItem]);
-
-      if (modeToFetch === 'quiz' && wordItem && wordItem.quiz && wordItem.quiz.length === 0) {
-          contentActuallyAlreadyInFrontend = false;
+      // --- Caching Option A (Frontend Side) ---
+      // If it's 'explain' mode AND there's a context, we always fetch fresh.
+      // So, consider content NOT existing if (modeToFetch === 'explain' && streakContextForAPI.length > 0)
+      const isContextualExplain = modeToFetch === 'explain' && streakContextForAPI.length > 0;
+      
+      const contentExistsInFrontendCache = generatedContent[wordId] && 
+                            (modeToFetch === 'image' ? 
+                              (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) : 
+                              generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]);
+      
+      // We skip API call if:
+      // 1. Not a refresh click
+      // 2. Not a contextual explain (which always needs fresh data from backend)
+      // 3. Content actually exists in the frontend cache
+      // 4. And it's not a quiz mode with empty/invalid quiz data (existing quiz logic)
+      if (!isRefreshClick && !isContextualExplain && contentExistsInFrontendCache) {
+        if (modeToFetch === 'quiz') {
+          const existingQuizData = generatedContent[wordId].quiz; 
+          const existingProgress = generatedContent[wordId].quiz_progress || [];
+          if (existingQuizData && existingQuizData.length > 0) {
+            const nextQuestionIdx = existingProgress.length >= existingQuizData.length ? existingQuizData.length : existingProgress.length;
+            setCurrentQuizQuestionIndex(nextQuestionIdx);
+          } else {
+             console.warn("Cached quiz exists but is empty or invalid, will attempt to fetch new one if logic proceeds.");
+          }
+        }
+        // Only return early if it's not a quiz with empty data (which needs fetching)
+        if (!(modeToFetch === 'quiz' && (!generatedContent[wordId].quiz || generatedContent[wordId].quiz?.length === 0))) {
+            if (!isSubTopicClick && !isProfileWordClick && !isReviewingStreakWord) setCurrentFocusWord(wordToFetch); 
+            setActiveContentMode(modeToFetch);
+            setIsLoading(false);
+            if (isNewPrimaryWordSearch || isProfileWordClick) { 
+                setLiveStreak({ score: 1, words: [wordToFetch] });
+            }
+            console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache.`);
+            return;
+        }
       }
 
-      const shouldFetchFromBackend = isRefreshClick ||
-                                     isNewPrimaryWordSearch ||
-                                     isProfileWordClick ||
-                                     !contentActuallyAlreadyInFrontend;
-
-      if (!shouldFetchFromBackend) {
-        // ... serve from cache ...
-        setIsLoading(false); // <<< GOOD - isLoading is reset
-        console.log(`Serving '<span class="math-inline">\{modeToFetch\}' for '</span>{wordToFetch}' from frontend cache (session).`);
-        return; // <<< GOOD - exits function
-      }
-            // --- END: REFINED Frontend Cache Check Logic ---
-
-      // If we reach here, we are fetching from the backend.
-      // The 'refresh_cache' sent to backend should ONLY be true if it's an explicit user refresh action.
-      const backendApiForceRefresh = isRefreshClick;
-
-      console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend. BackendForceRefresh: ${backendApiForceRefresh}`);
+      console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend.`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
         method: 'POST',
         headers: {
@@ -472,115 +497,102 @@ function App() {
         body: JSON.stringify({ 
             word: wordToFetch, 
             mode: modeToFetch, 
-            refresh_cache: backendApiForceRefresh, // Use the refined flag
-            streakContext: streakContextForAPI 
+            refresh_cache: isRefreshClick || isContextualExplain, // Force backend refresh for contextual explain
+            streakContext: streakContextForAPI // NEW: Send context
         }),
       });
 
-      // ... (rest of the response handling, setGeneratedContent, setLiveStreak, etc. remains largely the same) ...
-      // The setGeneratedContent logic correctly uses data[modeToFetch] for the current mode,
-      // which is good. It will store the (potentially contextual) explanation fetched for this session.
       if (!response.ok) {
-        let errorMessage = `Failed to generate content (${response.status})`;
-        if (response.status === 429) {
-            errorMessage = "Too many requests. Please try again in a little while. 🐢";
-        } else {
-            try {
-                const errData = await response.json(); // Try to parse JSON error first
-                errorMessage = errData.error || errorMessage;
-            } catch (e) {
-                // If response.json() fails, it means the error response wasn't JSON
-                const textError = await response.text(); // Get the response as text
-                console.error("Non-JSON error response from server:", textError);
-                // You might not want to show the full HTML textError to the user.
-                // So, stick with a generic message or a specific one for common statuses.
-            }
-        }
-        if (response.status === 401) { // Specific handling for 401
+        const errData = await response.json();
+        if (response.status === 401) {
             handleLogout(); 
             setShowAuthModal(true);
             setAuthError("Session expired. Please login again.");
-            // Don't throw here, as handleLogout will redirect or show modal
-            // but set an error for the user to see briefly if needed.
-            setError("Your session has expired. Please log in.");
-            return; // Exit after handling 401
         }
-        throw new Error(errorMessage);
+        throw new Error(errData.error || `Failed to generate content (${response.status})`);
       }
 
       const data = await response.json(); 
       console.log("Data received from backend:", data);
       
-// Inside the try...catch block of handleGenerateExplanation, after `const data = await response.json();`
       setGeneratedContent(prev => {
-        const wordIdToUpdate = sanitizeWordForId(data.word); 
-        const existingWordData = prev[wordIdToUpdate] || {};
+        const existingWordData = prev[wordId] || {};
+        const newWordData: GeneratedContentItem = { ...existingWordData };
         
-        const newWordData: GeneratedContentItem = { 
-            ...existingWordData,
-            is_favorite: data.is_favorite !== undefined ? data.is_favorite : (existingWordData.is_favorite || false),
-            last_explored_at: data.last_explored_at || new Date().toISOString(),
-            first_explored_at: existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString(),
-        };
+        // The backend now returns the specific content for the mode in data[modeToFetch]
+        // and the 'full_cache' reflects the DB's generic cache.
+        // For contextual explain, data[modeToFetch] will be the fresh explanation,
+        // but data.full_cache.explain might be the old generic one or undefined.
+        
+        if (modeToFetch === 'explain') {
+            newWordData.explanation = data.explain; // Always use the direct response for 'explain'
+        } else { // For other modes, can still use full_cache as a fallback if direct not present
+            newWordData.explanation = data.full_cache?.explain ?? existingWordData.explanation;
+        }
 
-        if (modeToFetch === 'explain' && data.explain !== undefined) {
-            newWordData.explanation = data.explain;
-        }
-        if (modeToFetch === 'fact' && data.fact !== undefined) {
+        if (modeToFetch === 'fact') {
             newWordData.fact = data.fact;
+        } else {
+            newWordData.fact = data.full_cache?.fact ?? existingWordData.fact;
         }
-        if (modeToFetch === 'deep_dive' && data.deep_dive !== undefined) {
+        
+        if (modeToFetch === 'deep_dive') {
             newWordData.deep_dive = data.deep_dive;
+        } else {
+            newWordData.deep_dive = data.full_cache?.deep_dive ?? existingWordData.deep_dive;
         }
+
         if (modeToFetch === 'image') {
-            if (data.image_url !== undefined) {
+            if (data.image_url) { 
                 newWordData.image_url = data.image_url;
-                newWordData.image_prompt = data.image_prompt !== undefined ? data.image_prompt : existingWordData.image_prompt;
-            } else if (data.image !== undefined) { 
-                newWordData.image_prompt = data.image;
+                newWordData.image_prompt = data.image_prompt ?? data.full_cache?.image_prompt ?? existingWordData.image_prompt;
+            } else if (data.image) { 
+                newWordData.image_prompt = data.image; 
                 newWordData.image_url = undefined; 
+            } else if (data.full_cache?.image_url) { 
+                 newWordData.image_url = data.full_cache.image_url;
+                 newWordData.image_prompt = data.full_cache.image_prompt ?? existingWordData.image_prompt;
+            } else if (data.full_cache?.image) { 
+                 newWordData.image_prompt = data.full_cache.image;
+                 newWordData.image_url = undefined;
             }
+        } else { // Preserve existing image data if not fetching image mode
+            newWordData.image_prompt = existingWordData.image_prompt;
+            newWordData.image_url = existingWordData.image_url;
         }
-        if (modeToFetch === 'quiz' && data.quiz !== undefined) {
-            const quizStrings = data.quiz; 
+        
+        if (modeToFetch === 'quiz') {
+            const quizStrings = data.quiz ?? data.full_cache?.quiz; 
             if (quizStrings && Array.isArray(quizStrings)) {
                 newWordData.quiz = parseQuizStringToArray(quizStrings);
-                let resolvedQuizProgress: QuizAttempt[] = existingWordData.quiz_progress || [];
-                if (data.quiz_progress && Array.isArray(data.quiz_progress)) {
-                    const backendQuizProgressIsValid = data.quiz_progress.every((item: any) =>
-                        typeof item.question_index === 'number' &&
-                        typeof item.selected_option_key === 'string' &&
-                        typeof item.is_correct === 'boolean' &&
-                        typeof item.timestamp === 'string'
-                    );
-                    if (backendQuizProgressIsValid) {
-                        resolvedQuizProgress = data.quiz_progress as QuizAttempt[];
-                    }
-                }
-                newWordData.quiz_progress = (isRefreshClick || (data.quiz && !data.quiz_progress?.length && !resolvedQuizProgress.length)) 
-                                            ? [] 
-                                            : resolvedQuizProgress;
-                setCurrentQuizQuestionIndex(0); 
-            } else { 
-                newWordData.quiz = existingWordData.quiz || []; 
+                // Reset progress if quiz is refreshed OR if it's a new quiz set from backend (data.quiz exists)
+                // and no specific progress for this new set was returned (data.quiz_progress might be stale from old quiz)
+                newWordData.quiz_progress = (isRefreshClick || (data.quiz && !data.quiz_progress?.length)) ? [] : (data.quiz_progress || existingWordData.quiz_progress || []);
+                setCurrentQuizQuestionIndex(0);
+            } else {
+                newWordData.quiz = existingWordData.quiz || []; // Keep old if new is invalid
                 newWordData.quiz_progress = existingWordData.quiz_progress || [];
             }
+        } else if (existingWordData.quiz) { 
+            newWordData.quiz = existingWordData.quiz;
+            newWordData.quiz_progress = existingWordData.quiz_progress;
         }
-
-        let combinedModes: string[] = [];
-        if (existingWordData.modes_generated && Array.isArray(existingWordData.modes_generated)) {
-            combinedModes = [...existingWordData.modes_generated];
-        }
-        if (data.modes_generated && Array.isArray(data.modes_generated)) {
-            const backendModes = data.modes_generated.filter((m: any): m is string => typeof m === 'string');
-            combinedModes = Array.from(new Set([...combinedModes, ...backendModes]));
-        }
-        const modesSet = new Set<string>(combinedModes);
-        modesSet.add(modeToFetch);
-        newWordData.modes_generated = Array.from(modesSet);
         
-        console.log("Processed newWordData for", wordIdToUpdate, ":", newWordData);
-        return { ...prev, [wordIdToUpdate]: newWordData };
+        newWordData.is_favorite = data.is_favorite !== undefined ? data.is_favorite : (existingWordData.is_favorite || false);
+        newWordData.first_explored_at = existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
+        newWordData.last_explored_at = data.last_explored_at || new Date().toISOString();
+
+        const currentModesGenerated = new Set(existingWordData.modes_generated || []);
+        currentModesGenerated.add(modeToFetch);
+        if (data.modes_generated && Array.isArray(data.modes_generated)) { 
+            data.modes_generated.forEach((m:string) => currentModesGenerated.add(m));
+        } else if (data.full_cache?.modes_generated && Array.isArray(data.full_cache.modes_generated)) { 
+            data.full_cache.modes_generated.forEach((m:string) => currentModesGenerated.add(m));
+        }
+        newWordData.modes_generated = Array.from(currentModesGenerated);
+        
+        console.log("Processed newWordData for", wordId, ":", newWordData);
+        return { ...prev, [wordId]: newWordData };
       });
 
       if (isNewPrimaryWordSearch || isProfileWordClick) {
@@ -589,163 +601,75 @@ function App() {
         setIsReviewingStreakWord(false);
         setWordForReview(null);
       } else if (isSubTopicClick) {
-        setCurrentFocusWord(wordToFetch); 
+        setCurrentFocusWord(wordToFetch); // This sub-topic is now the focus
         setIsReviewingStreakWord(false); 
         setWordForReview(null);
         
         setLiveStreak(prevStreak => {
-            if (!prevStreak) return { score: 1, words: [wordToFetch] }; 
+            if (!prevStreak) return { score: 1, words: [wordToFetch] }; // Should not happen if isSubTopicClick
+            // Ensure wordToFetch is not the same as the last word to prevent duplicate additions from rapid clicks
             if (prevStreak.words.length === 0 || prevStreak.words[prevStreak.words.length -1] !== wordToFetch) {
                  return {
                     score: prevStreak.score + 1,
                     words: [...prevStreak.words, wordToFetch],
                 };
             }
-            return prevStreak; 
+            return prevStreak; // Return previous streak if word is same as last
         });
       }
+      // For review or refresh, currentFocusWord should already be set or remain unchanged (if reviewing)
+      // WordForReview handles display during review.
+
       setActiveContentMode(modeToFetch);
 
     } catch (err: any) {
-      // ... (error handling) ...
       setError(err.message);
       console.error("Error generating content:", err);
     } finally {
-      // ... (finally block) ...
       setIsLoading(false);
       if (isNewPrimaryWordSearch) setInputValue(''); 
     }
-  }, [authToken, activeContentMode, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]);
-  // Make sure all dependencies for useCallback are listed if they are used inside.
-  
-// Place this useEffect AFTER getDisplayWord and handleGenerateExplanation are defined
+  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview]); // Added dependencies
 
-// The useEffect hook that should be using modeFetchGuardRef:
-
-/* useEffect(() => {
+  const handleModeChange = (newMode: ContentMode) => {
     const wordToUse = getDisplayWord();
-    const currentMode = activeContentMode;
-
     if (!wordToUse) {
-        modeFetchGuardRef.current = null; 
+        setError("No word is currently in focus.");
         return;
     }
-
-    const wordId = sanitizeWordForId(wordToUse);
-    const currentFetchKey = `${wordId}-${currentMode}`;
-
-    const contentItem = generatedContent[wordId];
-    let contentForModeExists = contentItem &&
-                             (currentMode === 'image' ?
-                               (contentItem.image_url || contentItem.image_prompt) :
-                               contentItem[currentMode as keyof GeneratedContentItem]);
-    if (currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length === 0) {
-        contentForModeExists = false;
-    }
-
-    console.log(`[EFFECT] Check for: ${currentFetchKey}. ContentExists: ${!!contentForModeExists}, IsLoading: ${isLoading}, Guard: ${modeFetchGuardRef.current}`);
-
-    if (!contentForModeExists && !isLoading) {
-        if (modeFetchGuardRef.current === currentFetchKey) {
-            console.log(`[EFFECT] Guarded: Fetch for ${currentFetchKey} likely already initiated by this effect. Waiting for state.`);
-            return; 
-        }
-        console.log(`[EFFECT] ---> Triggering fetch for ${currentFetchKey}. Setting guard.`);
-        modeFetchGuardRef.current = currentFetchKey; 
-        handleGenerateExplanation(
-            wordToUse, false, false, false, currentMode, false
-        );
-        // Return after initiating fetch to prevent quiz setup logic from running with stale data
-        return; 
-    } else if (contentForModeExists) {
-        if (modeFetchGuardRef.current === currentFetchKey) {
-            console.log(`[EFFECT] Content for ${currentFetchKey} now exists. Clearing guard.`);
-            modeFetchGuardRef.current = null;
-        }
-        // Quiz UI setup logic when mode is quiz and content exists
-        if (currentMode === 'quiz' && contentItem?.quiz && contentItem.quiz.length > 0) {
-            const progress = contentItem.quiz_progress || [];
-            const quizSetLength = contentItem.quiz.length;
-            let nextQuestionIdx = 0; 
-            if (currentQuizQuestionIndex < quizSetLength && currentQuizQuestionIndex < progress.length) {
-                nextQuestionIdx = currentQuizQuestionIndex;
-            } else if (progress.length < quizSetLength) {
-                nextQuestionIdx = progress.length;
-            }
-            if(currentQuizQuestionIndex >= quizSetLength && quizSetLength > 0) nextQuestionIdx = 0;
-
-            if (currentQuizQuestionIndex !== nextQuestionIdx) {
-                // setCurrentQuizQuestionIndex(nextQuestionIdx); // Let dedicated quiz UI effect handle this
-            }
-            setSelectedQuizOption(null); 
-            setQuizFeedback(null);
-            setIsQuizAttempted(false);
-        }
-    } else if (isLoading) {
-        console.log(`[EFFECT] Currently isLoading for another request. Not fetching for ${currentFetchKey}.`);
-    }
-
-}, [activeContentMode, getDisplayWord, generatedContent, isLoading, handleGenerateExplanation, currentQuizQuestionIndex]);
-*/// ... (rest of the App component: handleModeChange, handleRefreshContent, etc.) ...
-
-
-// App.tsx
-const handleModeChange = (newMode: ContentMode) => {
-    const wordToUse = getDisplayWord();
+    setActiveContentMode(newMode); 
     
-    // Set mode immediately. This causes a re-render.
-    setActiveContentMode(newMode);
-
-    // Reset quiz UI states immediately for responsiveness
     if (newMode !== 'quiz') {
         setSelectedQuizOption(null);
         setQuizFeedback(null);
         setIsQuizAttempted(false); 
-    } else {
-        setSelectedQuizOption(null);
-        setQuizFeedback(null);
-        setIsQuizAttempted(false);
-        // If quiz data already exists when switching to quiz, prepare for display
-        if (wordToUse) {
-            const wordId = sanitizeWordForId(wordToUse);
-            const contentItem = generatedContent[wordId]; // Read current state
-            if (contentItem?.quiz && contentItem.quiz.length > 0) {
-                const progress = contentItem.quiz_progress || [];
-                const quizSetLength = contentItem.quiz.length;
-                let nextQuestionIdx = (currentQuizQuestionIndex >= quizSetLength || progress.length >= quizSetLength) ? 0 : progress.length;
-                if (currentQuizQuestionIndex < quizSetLength && currentQuizQuestionIndex < progress.length) {
-                     nextQuestionIdx = currentQuizQuestionIndex;
-                }
-                setCurrentQuizQuestionIndex(nextQuestionIdx);
-            }
-        }
-    }
-
-    if (!wordToUse) {
-        if (newMode !== 'explain') setError("No word is currently in focus to change mode.");
-        return; 
     }
 
     const wordId = sanitizeWordForId(wordToUse);
-    const contentItem = generatedContent[wordId]; // Read current state again
-    
-    let contentForNewModeActuallyExists = contentItem &&
+    const contentForNewModeExists = generatedContent[wordId] &&
                                   (newMode === 'image' ?
-                                    (contentItem.image_url || contentItem.image_prompt) :
-                                    contentItem[newMode as keyof GeneratedContentItem]);
+                                    (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) :
+                                    generatedContent[wordId][newMode as keyof GeneratedContentItem]); 
 
-    if (newMode === 'quiz' && contentItem && contentItem.quiz && contentItem.quiz.length === 0) {
-        contentForNewModeActuallyExists = false;
+    if (contentForNewModeExists) {
+        if (newMode === 'quiz') {
+            const quizData = generatedContent[wordId].quiz; 
+            const progress = generatedContent[wordId].quiz_progress || [];
+            if (quizData && quizData.length > 0) {
+                const nextQuestionIdx = progress.length >= quizData.length ? quizData.length : progress.length;
+                setCurrentQuizQuestionIndex(nextQuestionIdx);
+                setSelectedQuizOption(null); 
+                setQuizFeedback(null);
+                setIsQuizAttempted(false); 
+            } else { 
+                handleGenerateExplanation(wordToUse, false, false, false, newMode);
+            }
+        }
+        return; 
     }
-
-    if (!contentForNewModeActuallyExists) {
-        console.log(`[handleModeChange] Mode is '<span class="math-inline">\{newMode\}'\. Content for '</span>{wordToUse}' NOT in session cache. Fetching.`);
-        handleGenerateExplanation(wordToUse, false, false, false, newMode, false);
-    } else {
-        console.log(`[handleModeChange] Mode is '<span class="math-inline">\{newMode\}'\. Content for '</span>{wordToUse}' IS in session cache. No fetch needed by handleModeChange.`);
-    }
-};
-
+    handleGenerateExplanation(wordToUse, false, false, false, newMode);
+  };
+  
   const handleRefreshContent = () => {
     const wordToUse = getDisplayWord();
     if (!wordToUse) return;
@@ -861,14 +785,6 @@ const handleModeChange = (newMode: ContentMode) => {
     handleGenerateExplanation(word, false, false, false, 'explain', true);
   };
 
-// App.tsx
-
- // App.tsx
-// Place AFTER handleGenerateExplanation and getDisplayWord are defined
-
- // App.tsx
-// (Ensure this is the version of the quiz useEffect you are using)
-// App.tsx - Quiz UI useEffect
   useEffect(() => {
     const wordToUse = getDisplayWord();
     if (activeContentMode === 'quiz' && wordToUse) {
@@ -878,32 +794,31 @@ const handleModeChange = (newMode: ContentMode) => {
         const progress = currentWordContent?.quiz_progress || [];
 
         if (quizSet && quizSet.length > 0) {
-            if (currentQuizQuestionIndex < quizSet.length) { 
-                const currentQuestion = quizSet[currentQuizQuestionIndex];
-                const attemptedQuestion = progress.find(p => p.question_index === currentQuizQuestionIndex);
-                if (attemptedQuestion && currentQuestion?.options && currentQuestion.options[currentQuestion.correctOptionKey] !== undefined) { 
+            const questionToDisplayIndex = currentQuizQuestionIndex < quizSet.length ? currentQuizQuestionIndex : progress.length;
+
+            if (questionToDisplayIndex < quizSet.length) { 
+                const currentQuestion = quizSet[questionToDisplayIndex];
+                const attemptedQuestion = progress.find(p => p.question_index === questionToDisplayIndex);
+                if (attemptedQuestion && currentQuestion && currentQuestion.options) { 
                     setSelectedQuizOption(attemptedQuestion.selected_option_key);
-                    setQuizFeedback({ 
+                    setQuizFeedback({
                         message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. The correct answer was: ${currentQuestion.options[currentQuestion.correctOptionKey]}`,
                         isCorrect: attemptedQuestion.is_correct,
                     });
                     setIsQuizAttempted(true);
-                } else if (currentQuestion) { 
+                } else {
                     setSelectedQuizOption(null);
                     setQuizFeedback(null);
                     setIsQuizAttempted(false);
                 }
             }
+        } else if (!isLoading && !error && currentWordContent && !currentWordContent.quiz) { 
+            handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
         }
     }
-    // Reset quiz UI state if not in quiz mode or no word is active
-    if (activeContentMode !== 'quiz' || !wordToUse) {
-        setSelectedQuizOption(null);
-        setQuizFeedback(null);
-        setIsQuizAttempted(false);
-        // setCurrentQuizQuestionIndex(0); // Generally, don't reset index just because mode changed away.
-    }
-  }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex]);
+  }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex, isLoading, error, handleGenerateExplanation]);
+
+
   const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string, isCorrect: boolean) => {
     if (!authToken) return;
     const wordId = sanitizeWordForId(word);

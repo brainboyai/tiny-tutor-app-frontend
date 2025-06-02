@@ -453,44 +453,41 @@ function App() {
       // So, consider content NOT existing if (modeToFetch === 'explain' && streakContextForAPI.length > 0)
       // Inside handleGenerateExplanation, the initial caching 'if' block:
 // ...
+
+// ... (after wordId, modeToFetch, streakContextForAPI are defined)
 const isContextualExplain = modeToFetch === 'explain' && streakContextForAPI.length > 0;
 const contentExistsInFrontendCache = generatedContent[wordId] && 
                           (modeToFetch === 'image' ? 
                             (generatedContent[wordId].image_url || generatedContent[wordId].image_prompt) : 
                             generatedContent[wordId][modeToFetch as keyof GeneratedContentItem]);
 
-// MODIFIED Condition: Removed '!isContextualExplain'.
-// Now, it will try to serve from cache if not a refresh and content exists, regardless of whether it's contextual or generic.
+// MODIFIED Condition: Removed the '!isContextualExplain' part.
 if (!isRefreshClick && contentExistsInFrontendCache) {
   let serveFromCache = true;
+  // Special handling for quiz: if cached quiz array is empty, force fetch.
   if (modeToFetch === 'quiz' && (!generatedContent[wordId].quiz || generatedContent[wordId].quiz?.length === 0)) {
     serveFromCache = false; 
-    console.warn("Cached quiz exists but is empty/invalid for " + wordToFetch + ", will fetch new one.");
+    console.warn("Cached quiz for '" + wordToFetch + "' is empty/invalid, attempting to fetch new one.");
   }
 
   if (serveFromCache) {
-    // ... (rest of the logic to set state and return is fine)
-    // setCurrentFocusWord, setActiveContentMode, setIsLoading etc.
-    // Ensure setActiveContentMode is called here if it wasn't already definitively set by handleModeChange
-    // Though, handleModeChange calls setActiveContentMode(newMode) before calling handleGenerateExplanation.
     if (!isSubTopicClick && !isProfileWordClick && !isReviewingStreakWord) {
-        // Only set currentFocusWord if it's a direct action on this word,
-        // not a sub-topic click (which handles it) or profile click (which handles it).
-        // Or if it's a refresh of the current focus word.
-        if(isNewPrimaryWordSearch || (currentFocusWord === wordToFetch && !isSubTopicClick && !isProfileWordClick)){
+        // This logic ensures currentFocusWord is updated correctly if this isn't a sub-action
+         if(isNewPrimaryWordSearch || (currentFocusWord === wordToFetch && !isSubTopicClick && !isProfileWordClick)){
              setCurrentFocusWord(wordToFetch);
         }
     }
-    // setActiveContentMode(modeToFetch); // Already set by handleModeChange or at start of handleGenerate
+    setActiveContentMode(modeToFetch); // Ensure active mode reflects what's being served
     setIsLoading(false);
     if (isNewPrimaryWordSearch || isProfileWordClick) { 
         setLiveStreak({ score: 1, words: [wordToFetch] });
     }
-    console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (via handleGenerateExplanation).`);
-    return;
+    console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (handleGenerateExplanation).`);
+    return; // Serve from cache
   }
 }
-// ... rest of handleGenerateExplanation (API call logic)
+// ... API call logic follows if not returned
+
 
       console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend.`);
       const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
@@ -520,16 +517,19 @@ if (!isRefreshClick && contentExistsInFrontendCache) {
       const data = await response.json(); 
       console.log("Data received from backend:", data);
       
-      // Inside the handleGenerateExplanation callback, within setGeneratedContent:
+// Inside the handleGenerateExplanation useCallback, find the setGeneratedContent call:
+
 setGeneratedContent(prev => {
-  const wordId = sanitizeWordForId(wordToFetch); // Ensure wordId is correctly scoped or passed
+  const wordId = sanitizeWordForId(wordToFetch); // Ensure wordToFetch is in scope
   const existingWordData = prev[wordId] || {};
-  // Start with existing data. Properties will be overwritten only if new data for them is explicitly provided.
+  // Start with a copy of the existing data for the word.
+  // Properties will be updated if new data for them is explicitly part of the current fetch.
   const newWordData: GeneratedContentItem = { ...existingWordData };
 
-  // Update the specific mode that was fetched
+  // --- Update specific content based on modeToFetch ---
   if (modeToFetch === 'explain') {
-    if (data.explain !== undefined) { // data.explain is the direct response for this mode
+    // Only update explanation if it was fetched and is defined in the direct response
+    if (data.explain !== undefined) {
       newWordData.explanation = data.explain;
     }
   } else if (modeToFetch === 'fact') {
@@ -541,49 +541,56 @@ setGeneratedContent(prev => {
       newWordData.deep_dive = data.deep_dive;
     }
   } else if (modeToFetch === 'image') {
+    // Handle image data carefully, prioritizing direct response fields
     if (data.image_url !== undefined) {
       newWordData.image_url = data.image_url;
-      // Only update prompt if it's part of the image response, otherwise keep existing
+      // If image_url is provided, image_prompt might also be updated or preserved
       if (data.image_prompt !== undefined) {
         newWordData.image_prompt = data.image_prompt;
       }
-    } else if (data.image !== undefined) { // Assuming data.image is the prompt if URL is missing
+    } else if (data.image !== undefined) { // 'data.image' is likely the prompt if image_url is absent
       newWordData.image_prompt = data.image;
-      newWordData.image_url = undefined; // Clear URL if only a new prompt is provided
+      newWordData.image_url = undefined; // Explicitly clear URL if only a new prompt is given
     }
-    // If neither image_url nor image(prompt) is in 'data' for an 'image' fetch,
-    // newWordData retains existing image_url/image_prompt due to the initial spread.
+    // If neither image_url nor image(prompt) is in 'data' for an 'image' mode fetch,
+    // newWordData retains the existing image_url/image_prompt due to the initial spread.
   } else if (modeToFetch === 'quiz') {
-    const quizStrings = data.quiz; // data.quiz is the direct array of quiz strings
+    // For quiz mode, only use quiz data from the direct API response 'data.quiz'
+    const quizStrings = data.quiz; 
     if (quizStrings && Array.isArray(quizStrings)) {
       newWordData.quiz = parseQuizStringToArray(quizStrings);
+      // Reset progress if quiz is refreshed OR if it's a new quiz set from backend
       newWordData.quiz_progress = (isRefreshClick || (data.quiz && !data.quiz_progress?.length)) 
-                                  ? [] 
-                                  : (data.quiz_progress || existingWordData.quiz_progress || []);
+                                ? [] 
+                                : (data.quiz_progress || existingWordData.quiz_progress || []);
       setCurrentQuizQuestionIndex(0);
     }
-    // If data.quiz is not available from a 'quiz' mode fetch, existingWordData.quiz and progress are preserved.
+    // If data.quiz is not available from this 'quiz' mode fetch, 
+    // existingWordData.quiz and its progress are preserved due to the initial spread.
   }
 
-  // Update shared metadata from the latest server data for the word
+  // --- Update shared metadata ---
+  // is_favorite should reflect the latest from the backend for this word
   newWordData.is_favorite = data.is_favorite !== undefined 
                             ? data.is_favorite 
                             : (existingWordData.is_favorite || false);
+  // first_explored_at should be set once and then preserved
   newWordData.first_explored_at = existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
+  // last_explored_at should reflect this current interaction
   newWordData.last_explored_at = data.last_explored_at || new Date().toISOString();
 
-  // Consolidate modes_generated: Start with existing, add current, then add from backend's list for the word
+  // Consolidate modes_generated:
+  // Start with existing modes, add the current mode, and merge with modes known by the backend.
   const currentModesGenerated = new Set(existingWordData.modes_generated || []);
-  currentModesGenerated.add(modeToFetch); // Add the mode just fetched
-  if (data.modes_generated && Array.isArray(data.modes_generated)) { // Reflects DB state for the word
+  currentModesGenerated.add(modeToFetch);
+  if (data.modes_generated && Array.isArray(data.modes_generated)) {
     data.modes_generated.forEach((m: string) => currentModesGenerated.add(m));
   }
   newWordData.modes_generated = Array.from(currentModesGenerated);
   
-  console.log("Processed newWordData for", wordId, ":", newWordData);
+  console.log("Processed newWordData for", wordId, ":", newWordData); // Keep this for debugging
   return { ...prev, [wordId]: newWordData };
 });
-
       if (isNewPrimaryWordSearch || isProfileWordClick) {
         setCurrentFocusWord(wordToFetch); 
         setLiveStreak({ score: 1, words: [wordToFetch] });

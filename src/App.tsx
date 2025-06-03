@@ -299,23 +299,39 @@ function App() {
       console.log("Raw profile data from backend:", data); 
 
       const processedExploredWords: ExploredWordEntry[] = (data.exploredWords || [])
-        .map((w: Record<string, any>) => w && typeof w.word === 'string' ? ({ 
-            word: w.word as string, 
-            last_explored_at: w.last_explored_at as string,
-            is_favorite: w.is_favorite as boolean,
-            first_explored_at: w.first_explored_at as string | undefined
-        }) : null)
-        .filter((w): w is ExploredWordEntry => w !== null && w.word.trim() !== '');
+        .map((w: any): ExploredWordEntry | null => { 
+            if (w && typeof w.word === 'string') {
+                return { 
+                    word: w.word as string, 
+                    last_explored_at: w.last_explored_at as string,
+                    is_favorite: w.is_favorite as boolean,
+                    first_explored_at: w.first_explored_at as string | undefined 
+                };
+            }
+            return null;
+        })
+        // *** TS7006 FIX APPLIED HERE ***
+        .filter((item: ExploredWordEntry | null): item is ExploredWordEntry => 
+            item !== null && typeof item.word === 'string' && item.word.trim() !== ''
+        );
 
 
       const processedFavoriteWords: ExploredWordEntry[] = (data.favoriteWords || [])
-        .map((w: Record<string, any>) => w && typeof w.word === 'string' ? ({ 
-            word: w.word as string, 
-            last_explored_at: w.last_explored_at as string,
-            is_favorite: w.is_favorite as boolean,
-            first_explored_at: w.first_explored_at as string | undefined 
-        }) : null)
-        .filter((w): w is ExploredWordEntry => w !== null && w.word.trim() !== '');
+        .map((w: any): ExploredWordEntry | null => { 
+            if (w && typeof w.word === 'string') {
+                return { 
+                    word: w.word as string, 
+                    last_explored_at: w.last_explored_at as string,
+                    is_favorite: w.is_favorite as boolean,
+                    first_explored_at: w.first_explored_at as string | undefined 
+                };
+            }
+            return null;
+        })
+        // *** TS7006 FIX APPLIED HERE ***
+        .filter((item: ExploredWordEntry | null): item is ExploredWordEntry => 
+            item !== null && typeof item.word === 'string' && item.word.trim() !== ''
+        );
       
       console.log("Processed Explored Words for Profile:", processedExploredWords);
       console.log("Processed Favorite Words for Profile:", processedFavoriteWords);
@@ -497,12 +513,10 @@ function App() {
         setIsReviewingStreakWord(false); 
         setWordForReview(null);
     } else if (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord) ) ) {
-        // If it's a sub-topic click for a genuinely new word OR a word that's in streak but not current focus (and not yet reviewing it)
         setCurrentFocusWord(wordToFetch);
         setIsReviewingStreakWord(false);
         setWordForReview(null);
     }
-
 
     try {
       let contentExistsInFrontendCache = false;
@@ -602,11 +616,10 @@ function App() {
         setIsReviewingStreakWord(false); setWordForReview(null);
       } else if (isSubTopicClick) {
         if (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord)) {
-            // setCurrentFocusWord(wordToFetch); // This was already set above for new subtopics
-            setIsReviewingStreakWord(false); setWordForReview(null); // Ensure not in review mode
+            setIsReviewingStreakWord(false); setWordForReview(null); 
             setLiveStreak(prevStreak => {
                 if (!prevStreak) return { score: 1, words: [wordToFetch] }; 
-                if (prevStreak.words[prevStreak.words.length -1] !== wordToFetch) { // Only add if it's a new tip for the streak
+                if (prevStreak.words[prevStreak.words.length -1] !== wordToFetch) { 
                      return { score: prevStreak.score + 1, words: [...prevStreak.words, wordToFetch] };
                 }
                 return prevStreak; 
@@ -633,15 +646,13 @@ function App() {
     
     setIsReviewingStreakWord(true);
     setWordForReview(clickedWord);
-    // setActiveContentMode('explain'); // Let HGE handle mode setting
     
     setSelectedQuizOption(null);
     setQuizFeedback(null);
     setIsQuizAttempted(false);
     
-    // Fetch explanation for the clickedWord in its specific context within the streak
     handleGenerateExplanation(clickedWord, false, false, false, 'explain'); 
-  }, [ isReviewingStreakWord, wordForReview, activeContentMode, handleGenerateExplanation, currentFocusWord]); // Added currentFocusWord
+  }, [ isReviewingStreakWord, wordForReview, activeContentMode, handleGenerateExplanation, currentFocusWord]);
 
 
   const handleSubTopicClick = useCallback((subTopic: string) => {
@@ -653,13 +664,11 @@ function App() {
         return;
     }
 
-    // If the subTopic is already in the streak (and it's not the current focus word), treat as review.
     if (liveStreak && liveStreak.words.includes(subTopic)) {
         console.log(`Sub-topic "${subTopic}" is already in streak. Switching to review.`);
         handleStreakWordClick(subTopic); 
-    } else { // Sub-topic is new to the streak path
+    } else { 
         console.log(`Sub-topic "${subTopic}" is new. Extending streak.`);
-        // isSubTopicClick = true, will set currentFocusWord to subTopic and extend streak
         handleGenerateExplanation(subTopic, false, false, true, 'explain');
     }
   }, [currentFocusWord, liveStreak, handleGenerateExplanation, handleStreakWordClick, isReviewingStreakWord]); 

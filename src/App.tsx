@@ -6,18 +6,23 @@ import {
   Lightbulb,
   LogIn,
   LogOut,
-  RefreshCw,
+  RefreshCw, // Kept for now for the main 'explain' refresh, review if truly needed elsewhere
   Sparkles,
   User,
   X,
   MessageSquareQuote,
   Brain,
-  RotateCcw,
-  Home
+  // RotateCcw, // Removed as per error correction
+  Home,
+  HelpCircle, 
+  ChevronRight, 
+  CheckCircle, 
+  XCircle, 
+  FileText 
 } from 'lucide-react';
-import './App.css'; 
-import './index.css'; 
-import ProfilePageComponent from './ProfilePage'; 
+import './App.css';
+import './index.css';
+import ProfilePageComponent from './ProfilePage';
 
 // --- Types ---
 interface CurrentUser {
@@ -28,23 +33,21 @@ interface CurrentUser {
 
 interface ParsedQuizQuestion {
   question: string;
-  options: { [key: string]: string }; 
-  correctOptionKey: string; 
-  explanation?: string; 
-  originalString?: string; 
+  options: { [key: string]: string };
+  correctOptionKey: string;
+  explanation?: string; // Explanation for the answer
+  originalString?: string;
 }
 
-interface GeneratedContentItem {
+interface GeneratedContentItem { 
   explanation?: string;
-  quiz?: ParsedQuizQuestion[]; 
   fact?: string;
-  image_prompt?: string; 
-  image_url?: string;    
+  image_prompt?: string;
+  image_url?: string;
   deep_dive?: string;
   is_favorite?: boolean;
   first_explored_at?: string;
   last_explored_at?: string;
-  quiz_progress?: QuizAttempt[];
   modes_generated?: string[];
 }
 
@@ -52,23 +55,16 @@ interface GeneratedContent {
   [wordId: string]: GeneratedContentItem;
 }
 
-interface QuizAttempt {
-  question_index: number;
-  selected_option_key: string;
-  is_correct: boolean;
-  timestamp: string;
-}
-
 interface LiveStreak {
   score: number;
-  words: string[]; 
+  words: string[];
 }
 
 interface StreakRecord {
-  id: string; 
+  id: string;
   words: string[];
   score: number;
-  completed_at: string; 
+  completed_at: string;
 }
 
 interface ExploredWordEntry {
@@ -92,10 +88,19 @@ interface UserProfileData {
 
 type ContentMode = 'explain' | 'quiz' | 'fact' | 'image' | 'deep_dive';
 
-const API_BASE_URL = 'https://tiny-tutor-app.onrender.com'; 
+interface StreakQuizItem {
+  word: string;
+  originalExplanation: string; 
+  quizQuestion: ParsedQuizQuestion;
+  attempted: boolean;
+  selectedOptionKey?: string;
+  isCorrect?: boolean;
+}
+
+const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
 const sanitizeWordForId = (word: string): string => {
-  if (typeof word !== 'string') return "invalid_word_input"; 
+  if (typeof word !== 'string') return "invalid_word_input";
   return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
 
@@ -123,7 +128,7 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
         let question = "";
         const options: { [key: string]: string } = {};
         let correctOptionKey = "";
-        let explanation = "";
+        let explanationForAnswer = ""; 
         let parsingState: 'question' | 'options' | 'answer' | 'explanation' = 'question';
         let questionLines: string[] = [];
 
@@ -156,7 +161,7 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
                 }
                 correctOptionKey = correctMatch[1].toUpperCase();
                 parsingState = 'explanation'; 
-                explanation = ""; 
+                explanationForAnswer = ""; 
                 continue;
             }
             
@@ -166,7 +171,7 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
                      question = questionLines.join(" ").trim();
                       questionLines = [];
                 }
-                explanation = explanationKeywordMatch[1].trim();
+                explanationForAnswer = explanationKeywordMatch[1].trim();
                 parsingState = 'explanation';
                 continue;
             }
@@ -174,20 +179,20 @@ const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion
             if (parsingState === 'question') {
                 questionLines.push(line);
             } else if (parsingState === 'explanation') {
-                explanation += (explanation ? " " : "") + line.trim();
+                explanationForAnswer += (explanationForAnswer ? " " : "") + line.trim();
             }
         }
         if (questionLines.length > 0 && !question) {
             question = questionLines.join(" ").trim();
         }
-        explanation = explanation.trim();
+        explanationForAnswer = explanationForAnswer.trim();
         
         if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) {
              console.warn(`Incomplete parse for quiz item ${index}. Q: "${question}", Opts: ${Object.keys(options).length}, CorrectKey: "${correctOptionKey}", HasKey: ${!!options[correctOptionKey]}`, "Original:", quizStr);
-             return question ? { question, options: options || {}, correctOptionKey: correctOptionKey || '', explanation: explanation || undefined, originalString: quizStr } : null;
+             return question ? { question, options: options || {}, correctOptionKey: correctOptionKey || '', explanation: explanationForAnswer || undefined, originalString: quizStr } : null;
         }
 
-        return { question, options, correctOptionKey, explanation: explanation || undefined, originalString: quizStr };
+        return { question, options, correctOptionKey, explanation: explanationForAnswer || undefined, originalString: quizStr };
     }).filter(q => q !== null) as ParsedQuizQuestion[]; 
 };
 
@@ -202,8 +207,8 @@ function App() {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [authUsername, setAuthUsername] = useState(''); 
-  const [authEmail, setAuthEmail] = useState(''); 
+  const [authUsername, setAuthUsername] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
@@ -213,30 +218,51 @@ function App() {
 
   const [liveStreak, setLiveStreak] = useState<LiveStreak | null>(null);
   const [userProfileData, setUserProfileData] = useState<UserProfileData | null>(null);
-  
+
   const [activeView, setActiveView] = useState<'main' | 'profile'>('main');
 
-  const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState(0);
-  const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
-  const [quizFeedback, setQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
-  const [isQuizAttempted, setIsQuizAttempted] = useState(false); 
+  const [currentSingleWordQuiz, setCurrentSingleWordQuiz] = useState<ParsedQuizQuestion[] | null>(null);
+  const [currentSingleWordQuizIdx, setCurrentSingleWordQuizIdx] = useState(0);
+  const [singleWordQuizFeedback, setSingleWordQuizFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
+  const [singleWordSelectedOption, setSingleWordSelectedOption] = useState<string | null>(null);
+  const [singleWordQuizAttempted, setSingleWordQuizAttempted] = useState(false);
+
+  const [liveStreakQuizQueue, setLiveStreakQuizQueue] = useState<StreakQuizItem[]>([]);
+  const [currentStreakQuizItemIndex, setCurrentStreakQuizItemIndex] = useState<number>(0);
+  const [showStreakQuizItemExplanation, setShowStreakQuizItemExplanation] = useState(false);
+  const [isViewingStreakQuizSummary, setIsViewingStreakQuizSummary] = useState(false);
 
   const [wordForReview, setWordForReview] = useState<string | null>(null);
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState(false);
-  
+
   const [isFetchingProfile, setIsFetchingProfile] = useState(false);
-  const [initialLoadDone, setInitialLoadDone] = useState(false); 
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const getDisplayWord = useCallback(() => {
     return isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord;
   }, [isReviewingStreakWord, wordForReview, currentFocusWord]);
 
-  // Forward declaration for handleLogout to be used in fetchUserProfile
-  const handleLogout = useCallback(async () => { 
-    // saveStreakToServer definition would be needed if used here
-    // if (liveStreak && liveStreak.score >= 2 && authToken) {
-    //     await saveStreakToServer(liveStreak, authToken); 
-    // }
+  const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null) => {
+    if (!token || !streakToSave || streakToSave.score < 2) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/save_streak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save streak');
+      }
+    } catch (err: any) {
+      console.error('Error saving streak:', err.message);
+    }
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    if (liveStreak && liveStreak.score >= 2 && authToken) {
+        await saveStreakToServer(liveStreak, authToken);
+    }
     localStorage.removeItem('authToken');
     setAuthToken(null);
     setCurrentUser(null);
@@ -249,13 +275,17 @@ function App() {
     setAuthError(null);
     setAuthSuccessMessage(null);
     setShowAuthModal(false);
-    setActiveView('main'); 
-    setInitialLoadDone(false); 
+    setActiveView('main');
+    setInitialLoadDone(false);
+    setLiveStreakQuizQueue([]);
+    setCurrentStreakQuizItemIndex(0);
+    setShowStreakQuizItemExplanation(false);
+    setIsViewingStreakQuizSummary(false);
     console.log("User logged out");
-  }, [liveStreak, authToken /*, saveStreakToServer*/]);
-
+  }, [liveStreak, authToken, saveStreakToServer]);
 
   const fetchUserProfile = useCallback(async (token: string | null) => {
+    // ... (fetchUserProfile logic remains largely the same, ensure handleLogout is correctly referenced)
     if (!token) {
       setUserProfileData(null);
       setCurrentUser(null); 
@@ -269,7 +299,7 @@ function App() {
 
       if (!response.ok) {
         if (response.status === 401) { 
-          handleLogout();
+          handleLogout(); 
         } else if (response.status === 429) {
             console.error("Profile fetch failed: 429 Too Many Requests.");
             setError("Too many requests to fetch profile. Please try again later.");
@@ -296,8 +326,6 @@ function App() {
       }
 
       const data = await response.json(); 
-      console.log("Raw profile data from backend:", data); 
-
       const processedExploredWords: ExploredWordEntry[] = (data.exploredWords || [])
         .map((w: any): ExploredWordEntry | null => { 
             if (w && typeof w.word === 'string') {
@@ -310,12 +338,9 @@ function App() {
             }
             return null;
         })
-        // *** TS7006 FIX APPLIED HERE ***
         .filter((item: ExploredWordEntry | null): item is ExploredWordEntry => 
             item !== null && typeof item.word === 'string' && item.word.trim() !== ''
         );
-
-
       const processedFavoriteWords: ExploredWordEntry[] = (data.favoriteWords || [])
         .map((w: any): ExploredWordEntry | null => { 
             if (w && typeof w.word === 'string') {
@@ -328,14 +353,10 @@ function App() {
             }
             return null;
         })
-        // *** TS7006 FIX APPLIED HERE ***
         .filter((item: ExploredWordEntry | null): item is ExploredWordEntry => 
             item !== null && typeof item.word === 'string' && item.word.trim() !== ''
         );
       
-      console.log("Processed Explored Words for Profile:", processedExploredWords);
-      console.log("Processed Favorite Words for Profile:", processedFavoriteWords);
-
       setUserProfileData({
         username: data.username,
         email: data.email,
@@ -355,33 +376,30 @@ function App() {
     } finally {
       setIsFetchingProfile(false);
     }
-  }, [currentUser?.id, error, handleLogout]); 
+  }, [currentUser?.id, error, handleLogout]);
 
   useEffect(() => {
+    // ... (initial load useEffect remains the same)
     const storedToken = localStorage.getItem('authToken');
     if (storedToken) {
-      if (!authToken) setAuthToken(storedToken); 
-      
+      if (!authToken) setAuthToken(storedToken);
       if (!initialLoadDone && !currentUser && !userProfileData && !isFetchingProfile) {
-        console.log("[useEffect initial load] Attempting to fetch user profile.");
-        fetchUserProfile(storedToken).finally(() => {
-          setInitialLoadDone(true); 
-        });
+        fetchUserProfile(storedToken).finally(() => setInitialLoadDone(true));
       } else if ((currentUser || userProfileData) && !initialLoadDone) {
-          setInitialLoadDone(true);
+        setInitialLoadDone(true);
       }
     } else {
-      if(currentUser || userProfileData || authToken) { 
+      if (currentUser || userProfileData || authToken) {
         setCurrentUser(null);
         setUserProfileData(null);
-        setAuthToken(null); 
+        setAuthToken(null);
         setInitialLoadDone(false);
       }
     }
   }, [authToken, currentUser, userProfileData, isFetchingProfile, initialLoadDone, fetchUserProfile]);
 
-
   const handleAuthAction = async (e: FormEvent) => {
+    // ... (auth action logic remains largely the same)
     e.preventDefault();
     setAuthError(null);
     setAuthSuccessMessage(null);
@@ -435,34 +453,26 @@ function App() {
       if (authMode === 'signup') setAuthPassword(''); 
     }
   };
-
-  const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null) => {
-    if (!token || !streakToSave || streakToSave.score < 2) {
-        return;
-    }
-    try {
-        const response = await fetch(`${API_BASE_URL}/save_streak`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }),
-        });
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to save streak');
-        }
-    } catch (err: any) {
-        console.error('Error saving streak:', err.message);
-    }
-  }, []);
   
-  useEffect(() => {
-    // This useEffect is just an example. saveStreakToServer is called in handleLogout and handleGenerateExplanation.
-  }, [saveStreakToServer]);
+  const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string | null, isCorrect: boolean) => {
+    if (!authToken) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            // Backend now only needs word and is_correct for stats. questionIdx and optionKey are for frontend.
+            body: JSON.stringify({ word, question_index: questionIdx, selected_option_key: optionKey || "", is_correct: isCorrect }),
+        });
+        if (!response.ok) throw new Error((await response.json()).error || 'Failed to save quiz attempt stats');
+        // No need to update generatedContent with quiz_progress from backend for this model
+        if (authToken) await fetchUserProfile(authToken); 
+    } catch (err: any) { console.error("Error saving quiz attempt stats:", err); setError("Could not save quiz points."); }
+  }, [authToken, fetchUserProfile]);
 
 
   const handleGenerateExplanation = useCallback(async (
     wordToFetch: string,
     isNewPrimaryWordSearch: boolean = false,
-    isRefreshClick: boolean = false,
+    isRefreshClick: boolean = false, 
     isSubTopicClick: boolean = false,
     modeOverride?: ContentMode,
     isProfileWordClick: boolean = false
@@ -471,249 +481,319 @@ function App() {
     if (!authToken) { setShowAuthModal(true); setAuthError("Please login to generate content."); return; }
 
     setIsLoading(true);
-    setError(null); 
-    if (modeOverride !== 'quiz' && (modeOverride || activeContentMode) !== 'quiz') {
-        setQuizFeedback(null); setSelectedQuizOption(null); setIsQuizAttempted(false);
+    setError(null);
+    
+    const targetModeForThisCall = modeOverride || activeContentMode;
+
+    // --- Resetting states based on the target mode ---
+    if (targetModeForThisCall !== 'quiz') {
+        setCurrentSingleWordQuiz(null);
+        setCurrentSingleWordQuizIdx(0);
+        setSingleWordQuizFeedback(null);
+        setSingleWordSelectedOption(null);
+        setSingleWordQuizAttempted(false);
     }
 
+    // If currently in quiz mode (any kind) and transitioning to a non-quiz mode
+    if (activeContentMode === 'quiz' && targetModeForThisCall !== 'quiz') {
+        setShowStreakQuizItemExplanation(false);
+        setIsViewingStreakQuizSummary(false); 
+        // currentStreakQuizItemIndex reset when queue is cleared or new quiz mode entered
+    }
+    
     const wordId = sanitizeWordForId(wordToFetch);
-    const modeToFetch = modeOverride || activeContentMode;
     let streakContextForAPI: string[] = [];
 
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         streakContextForAPI = [];
-    } else if (isSubTopicClick || (isReviewingStreakWord && wordForReview === wordToFetch) ) { 
+        setLiveStreakQuizQueue([]); // Clear streak quiz for new primary search
+        setCurrentStreakQuizItemIndex(0);
+        setShowStreakQuizItemExplanation(false);
+        setIsViewingStreakQuizSummary(false);
+    } else if (isSubTopicClick || (isReviewingStreakWord && wordForReview === wordToFetch)) {
         if (liveStreak && liveStreak.words.length > 0) {
             const targetWordForContext = isReviewingStreakWord && wordForReview ? wordForReview : wordToFetch;
             const wordIndexInStreak = liveStreak.words.indexOf(targetWordForContext);
-
-            if (isSubTopicClick && (!liveStreak.words.includes(wordToFetch) || wordToFetch === liveStreak.words[liveStreak.words.length -1] )) { 
+            if (isSubTopicClick && (!liveStreak.words.includes(wordToFetch) || wordToFetch === liveStreak.words[liveStreak.words.length - 1])) {
                  streakContextForAPI = [...liveStreak.words];
-            } else if (wordIndexInStreak !== -1) { 
+            } else if (wordIndexInStreak !== -1) {
                  streakContextForAPI = liveStreak.words.slice(0, wordIndexInStreak);
-            } else if (isSubTopicClick) { 
+            } else if (isSubTopicClick) {
                  streakContextForAPI = [...liveStreak.words];
             }
         }
-    } else if (currentFocusWord && !isNewPrimaryWordSearch && !isProfileWordClick) { 
+    } else if (currentFocusWord && !isNewPrimaryWordSearch && !isProfileWordClick) {
         if (liveStreak && liveStreak.words.includes(currentFocusWord)) {
              const currentFocusWordIndex = liveStreak.words.indexOf(currentFocusWord);
              if (currentFocusWordIndex > 0) streakContextForAPI = liveStreak.words.slice(0, currentFocusWordIndex);
         }
     }
 
-
-    if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >=1 && authToken) {
-        if (liveStreak.score >=2) await saveStreakToServer(liveStreak, authToken);
-        setLiveStreak(null); 
+    if ((isNewPrimaryWordSearch || isProfileWordClick) && liveStreak && liveStreak.score >= 1 && authToken) {
+        if (liveStreak.score >= 2) await saveStreakToServer(liveStreak, authToken);
+        setLiveStreak(null);
     }
     
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         setCurrentFocusWord(wordToFetch);
-        setIsReviewingStreakWord(false); 
+        setIsReviewingStreakWord(false);
         setWordForReview(null);
-    } else if (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord) ) ) {
+    } else if (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord))) {
         setCurrentFocusWord(wordToFetch);
         setIsReviewingStreakWord(false);
         setWordForReview(null);
     }
 
-    try {
-      let contentExistsInFrontendCache = false;
-      const currentWordItem = generatedContent[wordId];
-      if (currentWordItem) {
-          if (modeToFetch === 'explain') contentExistsInFrontendCache = typeof currentWordItem.explanation === 'string';
-          else if (modeToFetch === 'fact') contentExistsInFrontendCache = typeof currentWordItem.fact === 'string';
-          else if (modeToFetch === 'deep_dive') contentExistsInFrontendCache = typeof currentWordItem.deep_dive === 'string';
-          else if (modeToFetch === 'image') contentExistsInFrontendCache = (typeof currentWordItem.image_url === 'string' && currentWordItem.image_url.length > 0) || (typeof currentWordItem.image_prompt === 'string' && currentWordItem.image_prompt.length > 0);
-          else if (modeToFetch === 'quiz') contentExistsInFrontendCache = Array.isArray(currentWordItem.quiz) && currentWordItem.quiz.length > 0;
-      }
-      
-      const isContextualExplainCall = modeToFetch === 'explain' && streakContextForAPI.length > 0;
-
-      if (!isRefreshClick && contentExistsInFrontendCache) {
-        if (!isReviewingStreakWord && !isSubTopicClick && !isProfileWordClick) {
-             if(isNewPrimaryWordSearch || (currentFocusWord === wordToFetch)){
-                 setCurrentFocusWord(wordToFetch);
+    // --- Always Fresh Quiz for Single Word (Non-Streak Queue) ---
+    if (targetModeForThisCall === 'quiz' && liveStreakQuizQueue.length === 0) {
+        const explanationForQuiz = generatedContent[wordId]?.explanation;
+        if (!explanationForQuiz || explanationForQuiz.trim() === '') {
+            // Attempt to fetch explanation first if missing
+            if (activeContentMode !== 'explain' && !generatedContent[wordId]?.explanation) {
+                 console.log(`Quiz mode for ${wordToFetch} but no explanation. Fetching explanation first.`);
+                 try {
+                    const explResponse = await fetch(`${API_BASE_URL}/generate_explanation`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                        body: JSON.stringify({ word: wordToFetch, mode: 'explain', refresh_cache: true, streakContext: streakContextForAPI }),
+                    });
+                    if (!explResponse.ok) throw new Error((await explResponse.json()).error || 'Failed to fetch explanation for quiz');
+                    const explData = await explResponse.json();
+                    setGeneratedContent(prev => ({...prev, [wordId]: {...(prev[wordId] || {}), explanation: explData.explain}}));
+                    // Now call self to fetch quiz with the new explanation
+                    handleGenerateExplanation(wordToFetch, isNewPrimaryWordSearch, true, isSubTopicClick, 'quiz', isProfileWordClick);
+                 } catch (err: any) { setError(err.message); console.error("Error pre-fetching explanation for quiz:", err); setIsLoading(false);}
+                 return;
+            } else if (!explanationForQuiz || explanationForQuiz.trim() === '') {
+                 setError(`Please view the explanation for "${wordToFetch}" first to generate a quiz.`);
+                 setIsLoading(false); return;
             }
-        } else if (isSubTopicClick && !isReviewingStreakWord) { 
-            setCurrentFocusWord(wordToFetch);
         }
-
-        if(activeContentMode !== modeToFetch) setActiveContentMode(modeToFetch);
-        setIsLoading(false);
-        if (isNewPrimaryWordSearch || isProfileWordClick) { 
-            setLiveStreak({ score: 1, words: [wordToFetch] });
-        }
-        console.log(`Serving '${modeToFetch}' for '${wordToFetch}' from frontend cache (handleGenerateExplanation).`);
-        return;
-      }
-
-      const requestBody: any = { 
-          word: wordToFetch, mode: modeToFetch, 
-          refresh_cache: isRefreshClick || isContextualExplainCall,
-          streakContext: streakContextForAPI 
-      };
-
-      if (modeToFetch === 'quiz') {
-          const explanationForQuiz = generatedContent[wordId]?.explanation;
-          if (explanationForQuiz && typeof explanationForQuiz === 'string' && explanationForQuiz.trim() !== '') {
-              requestBody.explanation_text = explanationForQuiz;
-          } else {
-              setError(`Please view the explanation for "${wordToFetch}" first to generate a quiz.`);
-              setIsLoading(false); return;
-          }
-      }
-
-      console.log(`Fetching content for "${wordToFetch}", mode "${modeToFetch}", context: [${streakContextForAPI.join(', ')}] from backend.`);
-      const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        if (response.status === 401) { handleLogout(); setShowAuthModal(true); setAuthError("Session expired."); }
-        else if (response.status === 429) setError("API rate limit reached. Please try again later.");
-        else setError(errData.error || `Failed to generate content (${response.status})`);
-        setIsLoading(false); return; 
-      }
-
-      const data = await response.json(); 
-      console.log("Data received from backend:", data);
-      
-      setGeneratedContent(prev => { 
-        const existingWordData = prev[wordId] || {};
-        const newWordData: GeneratedContentItem = { ...existingWordData };
-        if (modeToFetch === 'explain') { if (data.explain !== undefined) newWordData.explanation = data.explain; }
-        else if (modeToFetch === 'fact') { if (data.fact !== undefined) newWordData.fact = data.fact; }
-        else if (modeToFetch === 'deep_dive') { if (data.deep_dive !== undefined) newWordData.deep_dive = data.deep_dive; }
-        else if (modeToFetch === 'image') {
-          if (data.image_url !== undefined) { newWordData.image_url = data.image_url; if (data.image_prompt !== undefined) newWordData.image_prompt = data.image_prompt; }
-          else if (data.image !== undefined) { newWordData.image_prompt = data.image; newWordData.image_url = undefined; }
-        } else if (modeToFetch === 'quiz') {
-          const quizStrings = data.quiz; 
-          if (quizStrings && Array.isArray(quizStrings)) {
-            newWordData.quiz = parseQuizStringToArray(quizStrings);
-            newWordData.quiz_progress = (isRefreshClick || (data.quiz && !data.quiz_progress?.length)) ? [] : (data.quiz_progress || existingWordData.quiz_progress || []);
-            setCurrentQuizQuestionIndex(0); setSelectedQuizOption(null); setQuizFeedback(null); setIsQuizAttempted(false);     
-          }
-        }
-        if (data.is_favorite !== undefined) newWordData.is_favorite = data.is_favorite;
-        newWordData.first_explored_at = existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
-        newWordData.last_explored_at = data.last_explored_at || new Date().toISOString(); 
-        const currentModesGenerated = new Set(existingWordData.modes_generated || []);
-        currentModesGenerated.add(modeToFetch);
-        if (data.modes_generated && Array.isArray(data.modes_generated)) data.modes_generated.forEach((m: string) => currentModesGenerated.add(m));
-        newWordData.modes_generated = Array.from(currentModesGenerated);
-        console.log(`Processed newWordData for ${wordId} (mode: ${modeToFetch}):`, newWordData);
-        return { ...prev, [wordId]: newWordData };
-      });
-
-      if (isNewPrimaryWordSearch || isProfileWordClick) {
-        setCurrentFocusWord(wordToFetch); 
-        setLiveStreak({ score: 1, words: [wordToFetch] });
-        setIsReviewingStreakWord(false); setWordForReview(null);
-      } else if (isSubTopicClick) {
-        if (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord)) {
-            setIsReviewingStreakWord(false); setWordForReview(null); 
-            setLiveStreak(prevStreak => {
-                if (!prevStreak) return { score: 1, words: [wordToFetch] }; 
-                if (prevStreak.words[prevStreak.words.length -1] !== wordToFetch) { 
-                     return { score: prevStreak.score + 1, words: [...prevStreak.words, wordToFetch] };
-                }
-                return prevStreak; 
+        // Proceed to fetch quiz if explanation exists
+        try {
+            console.log(`Fetching FRESH single-word quiz for: ${wordToFetch}`);
+            const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ word: wordToFetch, mode: 'quiz', explanation_text: explanationForQuiz, refresh_cache: true }),
             });
+            if (!response.ok) { throw new Error((await response.json()).error || 'Failed to fetch quiz'); }
+            const data = await response.json();
+            const parsedQuiz = parseQuizStringToArray(data.quiz);
+            setCurrentSingleWordQuiz(parsedQuiz.length > 0 ? parsedQuiz : null);
+            setCurrentSingleWordQuizIdx(0);
+            setSingleWordQuizFeedback(null);
+            setSingleWordSelectedOption(null);
+            setSingleWordQuizAttempted(false);
+            setActiveContentMode('quiz');
+        } catch (err: any) { setError(err.message); console.error("Error fetching single word quiz:", err); }
+        finally { setIsLoading(false); }
+        return; 
+    }
+
+    // --- Logic for fetching other content modes (explain, fact, etc.) OR if mode is 'quiz' and streak quiz is active ---
+    // For 'explain', 'fact', etc., or if mode is 'quiz' but liveStreakQuizQueue.length > 0 (UI will handle display)
+    try {
+        let contentExistsInFrontendCache = false;
+        const currentWordItem = generatedContent[wordId];
+        // Cache check is mainly for non-explain, non-quiz modes now
+        if (currentWordItem && targetModeForThisCall !== 'explain' && targetModeForThisCall !== 'quiz') {
+             if (targetModeForThisCall === 'fact') contentExistsInFrontendCache = typeof currentWordItem.fact === 'string';
+             // ... other non-quiz, non-explain modes
         }
-      }
-      setActiveContentMode(modeToFetch);
+        
+        const isContextualExplainCall = targetModeForThisCall === 'explain' && streakContextForAPI.length > 0;
+
+        // If not refreshing, content exists, and it's not explain/quiz (which are always fresh or managed by streak queue)
+        if (!isRefreshClick && contentExistsInFrontendCache && targetModeForThisCall !== 'explain' && targetModeForThisCall !== 'quiz') {
+            setActiveContentMode(targetModeForThisCall);
+            setIsLoading(false);
+            if (isNewPrimaryWordSearch || isProfileWordClick) { 
+                 setLiveStreak({ score: 1, words: [wordToFetch] });
+            }
+            console.log(`Serving '${targetModeForThisCall}' for '${wordToFetch}' from frontend cache.`);
+            return;
+        }
+
+        // Actual fetch for explain, fact, image, deep_dive
+        const requestBody: any = { 
+            word: wordToFetch, mode: targetModeForThisCall, 
+            refresh_cache: isRefreshClick || isContextualExplainCall || targetModeForThisCall === 'explain', 
+            streakContext: streakContextForAPI 
+        };
+
+        console.log(`Fetching content for "${wordToFetch}", mode "${targetModeForThisCall}", context: [${streakContextForAPI.join(', ')}] from backend.`);
+        const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) { /* ... error handling ... */ throw new Error((await response.json()).error || `Failed to generate ${targetModeForThisCall}`); }
+        const data = await response.json();
+            
+        setGeneratedContent(prev => { /* ... (Update generatedContent for non-quiz items) ... */ 
+            const existingWordData = prev[wordId] || {};
+            const newWordData: GeneratedContentItem = { ...existingWordData };
+            if (targetModeForThisCall === 'explain') { if (data.explain !== undefined) newWordData.explanation = data.explain; }
+            else if (targetModeForThisCall === 'fact') { if (data.fact !== undefined) newWordData.fact = data.fact; }
+            else if (targetModeForThisCall === 'deep_dive') { if (data.deep_dive !== undefined) newWordData.deep_dive = data.deep_dive; }
+            else if (targetModeForThisCall === 'image') {
+                if (data.image_url !== undefined) { newWordData.image_url = data.image_url; if (data.image_prompt !== undefined) newWordData.image_prompt = data.image_prompt; }
+                else if (data.image !== undefined) { newWordData.image_prompt = data.image; newWordData.image_url = undefined; }
+            }
+            if (data.is_favorite !== undefined) newWordData.is_favorite = data.is_favorite;
+            newWordData.first_explored_at = existingWordData.first_explored_at || data.first_explored_at || new Date().toISOString();
+            newWordData.last_explored_at = data.last_explored_at || new Date().toISOString();
+            
+            const currentModesGenerated = new Set(existingWordData.modes_generated || []);
+            currentModesGenerated.add(targetModeForThisCall);
+            if(data.modes_generated && Array.isArray(data.modes_generated)) data.modes_generated.forEach((m: string) => currentModesGenerated.add(m));
+            newWordData.modes_generated = Array.from(currentModesGenerated);
+            return { ...prev, [wordId]: newWordData };
+        });
+
+        // If an explanation was fetched & it's a streak-progressing action, fetch its quiz for the queue
+        const isStreakProgressAction = isNewPrimaryWordSearch || isProfileWordClick || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch)));
+        if (targetModeForThisCall === 'explain' && data.explain && authToken && isStreakProgressAction) {
+            try {
+                const quizResponse = await fetch(`${API_BASE_URL}/generate_explanation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                    body: JSON.stringify({ word: wordToFetch, mode: 'quiz', explanation_text: data.explain, refresh_cache: true }),
+                });
+                if (!quizResponse.ok) { console.error("Failed to fetch quiz for streak item:", (await quizResponse.json()).error); }
+                else {
+                    const quizData = await quizResponse.json();
+                    const parsedQuiz = parseQuizStringToArray(quizData.quiz);
+                    if (parsedQuiz.length > 0) {
+                        const newStreakQuizItem: StreakQuizItem = {
+                            word: wordToFetch, originalExplanation: data.explain,
+                            quizQuestion: parsedQuiz[0], attempted: false,
+                        };
+                        setLiveStreakQuizQueue(prevQueue => [...prevQueue, newStreakQuizItem]);
+                    } else { console.warn(`No quiz questions parsed for streak word: ${wordToFetch}`); }
+                }
+            } catch (quizErr: any) { console.error(`Error fetching quiz for streak word ${wordToFetch}:`, quizErr.message); }
+        }
+
+        if (isNewPrimaryWordSearch || isProfileWordClick) {
+            setCurrentFocusWord(wordToFetch);
+            setLiveStreak({ score: 1, words: [wordToFetch] });
+            setIsReviewingStreakWord(false); setWordForReview(null);
+        } else if (isSubTopicClick) {
+             if (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord)) {
+                setIsReviewingStreakWord(false); setWordForReview(null);
+                setLiveStreak(prevStreak => {
+                    if (!prevStreak) return { score: 1, words: [wordToFetch] };
+                    if (!prevStreak.words.includes(wordToFetch)) {
+                         return { score: prevStreak.score + 1, words: [...prevStreak.words, wordToFetch] };
+                    }
+                    return prevStreak;
+                });
+            }
+        }
+        setActiveContentMode(targetModeForThisCall);
 
     } catch (err: any) {
-      if (!error) setError(err.message);
-      console.error("Error generating content:", err);
+        if (!error) setError(err.message);
+        console.error("Error generating content (main block):", err);
     } finally {
-      setIsLoading(false);
-      if (isNewPrimaryWordSearch) setInputValue(''); 
+        setIsLoading(false);
+        if (isNewPrimaryWordSearch) setInputValue('');
     }
-  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview, error]);
+  }, [authToken, activeContentMode, generatedContent, liveStreak, saveStreakToServer, handleLogout, currentFocusWord, isReviewingStreakWord, wordForReview, error, liveStreakQuizQueue.length]); // Added liveStreakQuizQueue.length
 
   const handleStreakWordClick = useCallback((clickedWord: string) => {
+    // ... (remains mostly the same, ensures quiz states are for streak if applicable) ...
     if (isReviewingStreakWord && wordForReview === clickedWord && activeContentMode === 'explain') {
-        console.log(`[handleStreakWordClick] Already reviewing ${clickedWord} in explain mode.`);
         return;
     }
-    console.log(`[handleStreakWordClick] Reviewing: ${clickedWord}. Current focus (streak tip): ${currentFocusWord}`);
-    
     setIsReviewingStreakWord(true);
     setWordForReview(clickedWord);
     
-    setSelectedQuizOption(null);
-    setQuizFeedback(null);
-    setIsQuizAttempted(false);
-    
-    handleGenerateExplanation(clickedWord, false, false, false, 'explain'); 
-  }, [ isReviewingStreakWord, wordForReview, activeContentMode, handleGenerateExplanation, currentFocusWord]);
+    setCurrentSingleWordQuiz(null);
+    setSingleWordQuizFeedback(null);
+    setSingleWordSelectedOption(null);
+    setSingleWordQuizAttempted(false);
+    setIsViewingStreakQuizSummary(false);
 
+
+    if (activeContentMode === 'quiz') {
+        const itemIndex = liveStreakQuizQueue.findIndex(item => item.word === clickedWord);
+        if (itemIndex !== -1) {
+            setCurrentStreakQuizItemIndex(itemIndex);
+            setShowStreakQuizItemExplanation(false);
+        } else { 
+            // This case means the word clicked from streak display isn't in the quiz queue (should not happen if populated correctly)
+            // Fallback to fetching its explanation. Then user can click quiz tab if they want a quiz for it.
+            handleGenerateExplanation(clickedWord, false, false, true, 'explain'); 
+        }
+    } else { // if current mode is not quiz, switch to explain for the reviewed word
+         handleGenerateExplanation(clickedWord, false, false, true, 'explain'); // isSubTopicClick true to mimic streak context
+    }
+  }, [ isReviewingStreakWord, wordForReview, activeContentMode, handleGenerateExplanation, liveStreakQuizQueue]);
 
   const handleSubTopicClick = useCallback((subTopic: string) => {
-    console.log(`[handleSubTopicClick] Clicked sub-topic: "${subTopic}". Current focus: "${currentFocusWord}". Streak:`, liveStreak?.words);
-    
+    // ... (remains the same)
     if (subTopic === currentFocusWord && !isReviewingStreakWord) {
-        console.log("Sub-topic is the current focus word. Refreshing its explanation.");
         handleGenerateExplanation(subTopic, false, true, false, 'explain'); 
         return;
     }
-
     if (liveStreak && liveStreak.words.includes(subTopic)) {
-        console.log(`Sub-topic "${subTopic}" is already in streak. Switching to review.`);
         handleStreakWordClick(subTopic); 
     } else { 
-        console.log(`Sub-topic "${subTopic}" is new. Extending streak.`);
         handleGenerateExplanation(subTopic, false, false, true, 'explain');
     }
   }, [currentFocusWord, liveStreak, handleGenerateExplanation, handleStreakWordClick, isReviewingStreakWord]); 
   
 
   const handleModeChange = useCallback((newMode: ContentMode) => {
-    const wordToUse = getDisplayWord();
-    if (!wordToUse) { setError("No word is currently in focus."); return; }
-    const wordId = sanitizeWordForId(wordToUse);
-    console.log(`[handleModeChange] Mode: ${newMode} for word: ${wordToUse}`);
-    
-    if (newMode !== 'quiz') { setSelectedQuizOption(null); setQuizFeedback(null); setIsQuizAttempted(false); }
-
-    const item = generatedContent[wordId];
-    let modeSpecificContentExists = false;
-    if (item) {
-        if (newMode === 'explain') modeSpecificContentExists = typeof item.explanation === 'string';
-        else if (newMode === 'fact') modeSpecificContentExists = typeof item.fact === 'string';
-        else if (newMode === 'deep_dive') modeSpecificContentExists = typeof item.deep_dive === 'string';
-        else if (newMode === 'image') modeSpecificContentExists = (typeof item.image_url === 'string' && item.image_url.length > 0) || (typeof item.image_prompt === 'string' && item.image_prompt.length > 0);
-        else if (newMode === 'quiz') modeSpecificContentExists = Array.isArray(item.quiz) && item.quiz.length > 0;
+    const wordToUse = getDisplayWord() || inputValue; // Fallback to inputValue if no displayWord
+    if (!wordToUse && newMode !== 'explain') { // Allow explain even if no word for initial view
+         setError(newMode === 'quiz' ? "Please enter a word to get a quiz." : "No word is currently in focus."); 
+         return; 
     }
+    setError(null); // Clear previous errors
 
-    if (modeSpecificContentExists) {
-        setActiveContentMode(newMode); 
-        if (newMode === 'quiz' && item?.quiz) { 
-            const progress = item.quiz_progress || [];
-            const nextQuestionIdx = progress.length >= item.quiz.length ? item.quiz.length : progress.length;
-            setCurrentQuizQuestionIndex(nextQuestionIdx);
-            setSelectedQuizOption(null); setQuizFeedback(null); setIsQuizAttempted(false); 
+    setActiveContentMode(newMode);
+    setIsViewingStreakQuizSummary(false); 
+    setShowStreakQuizItemExplanation(false);
+
+
+    if (newMode === 'quiz') {
+        if (liveStreakQuizQueue.length > 0) {
+            const firstUnattemptedIdx = liveStreakQuizQueue.findIndex(item => !item.attempted);
+            setCurrentStreakQuizItemIndex(firstUnattemptedIdx !== -1 ? firstUnattemptedIdx : 0);
+        } else if (wordToUse) { // Only fetch if there's a word to use
+            handleGenerateExplanation(wordToUse, false, true, false, 'quiz');
+        } else {
+            // No word and no streak quiz, handled by renderContent
         }
-        console.log(`[handleModeChange] Serving ${newMode} for ${wordToUse} from cache.`);
-    } else {
-        console.log(`[handleModeChange] Content for ${newMode} for ${wordToUse} not found/invalid, calling HGE.`);
-        handleGenerateExplanation(wordToUse, false, false, false, newMode); 
+    } else if (wordToUse) { // For non-quiz modes, ensure there's a word
+        const wordId = sanitizeWordForId(wordToUse);
+        const item = generatedContent[wordId];
+        let modeSpecificContentExists = false;
+        if (item) {
+            if (newMode === 'explain') modeSpecificContentExists = typeof item.explanation === 'string';
+            else if (newMode === 'fact') modeSpecificContentExists = typeof item.fact === 'string';
+            else if (newMode === 'deep_dive') modeSpecificContentExists = typeof item.deep_dive === 'string';
+            else if (newMode === 'image') modeSpecificContentExists = (typeof item.image_url === 'string' && item.image_url.length > 0) || (typeof item.image_prompt === 'string' && item.image_prompt.length > 0);
+        }
+        // Always fetch explanations for freshness/context, or if content doesn't exist for other modes
+        if (!modeSpecificContentExists || newMode === 'explain') { 
+            handleGenerateExplanation(wordToUse, false, newMode === 'explain', false, newMode);
+        }
     }
-  }, [getDisplayWord, generatedContent, handleGenerateExplanation]);
+  }, [getDisplayWord, inputValue, generatedContent, handleGenerateExplanation, liveStreakQuizQueue]);
   
-  const handleRefreshContent = useCallback(() => {
+  const handleRefreshContent = useCallback(() => { 
     const wordToUse = getDisplayWord();
     if (!wordToUse) return;
-    handleGenerateExplanation(wordToUse, false, true, false, activeContentMode);
+    if (activeContentMode === 'explain') { // Refresh only makes sense for explain now
+      handleGenerateExplanation(wordToUse, false, true, false, 'explain');
+    }
   }, [getDisplayWord, activeContentMode, handleGenerateExplanation]);
 
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => {
+    // ... (remains the same)
     if (!authToken || !word) return;
     const wordId = sanitizeWordForId(word);
     setGeneratedContent(prev => { const ci = prev[wordId] || {}; return { ...prev, [wordId]: { ...ci, is_favorite: !currentStatus, last_explored_at: ci.last_explored_at || new Date().toISOString(), first_explored_at: ci.first_explored_at || new Date().toISOString() }}; });
@@ -739,96 +819,70 @@ function App() {
   }, [authToken, fetchUserProfile, userProfileData, generatedContent]);
   
   const handleWordSelectionFromProfile = useCallback((word: string) => {
-    setActiveView('main'); setInputValue(word); 
-    handleGenerateExplanation(word, false, false, false, 'explain', true);
+    // ... (remains the same)
+    setActiveView('main'); 
+    setInputValue(word); 
+    handleGenerateExplanation(word, true, false, false, 'explain', true);
   }, [handleGenerateExplanation]); 
 
-  useEffect(() => {
-    const wordToUse = getDisplayWord();
-    if (activeContentMode === 'quiz' && wordToUse) {
-        const wordId = sanitizeWordForId(wordToUse);
-        const currentWordContent = generatedContent[wordId];
-        if (currentWordContent) {
-            const quizSet = currentWordContent.quiz; 
-            const progress = currentWordContent.quiz_progress || [];
-            if (quizSet && quizSet.length > 0) {
-                const questionToDisplayIndex = currentQuizQuestionIndex < quizSet.length ? currentQuizQuestionIndex : progress.length;
-                if (questionToDisplayIndex < quizSet.length) { 
-                    const currentQuestion = quizSet[questionToDisplayIndex];
-                    const attemptedQuestion = progress.find(p => p.question_index === questionToDisplayIndex);
-                    if (attemptedQuestion && currentQuestion?.options) { 
-                        setSelectedQuizOption(attemptedQuestion.selected_option_key);
-                        setQuizFeedback({ message: attemptedQuestion.is_correct ? "Correct!" : `Incorrect. Correct: ${currentQuestion.options[currentQuestion.correctOptionKey]}`, isCorrect: attemptedQuestion.is_correct });
-                        setIsQuizAttempted(true);
-                    } else { setSelectedQuizOption(null); setQuizFeedback(null); setIsQuizAttempted(false); }
-                }
-            } else if (!isLoading && !error && (!quizSet || quizSet.length === 0)) { 
-                const explanationForQuiz = currentWordContent.explanation;
-                if(explanationForQuiz && typeof explanationForQuiz === 'string' && explanationForQuiz.trim() !== ''){
-                    handleGenerateExplanation(wordToUse, false, false, false, 'quiz');
-                } else if (!isLoading && !error) { 
-                    handleGenerateExplanation(wordToUse, false, false, false, 'explain');
-                }
-            }
-        } else if (!isLoading && !error) {
-            handleGenerateExplanation(wordToUse, false, false, false, 'explain');
-        }
+  // useEffect for quiz logic removed as quiz data is now handled differently (streak queue or fetched fresh)
+
+  const handleStreakQuizOptionSelect = useCallback((optionKey: string) => {
+    // ... (defined earlier, ensures it updates liveStreakQuizQueue)
+    if (currentStreakQuizItemIndex >= liveStreakQuizQueue.length || liveStreakQuizQueue[currentStreakQuizItemIndex].attempted) return;
+
+    const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex];
+    const isCorrect = currentItem.quizQuestion.correctOptionKey === optionKey;
+
+    const updatedQueue = liveStreakQuizQueue.map((item, index) => 
+        index === currentStreakQuizItemIndex ? { ...item, selectedOptionKey: optionKey, isCorrect, attempted: true } : item
+    );
+    setLiveStreakQuizQueue(updatedQueue);
+    handleSaveQuizAttempt(currentItem.word, 0, optionKey, isCorrect); // questionIdx can be 0 or item index
+  }, [liveStreakQuizQueue, currentStreakQuizItemIndex, handleSaveQuizAttempt]);
+
+  const handleNextStreakQuizItem = useCallback(() => {
+    // ... (defined earlier)
+    setShowStreakQuizItemExplanation(false); 
+    if (currentStreakQuizItemIndex < liveStreakQuizQueue.length - 1) {
+        setCurrentStreakQuizItemIndex(prevIdx => prevIdx + 1);
+    } else {
+        setIsViewingStreakQuizSummary(true); 
     }
-  }, [activeContentMode, getDisplayWord, generatedContent, currentQuizQuestionIndex, isLoading, error, handleGenerateExplanation]);
-
-
-  const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string, isCorrect: boolean) => {
-    if (!authToken) return;
-    const wordId = sanitizeWordForId(word);
-    try {
-        const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-            body: JSON.stringify({ word, question_index: questionIdx, selected_option_key: optionKey, is_correct: isCorrect }),
-        });
-        if (!response.ok) throw new Error((await response.json()).error || 'Failed to save quiz attempt');
-        const data = await response.json();
-        setGeneratedContent(prev => ({ ...prev, [wordId]: { ...(prev[wordId] || {}), quiz_progress: data.quiz_progress }}));
-        if (authToken) await fetchUserProfile(authToken); 
-    } catch (err: any) { console.error("Error saving quiz attempt:", err); setError("Could not save quiz progress."); }
-  }, [authToken, fetchUserProfile]); 
-
-  const handleQuizOptionSelect = useCallback((optionKey: string) => {
-    const wordToUse = getDisplayWord();
-    if (!wordToUse) return;
-    const wordId = sanitizeWordForId(wordToUse);
-    const currentGeneratedContent = generatedContent[wordId]; 
-    if (!currentGeneratedContent) return;
-    const quizSet = currentGeneratedContent.quiz; 
-    if (!quizSet || currentQuizQuestionIndex >= quizSet.length) return; 
-    const progress = currentGeneratedContent.quiz_progress || [];
-    if (progress.find(p => p.question_index === currentQuizQuestionIndex) || isQuizAttempted) return; 
-    const currentQuestion = quizSet[currentQuizQuestionIndex];
-    if (!currentQuestion?.options) return;
-    const isCorrect = currentQuestion.correctOptionKey === optionKey;
-    setSelectedQuizOption(optionKey);
-    setQuizFeedback({ message: isCorrect ? "Correct!" : `Incorrect. Correct: ${currentQuestion.options[currentQuestion.correctOptionKey]}`, isCorrect });
-    setIsQuizAttempted(true); 
-    handleSaveQuizAttempt(wordToUse, currentQuizQuestionIndex, optionKey, isCorrect);
-  }, [getDisplayWord, generatedContent, currentQuizQuestionIndex, isQuizAttempted, handleSaveQuizAttempt]);
-
-  const handleNextQuestion = useCallback(() => {
-    const wordToUse = getDisplayWord();
-    if (!wordToUse) return;
-    const quizSet = generatedContent[sanitizeWordForId(wordToUse)]?.quiz;
-    if (quizSet) { 
-        setCurrentQuizQuestionIndex(prevIdx => prevIdx < quizSet.length - 1 ? prevIdx + 1 : quizSet.length);
-        setSelectedQuizOption(null); setQuizFeedback(null); setIsQuizAttempted(false);
-    }
-  }, [getDisplayWord, generatedContent]);
+  }, [currentStreakQuizItemIndex, liveStreakQuizQueue.length]);
   
-  const handleFetchNewQuizSet = useCallback(() => {
-    const wordToUse = getDisplayWord();
-    if (!wordToUse) return;
-    handleGenerateExplanation(wordToUse, false, true, false, 'quiz');
-  }, [getDisplayWord, handleGenerateExplanation]);
+  const handleSingleWordQuizOptionSelect = useCallback((optionKey: string) => {
+    // ... (defined earlier, ensure currentFocusWord is valid)
+    if (!currentSingleWordQuiz || currentSingleWordQuizIdx >= currentSingleWordQuiz.length || singleWordQuizAttempted || !currentFocusWord) return;
+    
+    const currentQuestion = currentSingleWordQuiz[currentSingleWordQuizIdx];
+    const isCorrect = currentQuestion.correctOptionKey === optionKey;
+    
+    setSingleWordSelectedOption(optionKey);
+    setSingleWordQuizFeedback({ message: isCorrect ? "Correct!" : `Incorrect. Correct: ${currentQuestion.options[currentQuestion.correctOptionKey]}`, isCorrect });
+    setSingleWordQuizAttempted(true);
+    
+    handleSaveQuizAttempt(currentFocusWord, currentSingleWordQuizIdx, optionKey, isCorrect);
+  }, [currentSingleWordQuiz, currentSingleWordQuizIdx, singleWordQuizAttempted, currentFocusWord, handleSaveQuizAttempt]);
+
+  const handleNextSingleWordQuizQuestion = useCallback(() => {
+    // ... (defined earlier)
+    if (!currentSingleWordQuiz) return;
+    if (currentSingleWordQuizIdx < currentSingleWordQuiz.length - 1) {
+      setCurrentSingleWordQuizIdx(prev => prev + 1);
+      setSingleWordSelectedOption(null);
+      setSingleWordQuizFeedback(null);
+      setSingleWordQuizAttempted(false);
+    } else {
+      // End of quiz, user would typically click Quiz tab again on the word for a new set
+      console.log("End of current single word quiz set. Click Quiz tab again for new questions.");
+      // Maybe set a flag to show a "Get New Quiz" button here or just clear currentSingleWordQuiz
+      setCurrentSingleWordQuiz(null); // Clear to force re-fetch next time
+    }
+  }, [currentSingleWordQuiz, currentSingleWordQuizIdx]);
 
   // --- RENDER FUNCTIONS ---
-  const renderAuthModal = () => { 
+  const renderAuthModal = () => { /* ... (remains the same) ... */ 
     if (!showAuthModal) return null;
     return (
       <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -852,34 +906,173 @@ function App() {
     );
   };
 
-  const renderContent = () => { 
-    const wordToUse = getDisplayWord();
-    if (!wordToUse && isLoading) return <div className="text-center p-10 text-slate-400">Loading...</div>; 
+  const renderContent = () => {
+    // ... (renderContent defined earlier, with quiz logic updates)
+    const wordToUse = getDisplayWord(); 
+
+    if (activeContentMode === 'quiz') {
+        if (liveStreakQuizQueue.length > 0 && !isViewingStreakQuizSummary) {
+            const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex];
+            if (!currentItem) { 
+                 return <div className="text-center p-10 text-slate-400">Loading streak quiz question...</div>;
+            }
+            const { word, quizQuestion, attempted, selectedOptionKey, isCorrect, originalExplanation } = currentItem;
+
+            return (
+                <div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative text-slate-200">
+                    <p className="text-sm text-sky-300 mb-2 font-semibold">
+                        Streak Quiz: Question {currentStreakQuizItemIndex + 1} of {liveStreakQuizQueue.length} (Word: {word})
+                    </p>
+                    <h3 className="text-lg font-semibold mb-4">{quizQuestion.question}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                        {Object.entries(quizQuestion.options).map(([key, optionText]) => (
+                            <button
+                                key={key}
+                                onClick={() => handleStreakQuizOptionSelect(key)}
+                                disabled={attempted}
+                                className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out 
+                                    ${attempted ? 
+                                        (key === selectedOptionKey ? (isCorrect ? 'bg-green-500/80 ring-2 ring-green-400' : 'bg-red-500/80 ring-2 ring-red-400') 
+                                            : (key === quizQuestion.correctOptionKey ? 'bg-green-500/50' : 'bg-slate-600 opacity-60'))
+                                        : 'bg-slate-650 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'
+                                    } 
+                                    ${attempted && 'cursor-not-allowed'}
+                                    ${!attempted && 'cursor-pointer'}`}
+                            >
+                                {optionText}
+                            </button>
+                        ))}
+                    </div>
+
+                    {attempted && (
+                        <div className={`p-3 rounded-md my-4 text-sm ${isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                            {isCorrect ? <><CheckCircle className="inline mr-2"/>Correct!</> : <><XCircle className="inline mr-2"/>Incorrect.</>}
+                            {!isCorrect && quizQuestion.options[quizQuestion.correctOptionKey] && (
+                                <span className="block mt-1">Correct Answer: {quizQuestion.options[quizQuestion.correctOptionKey]}</span>
+                            )}
+                            {quizQuestion.explanation && ( // This is explanation for the answer
+                                <p className="mt-1 text-xs italic">Explanation: {quizQuestion.explanation}</p>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="mt-4 flex flex-col sm:flex-row gap-2 justify-between items-center">
+                        <button
+                            onClick={() => setShowStreakQuizItemExplanation(!showStreakQuizItemExplanation)}
+                            className="text-sm text-sky-400 hover:text-sky-300 underline p-1 flex items-center"
+                        >
+                           <HelpCircle size={16} className="mr-1"/> {showStreakQuizItemExplanation ? "Hide" : "Show"} Word Explanation
+                        </button>
+                        {attempted && (
+                            <button
+                                onClick={handleNextStreakQuizItem}
+                                className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center"
+                            >
+                                {currentStreakQuizItemIndex < liveStreakQuizQueue.length - 1 ? (
+                                    <>Next Question <ChevronRight size={20} className="ml-1"/></>
+                                ) : (
+                                    <>View Streak Summary <FileText size={18} className="ml-1"/></>
+                                )}
+                            </button>
+                        )}
+                    </div>
+                     {showStreakQuizItemExplanation && (
+                        <div className="mt-4 p-3 bg-slate-800 rounded prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed">
+                            <h4 className="font-semibold text-sky-400">Explanation for "{word}"</h4>
+                            <p dangerouslySetInnerHTML={{ __html: originalExplanation.replace(/\n/g, '<br />') }} />
+                        </div>
+                    )}
+                </div>
+            );
+        } else if (isViewingStreakQuizSummary) {
+            const correctAnswers = liveStreakQuizQueue.filter(item => item.isCorrect).length;
+            const totalAnswered = liveStreakQuizQueue.filter(item => item.attempted).length;
+             return (
+                <div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 text-slate-200 text-center">
+                    <h3 className="text-2xl font-bold text-sky-400 mb-4">Streak Quiz Summary</h3>
+                    <p className="text-lg mb-2">You answered <span className="font-bold text-emerald-400">{correctAnswers}</span> out of <span className="font-bold text-sky-300">{totalAnswered}</span> questions correctly!</p>
+                    <p className="text-lg mb-6">Points Earned: <span className="font-bold text-amber-400">{correctAnswers * 10}</span></p>
+                    <button 
+                        onClick={() => {
+                            setIsViewingStreakQuizSummary(false);
+                            setActiveContentMode('explain'); 
+                            if(currentFocusWord) handleGenerateExplanation(currentFocusWord, false, false, false, 'explain');
+                        }}
+                        className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg"
+                    >
+                        Done
+                    </button>
+                </div>
+            );
+        }
+        else if (currentSingleWordQuiz && currentSingleWordQuiz.length > 0 && currentFocusWord) {
+            const quizSet = currentSingleWordQuiz;
+            const cq = quizSet[currentSingleWordQuizIdx];
+            if (!cq || !cq.options) return <p className="text-red-400">Error: Quiz data invalid.</p>;
+
+            return (
+                 <div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative text-slate-200">
+                    <p className="text-sm text-slate-400 mb-2">Quiz for "{currentFocusWord}" (Question {currentSingleWordQuizIdx + 1} of {quizSet.length})</p>
+                    <h3 className="text-lg font-semibold mb-4">{cq.question}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                        {Object.entries(cq.options).map(([k, o]) => (
+                            <button key={k} onClick={() => handleSingleWordQuizOptionSelect(k)} disabled={singleWordQuizAttempted}
+                                className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out 
+                                ${singleWordSelectedOption === k ? (singleWordQuizFeedback?.isCorrect ? 'bg-green-500 hover:bg-green-600 ring-2 ring-green-400' : 'bg-red-500 hover:bg-red-600 ring-2 ring-red-400') 
+                                    : 'bg-slate-650 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'} 
+                                ${singleWordQuizAttempted && 'cursor-not-allowed'}`}>
+                                {o}
+                            </button>
+                        ))}
+                    </div>
+                    {singleWordQuizFeedback && (
+                        <div className={`p-3 rounded-md my-4 text-sm ${singleWordQuizFeedback.isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                            {singleWordQuizFeedback.message}
+                            {!singleWordQuizFeedback.isCorrect && cq.explanation && <p className="mt-1 text-xs">{cq.explanation}</p>}
+                        </div>
+                    )}
+                    {singleWordQuizAttempted && currentSingleWordQuizIdx < quizSet.length -1 && ( // Show next only if not last
+                        <button onClick={handleNextSingleWordQuizQuestion}
+                            className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg mt-4">
+                            Next Question
+                        </button>
+                    )}
+                     {singleWordQuizAttempted && currentSingleWordQuizIdx === quizSet.length -1 && (
+                         <p className="text-center text-slate-400 mt-4 p-2">End of this quiz. Click the 'Quiz' tab again for new questions on this topic.</p>
+                     )}
+                </div>
+            );
+        } else if (isLoading && currentFocusWord) { // Show loading only if a focus word exists
+            return <div className="text-center p-10 text-slate-400">Generating quiz for "{currentFocusWord}"...</div>;
+        } else if (currentFocusWord) { // If there's a focus word but no quiz yet
+             return <div className="text-center p-10 text-slate-400">Click the 'Quiz' tab to get questions for "{currentFocusWord}".</div>;
+        } else { // No focus word and no streak quiz
+             return <div className="text-center p-10 text-slate-400">Explore a word to start a quiz!</div>;
+        }
+    }
+
+    if (!wordToUse && isLoading) return <div className="text-center p-10 text-slate-400">Loading...</div>;
     if (!wordToUse) return <div className="text-center p-10 text-slate-400 text-lg">Enter a word or concept to begin!</div>;
 
-    const wordIdForContent = sanitizeWordForId(wordToUse); 
-    const content = generatedContent[wordIdForContent];
-    let modeContentAvailable = false;
-    if (content) {
-        if (activeContentMode === 'explain') modeContentAvailable = typeof content.explanation === 'string' && content.explanation.length > 0;
-        else if (activeContentMode === 'fact') modeContentAvailable = typeof content.fact === 'string' && content.fact.length > 0;
-        else if (activeContentMode === 'deep_dive') modeContentAvailable = typeof content.deep_dive === 'string' && content.deep_dive.length > 0;
-        else if (activeContentMode === 'image') modeContentAvailable = (typeof content.image_url === 'string' && content.image_url.length > 0) || (typeof content.image_prompt === 'string' && content.image_prompt.length > 0);
-        else if (activeContentMode === 'quiz') modeContentAvailable = Array.isArray(content.quiz) && content.quiz.length > 0;
-    }
+    const wordIdForContent = sanitizeWordForId(wordToUse);
+    const contentItem = generatedContent[wordIdForContent]; 
 
-    if (isLoading && !modeContentAvailable) return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>;
-    if (error && !modeContentAvailable) {
-      if(activeContentMode === 'quiz' && error.includes("Explanation text is required")) return <div className="text-center p-10 text-red-400">Please view the explanation for "{wordToUse}" first.</div>;
-      return <div className="text-center p-10 text-red-400">Error: {error}</div>;
-    }
-    if (!content) return <div className="text-center p-10 text-slate-400">No content for "{wordToUse}" yet. Try generating.</div>;
-    if (!modeContentAvailable && !isLoading) { 
-        if(activeContentMode === 'quiz' && (!content.explanation || content.explanation.trim() === '') && !isLoading) return <div className="text-center p-10 text-slate-400">Please generate an explanation first for "{wordToUse}".</div>;
-        return <div className="text-center p-10 text-slate-400">No {activeContentMode} content for "{wordToUse}". Try generating.</div>;
+    let modeContentAvailable = false;
+    if (contentItem) {
+        if (activeContentMode === 'explain') modeContentAvailable = typeof contentItem.explanation === 'string' && contentItem.explanation.length > 0;
+        else if (activeContentMode === 'fact') modeContentAvailable = typeof contentItem.fact === 'string' && contentItem.fact.length > 0;
+        else if (activeContentMode === 'deep_dive') modeContentAvailable = typeof contentItem.deep_dive === 'string' && contentItem.deep_dive.length > 0;
+        else if (activeContentMode === 'image') modeContentAvailable = (typeof contentItem.image_url === 'string' && contentItem.image_url.length > 0) || (typeof contentItem.image_prompt === 'string' && contentItem.image_prompt.length > 0);
     }
     
-    const currentIsFavorite = content.is_favorite || false;
+    if (isLoading && !modeContentAvailable) return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>;
+    if (error && !modeContentAvailable) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
+    if (!contentItem && activeContentMode !== 'explain' /* Allow explain to try fetching */) return <div className="text-center p-10 text-slate-400">No content for "{wordToUse}" yet. Try generating.</div>;
+    if (!modeContentAvailable && !isLoading && activeContentMode !== 'explain') {
+         return <div className="text-center p-10 text-slate-400">No {activeContentMode} content for "{wordToUse}". Try generating.</div>;
+    }
+
+    const currentIsFavorite = contentItem?.is_favorite || false;
     const renderClickableText = (text: string | undefined) => { 
         if (!text) return null;
         const parts = text.split(/(<click>.*?<\/click>)/g);
@@ -892,40 +1085,77 @@ function App() {
             return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />;
         });
     };
+
     let modeContentElement = null;
     switch (activeContentMode) {
-      case 'explain': modeContentElement = content.explanation ? (<div className="prose prose-invert prose-sm sm:prose-base max-w-none text-slate-200 leading-relaxed">{renderClickableText(content.explanation)}</div>) : <p>No explanation.</p>; break;
-      case 'quiz': 
-        const quizSet = content.quiz; const progress = content.quiz_progress || [];
-        if (!quizSet || quizSet.length === 0) { modeContentElement = <p>No quiz.</p>; break; }
-        if (currentQuizQuestionIndex >= quizSet.length) { 
-            const score = progress.filter(p => p.is_correct).length;
-            modeContentElement = ( <div className="text-slate-200"> <h3 className="text-xl font-semibold mb-4 text-sky-300">Quiz Summary for "{wordToUse}"</h3> <p className="text-lg mb-4">Score: <span className="font-bold text-emerald-400">{score}</span> / {quizSet.length}</p> <ul className="space-y-3 mb-6 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">{quizSet.map((pq, i) => { if (!pq) return null; const att = progress.find(p=>p.question_index===i); return (<li key={i} className={`p-3 rounded-md ${att?(att.is_correct?'bg-green-500/20':'bg-red-500/20'):'bg-slate-700'}`}><p className="font-medium mb-1">Q{i+1}: {pq.question}</p><p className="text-xs">Ans: {att&&pq.options&&pq.options[att.selected_option_key]?pq.options[att.selected_option_key]:(att?'N/A':'Not answered')}</p>{!att?.is_correct&&pq.options&&pq.options[pq.correctOptionKey]&&<p className="text-xs text-emerald-300">Correct: {pq.options[pq.correctOptionKey]}</p>}{att&&!att.is_correct&&pq.explanation&&<p className="mt-1 text-xs text-slate-300"><i>Expl: {pq.explanation}</i></p>}</li>);})}</ul> <button onClick={handleFetchNewQuizSet} className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg"><RotateCcw size={18} className="mr-2"/>More Questions</button> </div> );
-        } else { 
-            const cq = quizSet[currentQuizQuestionIndex]; 
-            if (!cq?.options) {modeContentElement = <p>Error: Quiz data invalid.</p>; break;}
-            modeContentElement = ( <div className="text-slate-200"> <p className="text-sm text-slate-400 mb-2">Q {currentQuizQuestionIndex+1} of {quizSet.length}</p> <h3 className="text-lg font-semibold mb-4">{cq.question}</h3> <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">{Object.entries(cq.options).map(([k, o])=>(<button key={k} onClick={()=>handleQuizOptionSelect(k)} disabled={isQuizAttempted||!!progress.find(p=>p.question_index===currentQuizQuestionIndex)} className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out ${selectedQuizOption===k?(quizFeedback?.isCorrect?'bg-green-500 hover:bg-green-600 ring-2 ring-green-400':'bg-red-500 hover:bg-red-600 ring-2 ring-red-400'):'bg-slate-700 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'} ${(isQuizAttempted||!!progress.find(p=>p.question_index===currentQuizQuestionIndex))&&selectedQuizOption!==k?'opacity-60 cursor-not-allowed':'cursor-pointer'}`}>{o}</button>))}</div> {quizFeedback&&(<div className={`p-3 rounded-md my-4 text-sm ${quizFeedback.isCorrect?'bg-green-500/20 text-green-300':'bg-red-500/20 text-red-300'}`}>{quizFeedback.message}{!quizFeedback.isCorrect&&cq.explanation&&<p className="mt-1 text-xs">{cq.explanation}</p>}</div>)} {(isQuizAttempted||!!progress.find(p=>p.question_index===currentQuizQuestionIndex))&&(<button onClick={handleNextQuestion} className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg">{currentQuizQuestionIndex===quizSet.length-1?'View Summary':'Next Question'}</button>)} </div> );
-        } break;
-      case 'fact': modeContentElement = content.fact ? <p className="text-lg text-amber-300 italic leading-relaxed">{renderClickableText(content.fact)}</p> : <p>No fact.</p>; break;
-      case 'image': modeContentElement = (<div>{(content.image_url?.length)?(<img src={content.image_url} alt={`For ${wordToUse}`} className="rounded-lg shadow-lg mx-auto max-w-full h-auto max-h-[400px] object-contain"/>):(content.image_prompt?.length)?(<p className="text-slate-400 italic">{content.image_prompt}</p>):(<p>No image.</p>)}</div>); break;
-      case 'deep_dive': modeContentElement = content.deep_dive ? <div className="prose prose-invert max-w-none text-slate-200 leading-relaxed">{renderClickableText(content.deep_dive)}</div> : <p>No deep dive.</p>; break;
-      default: modeContentElement = <p>Select mode.</p>;
+      case 'explain': modeContentElement = contentItem?.explanation ? (<div className="prose prose-invert prose-sm sm:prose-base max-w-none text-slate-200 leading-relaxed">{renderClickableText(contentItem.explanation)}</div>) : (isLoading ? <p>Generating explanation...</p> : <p>No explanation available. Try generating.</p>); break;
+      case 'fact': modeContentElement = contentItem?.fact ? <p className="text-lg text-amber-300 italic leading-relaxed">{renderClickableText(contentItem.fact)}</p> : <p>No fact.</p>; break;
+      case 'image': modeContentElement = (<div>{(contentItem?.image_url?.length)?(<img src={contentItem.image_url} alt={`For ${wordToUse}`} className="rounded-lg shadow-lg mx-auto max-w-full h-auto max-h-[400px] object-contain"/>):(contentItem?.image_prompt?.length)?(<p className="text-slate-400 italic">{contentItem.image_prompt}</p>):(<p>No image.</p>)}</div>); break;
+      case 'deep_dive': modeContentElement = contentItem?.deep_dive ? <div className="prose prose-invert max-w-none text-slate-200 leading-relaxed">{renderClickableText(contentItem.deep_dive)}</div> : <p>No deep dive.</p>; break;
+      default: modeContentElement = <p>Select a mode to view content.</p>; 
     }
     return ( <div key={wordToUse + activeContentMode} className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative"> <div className="absolute top-3 right-3 flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-slate-600 transition-colors ${currentIsFavorite?'text-pink-500':'text-slate-400'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> {activeContentMode==='explain'&&(<button onClick={handleRefreshContent} className="p-1.5 rounded-full text-slate-400 hover:text-sky-300 hover:bg-slate-600 transition-colors" title={`Regen ${activeContentMode}`}><RefreshCw size={18}/></button>)} </div> <h2 className="text-2xl sm:text-3xl font-bold text-sky-400 mb-4 capitalize">{wordToUse} - <span className="text-sky-500">{activeContentMode}</span></h2> {modeContentElement} </div> );
   };
-  const modeButtons: { mode: ContentMode; label: string; icon: React.ElementType }[] = [  { mode: 'explain', label: 'Explain', icon: MessageSquareQuote },{ mode: 'quiz', label: 'Quiz', icon: Lightbulb },{ mode: 'fact', label: 'Fact', icon: Sparkles },{ mode: 'image', label: 'Image', icon: ImageIcon },{ mode: 'deep_dive', label: 'Deep Dive', icon: Brain },];
+
+  const modeButtons: { mode: ContentMode; label: string; icon: React.ElementType }[] = [
+    { mode: 'explain', label: 'Explain', icon: MessageSquareQuote },
+    { mode: 'quiz', label: 'Quiz', icon: Lightbulb },
+    { mode: 'fact', label: 'Fact', icon: Sparkles },
+    { mode: 'image', label: 'Image', icon: ImageIcon },
+    { mode: 'deep_dive', label: 'Deep Dive', icon: Brain },
+  ];
+  
+  const unattemptedStreakQuizCount = liveStreakQuizQueue.filter(item => !item.attempted).length;
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
-      <header className="bg-slate-800 shadow-md p-3 sm:p-4 sticky top-0 z-40"> <div className="container mx-auto flex justify-between items-center max-w-6xl"> <div className="text-2xl sm:text-3xl font-bold text-sky-400 cursor-pointer hover:text-sky-300 transition-colors" onClick={() => { setActiveView('main'); }} title="Tiny Tutor Home" > Tiny Tutor AI </div> <div className="flex items-center space-x-2 sm:space-x-3"> {currentUser ? ( <> <span className="text-sm sm:text-base hidden md:inline">Hi, {currentUser.username}!</span> <button onClick={() => { if (activeView === 'profile') setActiveView('main'); else { if (authToken) fetchUserProfile(authToken); setActiveView('profile');} }} className={`p-2 rounded-full hover:bg-slate-700 transition-colors ${activeView === 'profile' ? 'text-sky-400 bg-slate-700' : 'text-slate-300'}`} title={activeView === 'profile' ? "Back to Explorer" : "View Profile"} > {activeView === 'profile' ? <Home size={20} /> : <User size={20} />} </button> <button onClick={handleLogout} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-red-400 transition-colors" title="Logout"> <LogOut size={20} /> </button> </> ) : ( <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-sky-400 transition-colors" title="Login/Signup"> <LogIn size={20} /> </button> )} </div> </div> </header>
-      {activeView === 'main' && ( <main className="container mx-auto p-3 sm:p-4 md:p-6 flex-grow max-w-3xl w-full"> <form onSubmit={(e) => { e.preventDefault(); handleGenerateExplanation(inputValue, true, false, false, 'explain'); }} className="mb-6 flex flex-col sm:flex-row items-stretch gap-2"> <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept (e.g., photosynthesis)" className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none placeholder-slate-500" /> <button type="submit" disabled={isLoading || !inputValue.trim()} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 px-4 sm:px-6 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" > <BookOpen size={20} className="mr-2 hidden sm:inline" /> Generate </button> </form> {error && !isLoading && <div className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm animate-fadeIn">{error}</div>} {liveStreak && liveStreak.score > 0 && currentFocusWord && ( <div className="mb-4 p-3 bg-slate-800 rounded-lg shadow text-sm text-emerald-400"> <span className="font-semibold">Live Streak: {liveStreak.score} </span> <span>({liveStreak.words.map((word, index) => ( <React.Fragment key={word + index}> <span className={`cursor-pointer hover:text-emerald-300 ${getDisplayWord() === word ? 'font-bold underline' : ''}`} onClick={() => handleStreakWordClick(word)} title={`Review: ${word}`} >{word}</span> {index < liveStreak.words.length - 1 && ' → '} </React.Fragment> ))} ) </span> {isReviewingStreakWord && wordForReview && <span className="ml-2 text-xs text-slate-400">(Reviewing: {wordForReview})</span>} </div> )} {getDisplayWord() && ( <div className="mb-6 flex flex-wrap justify-center gap-2 sm:gap-3"> {modeButtons.map(({ mode, label, icon: Icon }) => ( <button key={mode} onClick={() => handleModeChange(mode)} disabled={isLoading && activeContentMode !== mode} className={`flex items-center py-2 px-3 sm:px-4 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-105 ${activeContentMode === mode ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-sky-300'} disabled:opacity-70 disabled:cursor-not-allowed`} title={label} ><Icon size={16} className="mr-1.5" /> {label}</button> ))} </div> )} <div className="animate-fadeIn">{renderContent()}</div> </main> )}
-      {activeView === 'profile' && currentUser && userProfileData && ( <ProfilePageComponent currentUser={currentUser} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onToggleFavorite={handleToggleFavorite} onNavigateBack={() => setActiveView('main')} generatedContent={generatedContent} /> )}
+      <header className="bg-slate-800 shadow-md p-3 sm:p-4 sticky top-0 z-40"> <div className="container mx-auto flex justify-between items-center max-w-6xl"> <div className="text-2xl sm:text-3xl font-bold text-sky-400 cursor-pointer hover:text-sky-300 transition-colors" onClick={() => { setActiveView('main'); setActiveContentMode('explain'); setIsViewingStreakQuizSummary(false); }} title="Tiny Tutor Home" > Tiny Tutor AI </div> <div className="flex items-center space-x-2 sm:space-x-3"> {currentUser ? ( <> <span className="text-sm sm:text-base hidden md:inline">Hi, {currentUser.username}!</span> <button onClick={() => { if (activeView === 'profile') {setActiveView('main'); setActiveContentMode('explain');} else { if (authToken) fetchUserProfile(authToken); setActiveView('profile');} setIsViewingStreakQuizSummary(false);}} className={`p-2 rounded-full hover:bg-slate-700 transition-colors ${activeView === 'profile' ? 'text-sky-400 bg-slate-700' : 'text-slate-300'}`} title={activeView === 'profile' ? "Back to Explorer" : "View Profile"} > {activeView === 'profile' ? <Home size={20} /> : <User size={20} />} </button> <button onClick={handleLogout} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-red-400 transition-colors" title="Logout"> <LogOut size={20} /> </button> </> ) : ( <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-sky-400 transition-colors" title="Login/Signup"> <LogIn size={20} /> </button> )} </div> </div> </header>
+      
+      {activeView === 'main' && ( <main className="container mx-auto p-3 sm:p-4 md:p-6 flex-grow max-w-3xl w-full"> 
+        <form onSubmit={(e) => { e.preventDefault(); handleGenerateExplanation(inputValue, true, false, false, 'explain'); }} className="mb-6 flex flex-col sm:flex-row items-stretch gap-2"> 
+            <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept (e.g., photosynthesis)" className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none placeholder-slate-500" /> 
+            <button type="submit" disabled={isLoading || !inputValue.trim()} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 px-4 sm:px-6 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" > <BookOpen size={20} className="mr-2 hidden sm:inline" /> Generate </button> 
+        </form> 
+        {error && !isLoading && <div className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm animate-fadeIn">{error}</div>} 
+        
+        {liveStreak && liveStreak.score > 0 && currentFocusWord && ( 
+            <div className="mb-4 p-3 bg-slate-800 rounded-lg shadow text-sm text-emerald-400"> 
+                <span className="font-semibold">Live Streak: {liveStreak.score} </span> 
+                <span>({liveStreak.words.map((word, index) => ( 
+                    <React.Fragment key={word + index}> 
+                        <span className={`cursor-pointer hover:text-emerald-300 ${getDisplayWord() === word ? 'font-bold underline' : ''}`} onClick={() => handleStreakWordClick(word)} title={`Review: ${word}`} >{word}</span> 
+                        {index < liveStreak.words.length - 1 && ' → '} 
+                    </React.Fragment> 
+                ))} ) </span> 
+                {isReviewingStreakWord && wordForReview && <span className="ml-2 text-xs text-slate-400">(Reviewing: {wordForReview})</span>} 
+            </div> 
+        )} 
+        
+        {(getDisplayWord() || (activeContentMode === 'quiz' && liveStreakQuizQueue.length > 0)) && (
+             <div className="mb-6 flex flex-wrap justify-center gap-2 sm:gap-3"> 
+                {modeButtons.map(({ mode, label, icon: Icon }) => ( 
+                    <button key={mode} onClick={() => handleModeChange(mode)} disabled={isLoading && activeContentMode !== mode && !(mode === 'quiz' && liveStreakQuizQueue.length > 0) /* Allow clicking quiz tab if streak quiz exists */} 
+                        className={`relative flex items-center py-2 px-3 sm:px-4 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-105 ${activeContentMode === mode ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-sky-300'} disabled:opacity-70 disabled:cursor-not-allowed`} title={label} >
+                        <Icon size={16} className="mr-1.5" /> {label}
+                        {mode === 'quiz' && unattemptedStreakQuizCount > 0 && (
+                            <span className="absolute -top-2 -right-2 bg-pink-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                                {unattemptedStreakQuizCount}
+                            </span>
+                        )}
+                    </button> 
+                ))} 
+            </div>
+        )} 
+        <div className="animate-fadeIn">{renderContent()}</div> 
+      </main> )}
+
+      {activeView === 'profile' && currentUser && userProfileData && ( <ProfilePageComponent currentUser={currentUser} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onToggleFavorite={handleToggleFavorite} onNavigateBack={() => {setActiveView('main'); setActiveContentMode('explain');}} generatedContent={generatedContent} /> )}
       {activeView === 'profile' && (isLoading || isFetchingProfile) && !userProfileData && ( <div className="flex-grow flex items-center justify-center text-slate-400">Loading profile...</div> )}
       {activeView === 'profile' && !currentUser && !isFetchingProfile && ( <div className="flex-grow flex flex-col items-center justify-center text-slate-400 p-6"> <p className="mb-4 text-lg">Please log in to view your profile.</p> <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors" >Login</button> </div> )}
+      
       {renderAuthModal()}
       <footer className="bg-slate-800 text-center p-4 text-xs text-slate-500 border-t border-slate-700 mt-auto"> © {new Date().getFullYear()} Tiny Tutor AI. All rights reserved. </footer>
     </div>
   );
 }
 export default App;
-

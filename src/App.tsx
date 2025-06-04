@@ -1,211 +1,28 @@
 import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import {
-  BookOpen,
-  Heart,
-  ImageIcon,
-  Lightbulb,
-  LogIn,
-  LogOut,
-  RefreshCw, 
-  Sparkles,
-  User,
-  X,
-  MessageSquareQuote,
-  Brain,
-  Home,
-  HelpCircle, 
-  ChevronRight, 
-  CheckCircle, 
-  XCircle, 
-  FileText 
+  BookOpen, Heart, ImageIcon, Lightbulb, LogIn, LogOut, RefreshCw, Sparkles, User, X,
+  MessageSquareQuote, Brain, Home, HelpCircle, ChevronRight, CheckCircle, XCircle, FileText
 } from 'lucide-react';
 import './App.css';
 import './index.css';
 import ProfilePageComponent from './ProfilePage';
 
 // --- Types ---
-interface CurrentUser {
-  username: string;
-  email: string;
-  id: string;
-}
-
-interface ParsedQuizQuestion {
-  question: string;
-  options: { [key: string]: string };
-  correctOptionKey: string;
-  explanation?: string; 
-  originalString?: string;
-}
-
-interface GeneratedContentItem {
-  explanation?: string;
-  // quiz?: ParsedQuizQuestion[]; // Quiz data is now handled by liveStreakQuizQueue or fetched fresh
-  fact?: string;
-  image_prompt?: string;
-  image_url?: string;
-  deep_dive?: string;
-  is_favorite?: boolean;
-  first_explored_at?: string;
-  last_explored_at?: string;
-  // quiz_progress?: QuizAttempt[]; // No longer storing detailed progress here
-  modes_generated?: string[];
-}
-
-interface GeneratedContent {
-  [wordId: string]: GeneratedContentItem;
-}
-
-// QuizAttempt is no longer used for storing detailed history in DB or frontend GeneratedContentItem
-// interface QuizAttempt {
-//   question_index: number;
-//   selected_option_key: string;
-//   is_correct: boolean;
-//   timestamp: string;
-// }
-
-interface LiveStreak {
-  score: number;
-  words: string[];
-}
-
-interface StreakRecord {
-  id: string;
-  words: string[];
-  score: number;
-  completed_at: string;
-}
-
-interface ExploredWordEntry {
-  word: string;
-  last_explored_at: string;
-  is_favorite: boolean;
-  first_explored_at?: string;
-}
-
-interface UserProfileData {
-  username: string;
-  email: string;
-  totalWordsExplored: number;
-  exploredWords: ExploredWordEntry[];
-  favoriteWords: ExploredWordEntry[];
-  streakHistory: StreakRecord[];
-  quiz_points?: number;
-  total_quiz_questions_answered?: number;
-  total_quiz_questions_correct?: number;
-}
-
+interface CurrentUser { username: string; email: string; id: string; }
+interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; originalString?: string; }
+interface GeneratedContentItem { explanation?: string; fact?: string; image_prompt?: string; image_url?: string; deep_dive?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; modes_generated?: string[]; }
+interface GeneratedContent { [wordId: string]: GeneratedContentItem; }
+interface LiveStreak { score: number; words: string[]; }
+interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
+interface ExploredWordEntry { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string; }
+interface UserProfileData { username: string; email: string; totalWordsExplored: number; exploredWords: ExploredWordEntry[]; favoriteWords: ExploredWordEntry[]; streakHistory: StreakRecord[]; quiz_points?: number; total_quiz_questions_answered?: number; total_quiz_questions_correct?: number; }
 type ContentMode = 'explain' | 'quiz' | 'fact' | 'image' | 'deep_dive';
-
-// New Type for items in the live streak quiz queue
-interface StreakQuizItem {
-  word: string;
-  originalExplanation: string; 
-  quizQuestion: ParsedQuizQuestion;
-  attempted: boolean;
-  selectedOptionKey?: string;
-  isCorrect?: boolean;
-}
+interface StreakQuizItem { word: string; originalExplanation: string; quizQuestion: ParsedQuizQuestion; attempted: boolean; selectedOptionKey?: string; isCorrect?: boolean; }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-const sanitizeWordForId = (word: string): string => {
-  if (typeof word !== 'string') return "invalid_word_input";
-  return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-};
-
-const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion[] => {
-    if (!Array.isArray(quizStringsFromBackend)) {
-        console.error("Quiz data from backend is not an array:", quizStringsFromBackend);
-        return [];
-    }
-
-    return quizStringsFromBackend.map((quizStr: string, index: number) => {
-        if (typeof quizStr !== 'string') {
-            console.error(`Quiz item at index ${index} is not a string:`, quizStr);
-            return null; 
-        }
-        
-        const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line);
-        if (lines.length < 3 && !lines.some(l => l.startsWith("**Question"))) { 
-            if(lines.length > 0 && lines.some(l => l.includes("A)") || l.includes("B)"))) {
-                // Attempt to salvage
-            } else {
-                 return null;
-            }
-        }
-
-        let question = "";
-        const options: { [key: string]: string } = {};
-        let correctOptionKey = "";
-        let explanationForAnswer = ""; 
-        let parsingState: 'question' | 'options' | 'answer' | 'explanation' = 'question';
-        let questionLines: string[] = [];
-
-        for (const line of lines) {
-            const questionMatch = line.match(/^\*\*Question \d*:\*\*(.*)/i);
-            if (questionMatch) {
-                if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim();
-                questionLines = []; 
-                question = questionMatch[1].trim();
-                parsingState = 'options';
-                continue;
-            }
-            
-            const optionMatch = line.match(/^([A-D])\)\s*(.*)/i);
-            if (optionMatch) {
-                if (parsingState === 'question' && questionLines.length > 0) {
-                    question = questionLines.join(" ").trim();
-                    questionLines = [];
-                }
-                options[optionMatch[1].toUpperCase()] = optionMatch[2].trim();
-                parsingState = 'options'; 
-                continue;
-            }
-
-            const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i);
-            if (correctMatch) {
-                if (parsingState === 'question' && questionLines.length > 0) {
-                     question = questionLines.join(" ").trim();
-                     questionLines = [];
-                }
-                correctOptionKey = correctMatch[1].toUpperCase();
-                parsingState = 'explanation'; 
-                explanationForAnswer = ""; 
-                continue;
-            }
-            
-            const explanationKeywordMatch = line.match(/^Explanation:\s*(.*)/i);
-            if (explanationKeywordMatch) {
-                 if (parsingState === 'question' && questionLines.length > 0) {
-                     question = questionLines.join(" ").trim();
-                      questionLines = [];
-                }
-                explanationForAnswer = explanationKeywordMatch[1].trim();
-                parsingState = 'explanation';
-                continue;
-            }
-            
-            if (parsingState === 'question') {
-                questionLines.push(line);
-            } else if (parsingState === 'explanation') {
-                explanationForAnswer += (explanationForAnswer ? " " : "") + line.trim();
-            }
-        }
-        if (questionLines.length > 0 && !question) {
-            question = questionLines.join(" ").trim();
-        }
-        explanationForAnswer = explanationForAnswer.trim();
-        
-        if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) {
-             console.warn(`Incomplete parse for quiz item ${index}. Q: "${question}", Opts: ${Object.keys(options).length}, CorrectKey: "${correctOptionKey}", HasKey: ${!!options[correctOptionKey]}`, "Original:", quizStr);
-             return question ? { question, options: options || {}, correctOptionKey: correctOptionKey || '', explanation: explanationForAnswer || undefined, originalString: quizStr } : null;
-        }
-
-        return { question, options, correctOptionKey, explanation: explanationForAnswer || undefined, originalString: quizStr };
-    }).filter(q => q !== null) as ParsedQuizQuestion[]; 
-};
-
+const sanitizeWordForId = (word: string): string => { if (typeof word !== 'string') return "invalid_word_input"; return word.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''); };
+const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion[] => { if (!Array.isArray(quizStringsFromBackend)) { console.error("Quiz data from backend is not an array:", quizStringsFromBackend); return []; } return quizStringsFromBackend.map((quizStr: string, index: number) => { if (typeof quizStr !== 'string') { console.error(`Quiz item at index ${index} is not a string:`, quizStr); return null;  } const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line); if (lines.length < 3 && !lines.some(l => l.startsWith("**Question"))) { if(lines.length > 0 && lines.some(l => l.includes("A)") || l.includes("B)"))) {} else { return null;} } let question = ""; const options: { [key: string]: string } = {}; let correctOptionKey = ""; let explanationForAnswer = ""; let parsingState: 'question' | 'options' | 'answer' | 'explanation' = 'question'; let questionLines: string[] = []; for (const line of lines) { const questionMatch = line.match(/^\*\*Question \d*:\*\*(.*)/i); if (questionMatch) { if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); questionLines = []; question = questionMatch[1].trim(); parsingState = 'options'; continue; } const optionMatch = line.match(/^([A-D])\)\s*(.*)/i); if (optionMatch) { if (parsingState === 'question' && questionLines.length > 0) { question = questionLines.join(" ").trim(); questionLines = []; } options[optionMatch[1].toUpperCase()] = optionMatch[2].trim(); parsingState = 'options'; continue; } const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i); if (correctMatch) { if (parsingState === 'question' && questionLines.length > 0) { question = questionLines.join(" ").trim(); questionLines = []; } correctOptionKey = correctMatch[1].toUpperCase(); parsingState = 'explanation'; explanationForAnswer = ""; continue; } const explanationKeywordMatch = line.match(/^Explanation:\s*(.*)/i); if (explanationKeywordMatch) { if (parsingState === 'question' && questionLines.length > 0) { question = questionLines.join(" ").trim(); questionLines = []; } explanationForAnswer = explanationKeywordMatch[1].trim(); parsingState = 'explanation'; continue; } if (parsingState === 'question') { questionLines.push(line); } else if (parsingState === 'explanation') { explanationForAnswer += (explanationForAnswer ? " " : "") + line.trim(); } } if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); explanationForAnswer = explanationForAnswer.trim(); if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) { console.warn(`Incomplete parse for quiz item ${index}. Q: "${question}", Opts: ${Object.keys(options).length}, CorrectKey: "${correctOptionKey}", HasKey: ${!!options[correctOptionKey]}`, "Original:", quizStr); return question ? { question, options: options || {}, correctOptionKey: correctOptionKey || '', explanation: explanationForAnswer || undefined, originalString: quizStr } : null; } return { question, options, correctOptionKey, explanation: explanationForAnswer || undefined, originalString: quizStr }; }).filter(q => q !== null) as ParsedQuizQuestion[]; };
 
 function App() {
   const [inputValue, setInputValue] = useState('');
@@ -217,10 +34,8 @@ function App() {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [authUsername, setAuthUsername] = useState('');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authUsername, setAuthUsername] = useState(''); const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState(''); const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
 
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -228,7 +43,6 @@ function App() {
 
   const [liveStreak, setLiveStreak] = useState<LiveStreak | null>(null);
   const [userProfileData, setUserProfileData] = useState<UserProfileData | null>(null);
-
   const [activeView, setActiveView] = useState<'main' | 'profile'>('main');
 
   const [currentSingleWordQuiz, setCurrentSingleWordQuiz] = useState<ParsedQuizQuestion[] | null>(null);
@@ -244,237 +58,21 @@ function App() {
 
   const [wordForReview, setWordForReview] = useState<string | null>(null);
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState(false);
-
   const [isFetchingProfile, setIsFetchingProfile] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
 
-  const getDisplayWord = useCallback(() => {
-    return isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord;
-  }, [isReviewingStreakWord, wordForReview, currentFocusWord]);
-
-  const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null) => {
-    if (!token || !streakToSave || streakToSave.score < 2) return;
-    try {
-      await fetch(`${API_BASE_URL}/save_streak`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }),
-      });
-    } catch (err: any) {
-      console.error('Error saving streak:', err.message);
-    }
-  }, []);
-
-  const handleLogout = useCallback(async () => {
-    if (liveStreak && liveStreak.score >= 2 && authToken) {
-        await saveStreakToServer(liveStreak, authToken);
-    }
-    localStorage.removeItem('authToken');
-    setAuthToken(null);
-    setCurrentUser(null);
-    setUserProfileData(null);
-    setLiveStreak(null);
-    setCurrentFocusWord(null);
-    setGeneratedContent({});
-    setActiveContentMode('explain');
-    setError(null);
-    setAuthError(null);
-    setAuthSuccessMessage(null);
-    setShowAuthModal(false);
-    setActiveView('main');
-    setInitialLoadDone(false);
-    setLiveStreakQuizQueue([]);
-    setCurrentStreakQuizItemIndex(0);
-    setShowStreakQuizItemExplanation(false);
-    setIsViewingStreakQuizSummary(false);
-    console.log("User logged out");
-  }, [liveStreak, authToken, saveStreakToServer]);
-
-
-  const fetchUserProfile = useCallback(async (token: string | null) => {
-    if (!token) {
-      setUserProfileData(null);
-      setCurrentUser(null); 
-      return;
-    }
-    setIsFetchingProfile(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/profile`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) { 
-          handleLogout(); 
-        } else if (response.status === 429) {
-            console.error("Profile fetch failed: 429 Too Many Requests.");
-            setError("Too many requests to fetch profile. Please try again later.");
-            setUserProfileData(null); 
-            setCurrentUser(null); 
-        } else {
-            let errorMsg = `Failed to fetch profile (${response.status})`;
-            try {
-                const errText = await response.text(); 
-                if (errText.trim().startsWith("<!doctype") || errText.trim().startsWith("<html")) {
-                    console.error("Profile fetch failed, received HTML error page.");
-                    setError(errorMsg + ". The server returned an unexpected response.");
-                } else {
-                    const errData = JSON.parse(errText); 
-                    errorMsg = errData.error || errorMsg;
-                    setError(errorMsg);
-                }
-            } catch (parseError) {
-                console.error("Profile fetch failed, and error response was not valid JSON.", parseError);
-                setError(errorMsg + ". Server response was not understandable.");
-            }
-        }
-        return; 
-      }
-
-      const data = await response.json(); 
-      const processedExploredWords: ExploredWordEntry[] = (data.exploredWords || [])
-        .map((w: any): ExploredWordEntry | null => { 
-            if (w && typeof w.word === 'string') {
-                return { 
-                    word: w.word as string, 
-                    last_explored_at: w.last_explored_at as string,
-                    is_favorite: w.is_favorite as boolean,
-                    first_explored_at: w.first_explored_at as string | undefined 
-                };
-            }
-            return null;
-        })
-        .filter((item: ExploredWordEntry | null): item is ExploredWordEntry => 
-            item !== null && typeof item.word === 'string' && item.word.trim() !== ''
-        );
-      const processedFavoriteWords: ExploredWordEntry[] = (data.favoriteWords || [])
-        .map((w: any): ExploredWordEntry | null => { 
-            if (w && typeof w.word === 'string') {
-                return { 
-                    word: w.word as string, 
-                    last_explored_at: w.last_explored_at as string,
-                    is_favorite: w.is_favorite as boolean,
-                    first_explored_at: w.first_explored_at as string | undefined 
-                };
-            }
-            return null;
-        })
-        .filter((item: ExploredWordEntry | null): item is ExploredWordEntry => 
-            item !== null && typeof item.word === 'string' && item.word.trim() !== ''
-        );
-      
-      setUserProfileData({
-        username: data.username,
-        email: data.email,
-        totalWordsExplored: data.totalWordsExplored, 
-        exploredWords: processedExploredWords,
-        favoriteWords: processedFavoriteWords,
-        streakHistory: (data.streakHistory || []).sort((a:any, b:any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()),
-        quiz_points: data.quiz_points,
-        total_quiz_questions_answered: data.total_quiz_questions_answered,
-        total_quiz_questions_correct: data.total_quiz_questions_correct,
-      });
-      setCurrentUser({ username: data.username, email: data.email, id: data.user_id || (currentUser?.id || '') });
-      setError(null); 
-    } catch (err: any) {
-      console.error("Error fetching profile (catch block):", err);
-      if (!error) setError((err as Error).message); 
-    } finally {
-      setIsFetchingProfile(false);
-    }
-  }, [currentUser?.id, error, handleLogout]); 
-
-  useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
-    if (storedToken) {
-      if (!authToken) setAuthToken(storedToken);
-      if (!initialLoadDone && !currentUser && !userProfileData && !isFetchingProfile) {
-        fetchUserProfile(storedToken).finally(() => setInitialLoadDone(true));
-      } else if ((currentUser || userProfileData) && !initialLoadDone) {
-        setInitialLoadDone(true);
-      }
-    } else {
-      if (currentUser || userProfileData || authToken) {
-        setCurrentUser(null);
-        setUserProfileData(null);
-        setAuthToken(null);
-        setInitialLoadDone(false);
-      }
-    }
-  }, [authToken, currentUser, userProfileData, isFetchingProfile, initialLoadDone, fetchUserProfile]);
-
-  const handleAuthAction = async (e: FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthSuccessMessage(null);
-    setIsLoading(true);
-    setInitialLoadDone(false); 
-
-    const url = authMode === 'signup' ? `${API_BASE_URL}/signup` : `${API_BASE_URL}/login`;
-    let payload = {};
-
-    if (authMode === 'signup') {
-        payload = { username: authUsername, email: authEmail, password: authPassword };
-    } else { 
-        payload = { email_or_username: authUsername, password: authPassword };
-    }
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `${authMode === 'signup' ? 'Signup' : 'Login'} failed`);
-      }
-
-      if (authMode === 'signup') {
-        setAuthSuccessMessage('Signup successful! Please login.');
-        setAuthMode('login'); 
-        setAuthEmail(''); 
-        setAuthPassword(''); 
-      } else { 
-        localStorage.setItem('authToken', data.access_token); 
-        setAuthToken(data.access_token); 
-        setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id }); 
-        setShowAuthModal(false);
-        setAuthSuccessMessage('Login successful!');
-        await fetchUserProfile(data.access_token); 
-        setInitialLoadDone(true); 
-        
-        setAuthEmail(''); 
-        setAuthPassword('');
-        setAuthUsername(''); 
-      }
-    } catch (err: any) {
-      setAuthError((err as Error).message);
-      setInitialLoadDone(true); 
-    } finally {
-      setIsLoading(false);
-      if (authMode === 'signup') setAuthPassword(''); 
-    }
-  };
-  
-  const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string | null, isCorrect: boolean) => {
-    if (!authToken) return;
-    try {
-        const response = await fetch(`${API_BASE_URL}/save_quiz_attempt`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-            body: JSON.stringify({ word, question_index: questionIdx, selected_option_key: optionKey || "", is_correct: isCorrect }),
-        });
-        if (!response.ok) throw new Error((await response.json()).error || 'Failed to save quiz attempt stats');
-        if (authToken) await fetchUserProfile(authToken); 
-    } catch (err: any) { console.error("Error saving quiz attempt stats:", err); setError("Could not save quiz points."); }
-  }, [authToken, fetchUserProfile]);
-
+  const getDisplayWord = useCallback(() => isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
+  const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null) => { if (!token || !streakToSave || streakToSave.score < 2) return; try { await fetch(`${API_BASE_URL}/save_streak`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }), }); } catch (err: any) { console.error('Error saving streak:', err.message); }}, []);
+  const handleLogout = useCallback(async () => { if (liveStreak && liveStreak.score >= 2 && authToken) { await saveStreakToServer(liveStreak, authToken); } localStorage.removeItem('authToken'); setAuthToken(null); setCurrentUser(null); setUserProfileData(null); setLiveStreak(null); setCurrentFocusWord(null); setGeneratedContent({}); setActiveContentMode('explain'); setError(null); setAuthError(null); setAuthSuccessMessage(null); setShowAuthModal(false); setActiveView('main'); setInitialLoadDone(false); setLiveStreakQuizQueue([]); setCurrentStreakQuizItemIndex(0); setShowStreakQuizItemExplanation(false); setIsViewingStreakQuizSummary(false); console.log("User logged out"); }, [liveStreak, authToken, saveStreakToServer]);
+  const fetchUserProfile = useCallback(async (token: string | null) => { if (!token) { setUserProfileData(null); setCurrentUser(null); return; } setIsFetchingProfile(true); try { const response = await fetch(`${API_BASE_URL}/profile`, { headers: { 'Authorization': `Bearer ${token}` }}); if (!response.ok) { if (response.status === 401) { handleLogout(); } else if (response.status === 429) { setError("Too many requests to fetch profile."); setUserProfileData(null); setCurrentUser(null); } else { let e = `Profile fetch failed (${response.status})`; try {const d=await response.json(); e=d.error||e;}catch{setError(e+". Server response unreadable.")}setError(e);} return; } const data = await response.json(); const pE: ExploredWordEntry[]=(data.exploredWords||[]).map((w:any)=>(w&&typeof w.word==='string'?{...w}:null)).filter(Boolean); const pF:ExploredWordEntry[]=(data.favoriteWords||[]).map((w:any)=>(w&&typeof w.word==='string'?{...w}:null)).filter(Boolean); setUserProfileData({...data, exploredWords: pE, favoriteWords: pF, streakHistory: (data.streakHistory||[]).sort((a:any,b:any)=>new Date(b.completed_at).getTime()-new Date(a.completed_at).getTime())}); setCurrentUser({username:data.username, email:data.email, id:data.user_id||currentUser?.id||''}); setError(null);} catch(e){if(!error)setError((e as Error).message);}finally{setIsFetchingProfile(false);}}, [currentUser?.id, error, handleLogout]);
+  useEffect(() => {  const storedToken = localStorage.getItem('authToken'); if (storedToken) { if (!authToken) setAuthToken(storedToken); if (!initialLoadDone && !currentUser && !userProfileData && !isFetchingProfile) { fetchUserProfile(storedToken).finally(() => setInitialLoadDone(true)); } else if ((currentUser || userProfileData) && !initialLoadDone) { setInitialLoadDone(true); } } else { if (currentUser || userProfileData || authToken) { setCurrentUser(null); setUserProfileData(null); setAuthToken(null); setInitialLoadDone(false);}}}, [authToken, currentUser, userProfileData, isFetchingProfile, initialLoadDone, fetchUserProfile]);
+  const handleAuthAction = async (e: FormEvent) => { e.preventDefault(); setAuthError(null); setAuthSuccessMessage(null); setIsLoading(true); setInitialLoadDone(false);  const url = authMode === 'signup' ? `${API_BASE_URL}/signup` : `${API_BASE_URL}/login`; let payload = {}; if (authMode === 'signup') { payload = { username: authUsername, email: authEmail, password: authPassword }; } else { payload = { email_or_username: authUsername, password: authPassword };} try { const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json(); if (!response.ok) { throw new Error(data.error || `${authMode === 'signup' ? 'Signup' : 'Login'} failed`);} if (authMode === 'signup') { setAuthSuccessMessage('Signup successful! Please login.'); setAuthMode('login'); setAuthEmail(''); setAuthPassword('');  } else { localStorage.setItem('authToken', data.access_token); setAuthToken(data.access_token); setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id }); setShowAuthModal(false); setAuthSuccessMessage('Login successful!'); await fetchUserProfile(data.access_token); setInitialLoadDone(true); setAuthEmail(''); setAuthPassword(''); setAuthUsername('');  } } catch (err: any) { setAuthError((err as Error).message); setInitialLoadDone(true);  } finally { setIsLoading(false); if (authMode === 'signup') setAuthPassword(''); }};
+  const handleSaveQuizAttempt = useCallback(async (word: string, questionIdx: number, optionKey: string | null, isCorrect: boolean) => { if (!authToken) return; try { await fetch(`${API_BASE_URL}/save_quiz_attempt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word, question_index: questionIdx, selected_option_key: optionKey || "", is_correct: isCorrect }), }); if (authToken) await fetchUserProfile(authToken);  } catch (err: any) { console.error("Error saving quiz attempt stats:", err); setError("Could not save quiz points."); }}, [authToken, fetchUserProfile]);
 
   const handleGenerateExplanation = useCallback(async (
     wordToFetch: string,
     isNewPrimaryWordSearch: boolean = false,
-    isUserRefreshClick: boolean = false, // Explicit user action to refresh current view
+    isUserRefreshClick: boolean = false, 
     isSubTopicClick: boolean = false,
     modeOverride?: ContentMode,
     isProfileWordClick: boolean = false
@@ -485,28 +83,43 @@ function App() {
     const targetMode = modeOverride || activeContentMode;
     const wordId = sanitizeWordForId(wordToFetch);
     
-    // Reset states based on transitions
-    if (targetMode !== 'quiz' || (targetMode === 'quiz' && (isNewPrimaryWordSearch || isProfileWordClick))) {
+    setError(null); 
+
+    if (targetMode !== 'quiz' || (targetMode === 'quiz' && (isNewPrimaryWordSearch || isProfileWordClick || liveStreakQuizQueue.length > 0))) {
         setCurrentSingleWordQuiz(null); setCurrentSingleWordQuizIdx(0);
         setSingleWordQuizFeedback(null); setSingleWordSelectedOption(null); setSingleWordQuizAttempted(false);
     }
     if (activeContentMode === 'quiz' && targetMode !== 'quiz') {
         setShowStreakQuizItemExplanation(false); setIsViewingStreakQuizSummary(false);
     }
+    
+    // --- Moved Streak and Focus Word Updates Higher for UI Sync ---
     if (isNewPrimaryWordSearch || isProfileWordClick) {
-        setLiveStreakQuizQueue([]); setCurrentStreakQuizItemIndex(0);
-        setShowStreakQuizItemExplanation(false); setIsViewingStreakQuizSummary(false);
         if (liveStreak && liveStreak.score >= 2 && authToken) {
             await saveStreakToServer(liveStreak, authToken);
         }
-        setLiveStreak(null); 
+        setLiveStreak(null); // Prepare for new streak
+        setCurrentFocusWord(wordToFetch); 
+        setIsReviewingStreakWord(false); 
+        setWordForReview(null);
+        setLiveStreakQuizQueue([]); 
+        setCurrentStreakQuizItemIndex(0);
+        setShowStreakQuizItemExplanation(false);
+        setIsViewingStreakQuizSummary(false);
+    } else if (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord))) {
+        setCurrentFocusWord(wordToFetch);
+        setIsReviewingStreakWord(false);
+        setWordForReview(null);
+    } else if (isReviewingStreakWord && wordForReview === wordToFetch) {
+        setCurrentFocusWord(wordToFetch); // Ensure focus word is the one being reviewed
     }
+    // --- End of Early Streak/Focus Word Updates ---
     
     let streakContextForAPI: string[] = [];
     if (isSubTopicClick || (isReviewingStreakWord && wordForReview === wordToFetch)) {
         if (liveStreak && liveStreak.words.length > 0) {
-            const target = isReviewingStreakWord && wordForReview ? wordForReview : wordToFetch;
-            const idx = liveStreak.words.indexOf(target);
+            const targetCtxWord = isReviewingStreakWord && wordForReview ? wordForReview : wordToFetch;
+            const idx = liveStreak.words.indexOf(targetCtxWord);
             if (isSubTopicClick && (!liveStreak.words.includes(wordToFetch) || wordToFetch === liveStreak.words[liveStreak.words.length - 1])) streakContextForAPI = [...liveStreak.words];
             else if (idx !== -1) streakContextForAPI = liveStreak.words.slice(0, idx);
             else if (isSubTopicClick) streakContextForAPI = [...liveStreak.words];
@@ -517,17 +130,6 @@ function App() {
     }
     const isActuallyContextualExplain = targetMode === 'explain' && streakContextForAPI.length > 0;
 
-    // Update focus word (do this before cache check for consistency)
-    if (isNewPrimaryWordSearch || isProfileWordClick) {
-        setCurrentFocusWord(wordToFetch); setIsReviewingStreakWord(false); setWordForReview(null);
-    } else if (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch) || (liveStreak.words.includes(wordToFetch) && wordToFetch !== currentFocusWord && !isReviewingStreakWord))) {
-        setCurrentFocusWord(wordToFetch); setIsReviewingStreakWord(false); setWordForReview(null);
-    } else if (isReviewingStreakWord && wordForReview === wordToFetch) {
-        setCurrentFocusWord(wordToFetch); // Ensure focus word is the one being reviewed
-    }
-
-
-    // --- Frontend Cache Check (for non-quiz, non-user-refresh) ---
     if (!isUserRefreshClick && targetMode !== 'quiz') {
         const item = generatedContent[wordId];
         if (item) {
@@ -540,24 +142,17 @@ function App() {
             if (contentFromCache) {
                 console.log(`CACHE HIT: Serving '${targetMode}' for '${wordToFetch}' from frontend cache.`);
                 setActiveContentMode(targetMode);
-                // Ensure liveStreak is set if it's a new primary word that hit cache
                 if((isNewPrimaryWordSearch || isProfileWordClick) && (!liveStreak || !liveStreak.words.includes(wordToFetch))){
                     setLiveStreak({ score: 1, words: [wordToFetch] });
                 }
-                // No setIsLoading(true) was set, so no setIsLoading(false) needed here.
-                // But if it was set before this check, it needs to be reset.
-                if(isLoading) setIsLoading(false); 
-                setError(null); // Clear any previous error
-                return;
+                return; 
             }
         }
     }
     
-    setIsLoading(true); // Set loading only if we are proceeding to API call
-    setError(null);
+    setIsLoading(true);
 
-    // --- API Call Logic ---
-    if (targetMode === 'quiz' && liveStreakQuizQueue.length === 0) { // Single-word quiz (always fresh)
+    if (targetMode === 'quiz' && liveStreakQuizQueue.length === 0) {
         let explanationForQuiz = generatedContent[wordId]?.explanation;
         if (!explanationForQuiz && wordToFetch) {
             try {
@@ -595,11 +190,21 @@ function App() {
         if (targetMode === 'explain' && apiData.explain !== undefined) {
             explanationJustFetched = apiData.explain;
         }
+        
+        // Update streak state synchronously with setting focus word if it's a new word in streak
+        const isNewWordBeingAddedToStreakLogic = isNewPrimaryWordSearch || isProfileWordClick || 
+                                   (isSubTopicClick && (!liveStreak || liveStreak.words[liveStreak.words.length - 1] !== wordToFetch || !liveStreak.words.includes(wordToFetch) ));
+
+        if (isNewWordBeingAddedToStreakLogic && targetMode === 'explain') {
+            if (isNewPrimaryWordSearch || isProfileWordClick) {
+                setLiveStreak({ score: 1, words: [wordToFetch] });
+            } else if (isSubTopicClick) {
+                setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] });
+            }
+        }
             
         setGeneratedContent(prev => { const existing = prev[wordId] || {}; const newGC: GeneratedContentItem = {...existing}; if(targetMode === 'explain' && apiData.explain !== undefined) newGC.explanation = apiData.explain; else if (targetMode === 'fact' && apiData.fact !== undefined) newGC.fact = apiData.fact; else if (targetMode === 'deep_dive' && apiData.deep_dive !== undefined) newGC.deep_dive = apiData.deep_dive; else if (targetMode === 'image') { if (apiData.image_url !== undefined) { newGC.image_url = apiData.image_url; if (apiData.image_prompt !== undefined) newGC.image_prompt = apiData.image_prompt; } else if (apiData.image !== undefined) { newGC.image_prompt = apiData.image; newGC.image_url = undefined; } } newGC.is_favorite = apiData.is_favorite !== undefined ? apiData.is_favorite : (existing.is_favorite || false); newGC.first_explored_at = existing.first_explored_at || new Date().toISOString(); newGC.last_explored_at = new Date().toISOString(); const modes = new Set(existing.modes_generated || []); modes.add(targetMode); if(apiData.modes_generated) apiData.modes_generated.forEach((m:string)=>modes.add(m)); newGC.modes_generated = Array.from(modes); return {...prev, [wordId]: newGC }; });
         
-        const isNewWordBeingAddedToStreakLogic = isNewPrimaryWordSearch || isProfileWordClick || (isSubTopicClick && (!liveStreak || liveStreak.words[liveStreak.words.length - 1] !== wordToFetch || !liveStreak.words.includes(wordToFetch) ));
-
         if (explanationJustFetched && authToken && isNewWordBeingAddedToStreakLogic) {
             console.log(`Streak progress: Fetching quiz for ${wordToFetch}`);
             try {
@@ -615,11 +220,6 @@ function App() {
                 }
             } catch (qErr) { console.error("Error fetching streak quiz item:", qErr); }
         }
-        
-        if (isNewWordBeingAddedToStreakLogic && targetMode === 'explain') {
-            if (isNewPrimaryWordSearch || isProfileWordClick) { setLiveStreak({ score: 1, words: [wordToFetch] }); }
-            else if (isSubTopicClick) { setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] }); }
-        }
         setActiveContentMode(targetMode);
 
     } catch (err: any) { setError((err as Error).message); } 
@@ -629,7 +229,8 @@ function App() {
 
   const handleStreakWordClick = useCallback((clickedWord: string) => {
     setIsViewingStreakQuizSummary(false); 
-    setCurrentFocusWord(clickedWord); // Set focus word for consistency
+    
+    setCurrentFocusWord(clickedWord); 
     setIsReviewingStreakWord(true); 
     setWordForReview(clickedWord);
     
@@ -641,11 +242,12 @@ function App() {
             setCurrentStreakQuizItemIndex(itemIndex); 
             setShowStreakQuizItemExplanation(false); 
         } else { 
-            // If not in quiz queue (shouldn't happen if streak words always add to queue), show explanation
+            // If reviewing a streak word in quiz mode but it's not in queue, show its explanation.
+            // The user would then click quiz tab again if they want a quiz for it (which would be a singleWordQuiz)
             handleGenerateExplanation(clickedWord, false, false, true, 'explain'); 
         }
     } else { 
-        // For other modes, or if explain mode, try to show cached explanation
+        // For other modes, or if explain mode, try to show cached explanation by passing isUserRefreshClick: false
         handleGenerateExplanation(clickedWord, false, false, true, 'explain'); 
     }
   }, [ isReviewingStreakWord, wordForReview, activeContentMode, handleGenerateExplanation, liveStreakQuizQueue]);
@@ -666,24 +268,26 @@ function App() {
 
     if (newMode === 'quiz') {
         setActiveContentMode('quiz'); 
-        if (liveStreakQuizQueue.length > 0) {
-            const firstUnattemptedIdx = liveStreakQuizQueue.findIndex(item => !item.attempted);
-            setCurrentStreakQuizItemIndex(firstUnattemptedIdx !== -1 ? firstUnattemptedIdx : 0);
-        } else if (wordToUse) { 
-            // For single word quiz, isUserRefreshClick should be true to always get fresh quiz
+        if (liveStreakQuizQueue.length > 0 && wordToUse && liveStreak?.words.includes(wordToUse)) { // Check if current word is part of active streak
+            const itemIndex = liveStreakQuizQueue.findIndex(item => item.word === wordToUse);
+            if (itemIndex !== -1) {
+                setCurrentStreakQuizItemIndex(itemIndex);
+            } else { // Word is in streak but not in queue (should not happen if logic is correct)
+                 if (wordToUse) handleGenerateExplanation(wordToUse, false, true, false, 'quiz'); // Fetch as single word quiz
+            }
+        } else if (wordToUse) { // Not a streak quiz context, or streak word not in queue
             handleGenerateExplanation(wordToUse, false, true, false, 'quiz'); 
         }
     } else if (wordToUse) { 
         // For non-quiz modes, pass isUserRefreshClick as false to attempt cache first
         handleGenerateExplanation(wordToUse, false, false, false, newMode);
     } else if (newMode === 'explain') { 
-        setActiveContentMode('explain'); // Allow switching to explain even if no word
+        setActiveContentMode('explain');
     }
-  }, [getDisplayWord, inputValue, handleGenerateExplanation, liveStreakQuizQueue, activeContentMode]);
+  }, [getDisplayWord, inputValue, handleGenerateExplanation, liveStreakQuizQueue, activeContentMode, liveStreak]);
   
   const handleRefreshContent = useCallback(() => { 
     const wordToUse = getDisplayWord(); if (!wordToUse) return;
-    // Only allow explicit refresh for 'explain' mode for now
     if (activeContentMode === 'explain') { handleGenerateExplanation(wordToUse, false, true, false, 'explain');}
   }, [getDisplayWord, activeContentMode, handleGenerateExplanation]);
 
@@ -701,4 +305,3 @@ function App() {
   return ( <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col"> <header className="bg-slate-800 shadow-md p-3 sm:p-4 sticky top-0 z-40"> <div className="container mx-auto flex justify-between items-center max-w-6xl"> <div className="text-2xl sm:text-3xl font-bold text-sky-400 cursor-pointer hover:text-sky-300 transition-colors" onClick={() => { setActiveView('main'); setActiveContentMode('explain'); setIsViewingStreakQuizSummary(false); }} title="Tiny Tutor Home" > Tiny Tutor AI </div> <div className="flex items-center space-x-2 sm:space-x-3"> {currentUser ? ( <> <span className="text-sm sm:text-base hidden md:inline">Hi, {currentUser.username}!</span> <button onClick={() => { if (activeView === 'profile') {setActiveView('main'); setActiveContentMode('explain');} else { if (authToken) fetchUserProfile(authToken); setActiveView('profile');} setIsViewingStreakQuizSummary(false);}} className={`p-2 rounded-full hover:bg-slate-700 transition-colors ${activeView === 'profile' ? 'text-sky-400 bg-slate-700' : 'text-slate-300'}`} title={activeView === 'profile' ? "Back to Explorer" : "View Profile"} > {activeView === 'profile' ? <Home size={20} /> : <User size={20} />} </button> <button onClick={handleLogout} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-red-400 transition-colors" title="Logout"> <LogOut size={20} /> </button> </> ) : ( <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-sky-400 transition-colors" title="Login/Signup"> <LogIn size={20} /> </button> )} </div> </div> </header> {activeView === 'main' && ( <main className="container mx-auto p-3 sm:p-4 md:p-6 flex-grow max-w-3xl w-full">  <form onSubmit={(e) => { e.preventDefault(); handleGenerateExplanation(inputValue, true, false, false, 'explain'); }} className="mb-6 flex flex-col sm:flex-row items-stretch gap-2">  <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept (e.g., photosynthesis)" className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none placeholder-slate-500" />  <button type="submit" disabled={isLoading || !inputValue.trim()} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 px-4 sm:px-6 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" > <BookOpen size={20} className="mr-2 hidden sm:inline" /> Generate </button>  </form>  {error && !isLoading && <div className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm animate-fadeIn">{error}</div>}  {liveStreak && liveStreak.score > 0 && currentFocusWord && ( <div className="mb-4 p-3 bg-slate-800 rounded-lg shadow text-sm text-emerald-400"> <span className="font-semibold">Live Streak: {liveStreak.score} </span> <span>({liveStreak.words.map((word, index) => ( <React.Fragment key={word + index}> <span className={`cursor-pointer hover:text-emerald-300 ${getDisplayWord() === word ? 'font-bold underline' : ''}`} onClick={() => handleStreakWordClick(word)} title={`Review: ${word}`} >{word}</span> {index < liveStreak.words.length - 1 && ' → '} </React.Fragment> ))} ) </span> {isReviewingStreakWord && wordForReview && <span className="ml-2 text-xs text-slate-400">(Reviewing: {wordForReview})</span>} </div> )}  {(getDisplayWord() || (activeContentMode === 'quiz' && liveStreakQuizQueue.length > 0)) && ( <div className="mb-6 flex flex-wrap justify-center gap-2 sm:gap-3">  {modeButtons.map(({ mode, label, icon: Icon }) => (  <button key={mode} onClick={() => handleModeChange(mode)} disabled={isLoading && activeContentMode !== mode && !(mode === 'quiz' && liveStreakQuizQueue.length > 0)} className={`relative flex items-center py-2 px-3 sm:px-4 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-105 ${activeContentMode === mode ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-sky-300'} disabled:opacity-70 disabled:cursor-not-allowed`} title={label} > <Icon size={16} className="mr-1.5" /> {label} {mode === 'quiz' && unattemptedStreakQuizCount > 0 && (<span className="absolute -top-2 -right-2 bg-pink-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">{unattemptedStreakQuizCount}</span>)} </button>  ))}  </div> )}  <div className="animate-fadeIn">{renderContent()}</div>  </main> )} {activeView === 'profile' && currentUser && userProfileData && ( <ProfilePageComponent currentUser={currentUser} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onToggleFavorite={handleToggleFavorite} onNavigateBack={() => {setActiveView('main'); setActiveContentMode('explain');}} generatedContent={generatedContent} /> )} {activeView === 'profile' && (isLoading || isFetchingProfile) && !userProfileData && ( <div className="flex-grow flex items-center justify-center text-slate-400">Loading profile...</div> )} {activeView === 'profile' && !currentUser && !isFetchingProfile && ( <div className="flex-grow flex flex-col items-center justify-center text-slate-400 p-6"> <p className="mb-4 text-lg">Please log in to view your profile.</p> <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors" >Login</button> </div> )} {renderAuthModal()} <footer className="bg-slate-800 text-center p-4 text-xs text-slate-500 border-t border-slate-700 mt-auto"> © {new Date().getFullYear()} Tiny Tutor AI. All rights reserved. </footer> </div>);
 }
 export default App;
-

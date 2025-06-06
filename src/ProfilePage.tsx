@@ -1,19 +1,17 @@
 import React from 'react';
-import { User, Home, Heart } from 'lucide-react';
+import { Heart, User, Home } from 'lucide-react';
 
 // --- Types ---
 interface CurrentUser { username: string; email: string; id: string; }
-interface GeneratedContent { [wordId: string]: any; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
 interface ExploredWordEntry { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }
 interface UserProfileData { username: string; email: string; totalWordsExplored: number; quiz_points?: number; total_quiz_questions_answered?: number; total_quiz_questions_correct?: number; exploredWords: ExploredWordEntry[]; favoriteWords: ExploredWordEntry[]; streakHistory: StreakRecord[]; }
 
 interface ProfilePageProps {
   currentUser: CurrentUser;
-  userProfileData: UserProfileData | null;
   onWordSelect: (word: string) => void;
   onNavigateBack: () => void;
-  // REMOVED unused props
+  userProfileData: UserProfileData | null;
 }
 
 
@@ -33,7 +31,6 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
     );
   }
   
-  // RESTORED and SIMPLIFIED renderWordItem to fix mapping errors
   const renderWordItem = (wordData: ExploredWordEntry) => {
     return (
       <li key={wordData.word} className="mb-3 p-4 bg-[--hover-bg-color] rounded-lg shadow-sm transition-colors hover:bg-[--border-color]">

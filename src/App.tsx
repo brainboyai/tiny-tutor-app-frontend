@@ -157,7 +157,7 @@ function App() {
                     {renderWordGameContent()}
                   </div>
                 ) : (
-                  <ProfilePageComponent currentUser={currentUser!} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onToggleFavorite={handleToggleFavorite} onNavigateBack={() => setActiveView('main')} generatedContent={generatedContent} />
+                  <ProfilePageComponent currentUser={currentUser!} onWordSelect={handleWordSelectionFromProfile} onNavigateBack={() => setActiveView('main')} />
                 )}
                 <div ref={chatEndRef} />
               </div>

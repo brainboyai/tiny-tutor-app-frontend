@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
 import {
   Heart, LogIn, LogOut, RefreshCw, Sparkles, User, X,
-  Settings, Menu, Plus, Flame, HelpCircle, Home
+  Settings, Menu, Plus, Flame, HelpCircle,
 } from 'lucide-react';
 import './App.css';
 import './index.css';

@@ -1,21 +1,28 @@
 import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
 import {
   Heart, LogIn, LogOut, RefreshCw, Sparkles, User, X,
-  Settings, Menu, Plus, Flame, HelpCircle
+  Settings, Menu, Plus, Flame, HelpCircle, Home
 } from 'lucide-react';
 import './App.css';
 import './index.css';
 import ProfilePageComponent from './ProfilePage';
 import { DndContext, useDraggable } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
 
 // --- DraggableQuizButton Component ---
-function DraggableQuizButton({ unattemptedCount, onClick }: { unattemptedCount: number, onClick: () => void }) {
+function DraggableQuizButton({ unattemptedCount, onClick, position }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: 'draggable-quiz-button',
   });
-  const style = transform ? {
-    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-  } : {};
+  
+  const style = {
+    transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
+  };
+
+  // Apply the drag transform only while dragging
+  if (transform) {
+    style.transform = `translate3d(${position.x + transform.x}px, ${position.y + transform.y}px, 0)`;
+  }
 
   return (
     <button
@@ -23,8 +30,8 @@ function DraggableQuizButton({ unattemptedCount, onClick }: { unattemptedCount: 
       style={style}
       {...listeners}
       {...attributes}
-      onClick={onClick}
-      className="fixed bottom-24 right-8 z-30 flex items-center justify-center h-16 w-16 bg-sky-600 text-white rounded-full shadow-lg hover:bg-sky-500 transition-all cursor-grab active:cursor-grabbing"
+      // The main click event is now handled by onDragEnd in the DndContext
+      className="fixed bottom-24 right-8 z-30 flex items-center justify-center h-16 w-16 bg-sky-600 text-white rounded-full shadow-lg hover:bg-sky-500 transition-colors cursor-grab active:cursor-grabbing"
       title={`${unattemptedCount} questions available`}
     >
       <HelpCircle size={32} />
@@ -80,6 +87,7 @@ function App() {
   const [isReviewingStreakWord, setIsReviewingStreakWord] = useState(false);
   const [isFetchingProfile, setIsFetchingProfile] = useState(false);
   const [isQuizVisible, setIsQuizVisible] = useState(false);
+  const [quizButtonPosition, setQuizButtonPosition] = useState({ x: 0, y: 0 });
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const getDisplayWord = useCallback(() => isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
@@ -96,16 +104,17 @@ function App() {
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => { if (!authToken || !word) return; const wordId = sanitizeWordForId(word); setGeneratedContent(prev => ({...prev, [wordId]: { ...(prev[wordId] || {}), is_favorite: !currentStatus }})); try { await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word }) }); if (authToken) await fetchUserProfile(authToken); } catch (err: any) { if (authToken) await fetchUserProfile(authToken); } }, [authToken, fetchUserProfile]);
   const handleWordSelectionFromProfile = useCallback((word: string) => { setActiveView('main'); setInputValue(word); handleGenerateExplanation(word, true); }, [handleGenerateExplanation]);
   const handlePopupQuizAnswer = (optionKey: string) => { const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem || currentItem.attempted) return; const isCorrect = currentItem.quizQuestion.correctOptionKey === optionKey; handleSaveQuizAttempt(currentItem.word, isCorrect); setLiveStreakQuizQueue(prev => prev.map((item, index) => index === currentStreakQuizItemIndex ? { ...item, attempted: true, selectedOptionKey: optionKey, isCorrect } : item )); };
+  const handleDragEnd = (event: DragEndEvent) => { const { delta } = event; if (delta.x === 0 && delta.y === 0) { setIsQuizVisible(true); return; } setQuizButtonPosition(({ x, y }) => ({ x: x + delta.x, y: y + delta.y, })); };
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [generatedContent, currentFocusWord, liveStreak, isQuizVisible]);
   const unattemptedStreakQuizCount = liveStreakQuizQueue.filter(item => !item.attempted).length;
   const resetChat = () => { setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); }
 
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
-  const renderWordGameContent = () => { const wordToUse = getDisplayWord(); if (!wordToUse) { return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>How can I help you today?</span></div>); } if (isLoading && !generatedContent[sanitizeWordForId(wordToUse)]) { return <div className="text-center p-10 text-slate-400">Generating...</div>; } if (error) return <div className="text-center p-10 text-red-400">Error: {error}</div>; const wordId = sanitizeWordForId(wordToUse); const contentItem = generatedContent[wordId]; if (!contentItem?.explanation) return null; const currentIsFavorite = contentItem?.is_favorite || false; const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-[--accent-primary] hover:text-[--accent-secondary] underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; return ( <div className="bg-transparent p-1"> <div className="flex justify-between items-start mb-4"> <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2> <div className="flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> <button onClick={handleRefreshContent} className="p-1.5 rounded-full text-[--text-tertiary] hover:text-[--text-primary] hover:bg-[--hover-bg-color] transition-colors" title="Regenerate Explanation"><RefreshCw size={18}/></button> </div> </div> <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg"> {renderClickableText(contentItem.explanation)} </div> </div> ); };
+  const renderWordGameContent = () => { const wordToUse = getDisplayWord(); if (!wordToUse) { return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>How can I help you today?</span></div>); } if (isLoading && !generatedContent[sanitizeWordForId(wordToUse)]) { return <div className="text-center p-10 text-slate-400">Generating...</div>; } if (error) return <div className="text-center p-10 text-red-400">Error: {error}</div>; const wordId = sanitizeWordForId(wordToUse); const contentItem = generatedContent[wordId]; if (!contentItem?.explanation) return null; const currentIsFavorite = contentItem?.is_favorite || false; const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-[--accent-primary] hover:text-[--accent-secondary] underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; return ( <div className="bg-transparent p-1 animate-fadeIn"> <div className="flex justify-between items-start mb-4"> <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2> <div className="flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> <button onClick={handleRefreshContent} className="p-1.5 rounded-full text-[--text-tertiary] hover:text-[--text-primary] hover:bg-[--hover-bg-color] transition-colors" title="Regenerate Explanation"><RefreshCw size={18}/></button> </div> </div> <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg"> {renderClickableText(contentItem.explanation)} </div> </div> ); };
   const renderQuizPopup = () => { if (!isQuizVisible || unattemptedStreakQuizCount === 0) return null; const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem) return null; const { quizQuestion, attempted, selectedOptionKey } = currentItem; return ( <div className="absolute top-4 right-4 w-full max-w-md bg-[--background-secondary] rounded-lg shadow-2xl p-6 z-20 border border-[--border-color] animate-fadeIn"> <div className="flex justify-between items-center mb-4"> <h3 className="font-semibold text-lg text-[--text-primary]">Quiz Time!</h3> <button onClick={() => setIsQuizVisible(false)} className="text-[--text-tertiary] hover:text-[--text-primary]"><X size={20}/></button> </div> <p className="text-[--text-secondary] mb-1 text-sm">Question {currentStreakQuizItemIndex + 1} of {liveStreakQuizQueue.length} (for "{currentItem.word}")</p> <p className="text-[--text-primary] mb-4">{quizQuestion.question}</p> <div className="space-y-2"> {Object.entries(quizQuestion.options).map(([key, text]) => { let buttonColor = "bg-[--hover-bg-color] hover:bg-[--border-color]"; if (attempted) { if (key === quizQuestion.correctOptionKey) { buttonColor = "bg-green-800/80"; } else if (key === selectedOptionKey) { buttonColor = "bg-red-800/80"; } else { buttonColor = "bg-[--hover-bg-color] opacity-60"; } } return (<button key={key} onClick={() => handlePopupQuizAnswer(key)} disabled={attempted} className={`w-full text-left p-3 rounded-md transition-colors ${buttonColor}`}> {text} </button>); })} </div> {attempted && ( <div className="flex justify-end mt-4"> <button onClick={() => { if(currentStreakQuizItemIndex < liveStreakQuizQueue.length - 1) { setCurrentStreakQuizItemIndex(i => i + 1); } else { setIsQuizVisible(false); } }} className="bg-[--accent-primary] text-black font-semibold py-2 px-4 rounded-md"> Next </button> </div> )} </div> ); };
 
   return (
-    <DndContext>
+    <DndContext onDragEnd={handleDragEnd}>
       <div className="flex h-dvh w-full bg-[--background-default] text-[--text-primary] font-sans">
         <aside className={`bg-[--background-secondary] flex-shrink-0 transition-all duration-300 flex flex-col ${isSidebarOpen ? 'w-64 p-2' : 'w-0 p-0'} overflow-hidden`}>
             <div className="flex-grow">
@@ -134,58 +143,55 @@ function App() {
               <h1 className="text-lg font-medium ml-2 truncate">{getDisplayWord() || "Tiny Tutor AI"}</h1>
           </header>
 
-          <main className="flex-grow overflow-y-auto relative">
-              <div className="max-w-4xl mx-auto px-4 pt-8 pb-48">
-                {activeView === 'main' ? (
-                  <div className="space-y-6">
-                    {liveStreak && liveStreak.score > 0 && (
-                      <div className="flex items-center gap-2 flex-wrap p-3 bg-gradient-to-r from-slate-800/50 to-slate-900/20 rounded-xl border border-slate-700/50">
-                          <Flame className="text-orange-500 flex-shrink-0 animate-pulse" />
-                          {liveStreak.words.map((word, index) => (
-                            <React.Fragment key={word + index}>
-                              <button 
-                                className={`py-1 px-3 rounded-full text-sm font-medium transition-all duration-300 shadow-md animate-fadeIn ${getDisplayWord() === word ? 'bg-sky-600 text-white' : 'bg-[--background-secondary] hover:bg-[--hover-bg-color]'}`} 
-                                onClick={() => handleStreakWordClick(word)}
-                              >
-                                {word}
-                              </button>
-                              {index < liveStreak.words.length - 1 && <span className="text-slate-500">→</span>}
-                            </React.Fragment>
-                          ))}
-                      </div>
-                    )}
-                    {renderWordGameContent()}
-                  </div>
-                ) : (
-                  <ProfilePageComponent 
-                    currentUser={currentUser!}
-                    userProfileData={userProfileData}
-                    onWordSelect={handleWordSelectionFromProfile}
-                    onNavigateBack={() => setActiveView('main')}
-                  />
-                )}
-                <div ref={chatEndRef} />
-              </div>
-              {renderQuizPopup()}
-          </main>
-          
-          <footer className="p-4 flex-shrink-0 bg-gradient-to-t from-[--background-default] to-transparent absolute bottom-0 w-full">
-            <div className="max-w-4xl mx-auto">
-              <form onSubmit={(e) => { e.preventDefault(); if (startMode === 'word_game') { handleGenerateExplanation(inputValue, true); } else { setError("Story Mode is coming soon!"); } }} className="bg-[--background-input] rounded-full p-2 flex items-center shadow-lg border border-transparent focus-within:border-[--accent-primary] transition-colors">
-                <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept..." className="w-full bg-transparent px-4 focus:outline-none"/>
-                <button type="submit" disabled={isLoading || !inputValue.trim()} className="p-2 rounded-full bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed"> <Sparkles size={20} /> </button>
-              </form>
+          <div className="flex-grow flex flex-col relative overflow-hidden">
+            <main className="flex-grow overflow-y-auto">
+                <div className="max-w-4xl mx-auto px-4 pt-8 pb-48">
+                  {activeView === 'main' ? (
+                    <div className="space-y-6">
+                      {liveStreak && liveStreak.score > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap p-3 bg-gradient-to-r from-slate-800/50 to-slate-900/20 rounded-xl border border-slate-700/50">
+                            <Flame className="text-orange-500 flex-shrink-0 animate-pulse" />
+                            {liveStreak.words.map((word, index) => (
+                              <React.Fragment key={word + index}>
+                                <button 
+                                  className={`py-1 px-3 rounded-full text-sm font-medium transition-all duration-300 shadow-md animate-fadeIn ${getDisplayWord() === word ? 'bg-sky-600 text-white' : 'bg-[--background-secondary] hover:bg-[--hover-bg-color]'}`} 
+                                  onClick={() => handleStreakWordClick(word)}
+                                >
+                                  {word}
+                                </button>
+                                {index < liveStreak.words.length - 1 && <span className="text-slate-500">→</span>}
+                              </React.Fragment>
+                            ))}
+                        </div>
+                      )}
+                      {renderWordGameContent()}
+                    </div>
+                  ) : (
+                    <ProfilePageComponent currentUser={currentUser!} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onNavigateBack={() => setActiveView('main')} />
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+                {renderQuizPopup()}
+            </main>
+            
+            <footer className="p-4 flex-shrink-0 bg-gradient-to-t from-[--background-default] to-transparent absolute bottom-0 w-full left-0">
+              <div className="max-w-4xl mx-auto">
+                <form onSubmit={(e) => { e.preventDefault(); if (startMode === 'word_game') { handleGenerateExplanation(inputValue, true); } else { setError("Story Mode is coming soon!"); } }} className="bg-[--background-input] rounded-full p-2 flex items-center shadow-lg border border-transparent focus-within:border-[--accent-primary] transition-colors">
+                  <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept..." className="w-full bg-transparent px-4 focus:outline-none"/>
+                  <button type="submit" disabled={isLoading || !inputValue.trim()} className="p-2 rounded-full bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed"> <Sparkles size={20} /> </button>
+                </form>
 
-              <div className="flex items-center justify-center gap-2 mt-3">
-                   <button onClick={() => setStartMode('word_game')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'word_game' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Word Game </button>
-                   <button onClick={() => setStartMode('story_mode')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'story_mode' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Story Mode </button>
+                <div className="flex items-center justify-center gap-2 mt-3">
+                     <button onClick={() => setStartMode('word_game')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'word_game' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Word Game </button>
+                     <button onClick={() => setStartMode('story_mode')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'story_mode' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Story Mode </button>
+                </div>
               </div>
-            </div>
-          </footer>
+            </footer>
+          </div>
         </div>
 
         {showAuthModal && renderAuthModal()}
-        {unattemptedStreakQuizCount > 0 && <DraggableQuizButton unattemptedCount={unattemptedStreakQuizCount} onClick={() => setIsQuizVisible(true)} />}
+        {unattemptedStreakQuizCount > 0 && <DraggableQuizButton unattemptedCount={unattemptedStreakQuizCount} onClick={() => setIsQuizVisible(true)} position={quizButtonPosition} />}
       </div>
     </DndContext>
   );

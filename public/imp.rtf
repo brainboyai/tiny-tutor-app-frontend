@@ -5,12 +5,14 @@
 \red70\green137\blue204;\red140\green211\blue254;\red193\green193\blue193;\red202\green202\blue202;}
 {\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\cssrgb\c80784\c56863\c47059;\cssrgb\c12157\c12157\c12157;
 \cssrgb\c33725\c61176\c83922;\cssrgb\c61176\c86275\c99608;\cssrgb\c80000\c80000\c80000;\cssrgb\c83137\c83137\c83137;}
-\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\paperw11900\paperh16840\margl1440\margr1440\vieww11820\viewh8400\viewkind0
 \pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
 
 \f0\fs24 \cf0 Modifications of 1st stable to 2nd build \'97\'97 app.tsx, profile page.tsx(added and split from first stable) and app.py\
 Stable 3 - prompt upgrades and contextual streak\
 Stable 4 - stable no error prompt upgrades and contextual streak\
+Stable 5 - cache front end. contextual streak and Swapping between streak words and toggle modes fetching from front end.\
+Stable 6 - new contextual quiz, cache front end, all stable.\
 \
 Modification stable 2-3 : changes in app.tsx and app.py (additional context functionality in streak)\
 git add .\
@@ -26,7 +28,7 @@ cd tiny-tutor-frontend-local\
 git add src/App.tsx\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
-\outl0\strokewidth0 \strokec2 "feat: Implement quiz from explanation and display metrics in App.tsx"
+\outl0\strokewidth0 \strokec2 "feat: Revamp App.tsx"
 \f0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
 git push origin main\
 \
@@ -50,7 +52,7 @@ cd tiny-tutor-backend-local\
 git add app.py\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
-"\outl0\strokewidth0 \strokec2 feat: Update quiz generation and add user metrics in app.py\outl0\strokewidth0 "
+"\outl0\strokewidth0 \strokec2 feat: Update Streak quiz generation  in app.py\outl0\strokewidth0 "
 \f0 \kerning1\expnd0\expndtw0 \
 git push origin main\
 \
@@ -68,7 +70,7 @@ A
 \f3\i that specific explanation
 \f1\i0 . This map would be dynamic, changing with each new word explained.\
 \
-Prompt - I am attaching a detailed project report of the app we have been building together. It also has frontend and backend folders. right now I am attaching frontend git repository along with it. I am also giving the folder structure on git hub and my local computer. I also included main files in backend. remember this.\'a0I will also give the screenshots of UI of the app next . You are an expert in building this app. I will run every update for you and give you feedback and then you should take steps to make it better or correct or modify based on the feedback. Do not go out of context and help me build this for us.\
+Prompt - I am attaching a detailed project report of the app we have been building together. It also has frontend and backend folders. right now I am attaching frontend git repository along with it. I am also giving the folder structure on git hub and my local computer. I also included main files in backend. remember this.\'a0I. You are an expert in building this app. I will run every update for you and give you feedback and then you should take steps to make it better or correct or modify based on the feedback. Do not go out of context and help me build this for us.\
 \
 Prompt - now write me a a-z project report about this app in terms of features, user flows, structure, folder structure, files, so that I can use this report as a complete project context handoff/ transfer to give you the complete context\
 \
@@ -108,12 +110,8 @@ Prompt- ok it logged in.word generation is working . but the features i gave you
 \
 Prompt - give me a explaination in simple 2 sentences for a photosynthesis, with 2 to 3 subtopics from within the photosynthesis explaination ,that the user can select. the subtoics are topics that are anyway related to the photosynthesis domain of learning. The subtopics need to take the user down the rabbit hole of learning everything related to photosynthesis.\
 \
-\
 \pard\pardeftab720\sa240\partightenfactor0
-\cf0 \strokec2 I want the subtopics to be concise words. for example- Mixture instead of Mixture of Different Things (Understanding Mixtures)\
-Components instead of Individual Components (The Goal of Separation)\
-Physical Properties instead of Unique Physical Properties (How Separation Works)\
-Pure Substances instead of Obtaining Pure Substances (Applications of Separation)\
+\cf0 \strokec2 \
 \pard\pardeftab720\partightenfactor0
 \cf0 \strokec2 Prompt - I want these modified such that - 1. there should more intelligence in the context between the primary word and subtopic. 2. there should more intelligence in the contexts between every subtopic 3. the user dives down a rabithole from the primary word down the subtopics in the streak, so make the prompts more intelligent and aware, they have to think like a human, how a human explores anything in real life, for example" we first learn one concept and then learn all the things associated with the primary thing, we become more intelligent as we explore the different aspects of the primary concept and the sub topic and sub\'a0 topic with in subtopic. 4. we are passing the information of all the words the user explored in a streak for the generation of contextually aware explainations for the current word in the streak.5. do not disturb the existing rules and functionality and rules of current prompts. You need to make the prompts aware that they are doing a teacher's job of taking the student down a rabbithole and thereby giving knowledge and IQ. I m also giving the backend file(app.py for logic reference, if you might have anything to say.\
 \

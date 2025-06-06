@@ -1,11 +1,27 @@
+/* Reset default styles and set up the color palette and base font */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  /* Gemini-like Color Palette */
+  --font-family: 'Google Sans', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --background-default: #131314;
+  --background-secondary: #1e1f20;
+  --background-tertiary: #2d2e30;
+  --background-input: #1e1f20;
+  --text-primary: #e3e3e3;
+  --text-secondary: #bdc1c6;
+  --text-tertiary: #9aa0a6;
+  --accent-primary: #89b4fa; /* A light blue for accents */
+  --accent-secondary: #a8c7fa;
+  --border-color: #3c4043;
+  --hover-bg-color: #282a2c;
+  --prose-code-bg: #282a2c;
+
+  font-family: var(--font-family);
+  line-height: 1.6;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color-scheme: dark;
+  color: var(--text-primary);
+  background-color: var(--background-default);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,56 +29,27 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
-  min-height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* Custom Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background-secondary);
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--background-tertiary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-tertiary);
 }
 
+/* Base styles for buttons and inputs */
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+  font-family: var(--font-family);
 }

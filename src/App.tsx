@@ -9,7 +9,7 @@ import ProfilePageComponent from './ProfilePage';
 import { DndContext, useDraggable } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 
-// --- [Keep DraggableQuizButton Component and All Type Interfaces as they are] ---
+// --- DraggableQuizButton Component ---
 interface DraggableQuizButtonProps {
   unattemptedCount: number;
   position: { x: number; y: number };
@@ -31,9 +31,10 @@ function DraggableQuizButton({ unattemptedCount, position }: DraggableQuizButton
     </button>
   );
 }
+// --- Types (No Changes) ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; }
-interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; }
+interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; modes_generated?: string[]; }
 interface GeneratedContent { [wordId: string]: GeneratedContentItem; }
 interface LiveStreak { score: number; words: string[]; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
@@ -45,7 +46,6 @@ const sanitizeWordForId = (word: string): string => { if (typeof word !== 'strin
 const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion[] => { if (!Array.isArray(quizStringsFromBackend)) { return []; } return quizStringsFromBackend.map((quizStr: string) => { if (typeof quizStr !== 'string') { return null; } const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line); if (lines.length < 3) return null; let question = ""; const options: { [key: string]: string } = {}; let correctOptionKey = ""; let explanationForAnswer = ""; let parsingState: 'question' | 'options' | 'answer' | 'explanation' = 'question'; let questionLines: string[] = []; for (const line of lines) { const questionMatch = line.match(/^\*\*Question \d*:\*\*(.*)/i); if (questionMatch) { if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); questionLines = []; question = questionMatch[1].trim(); parsingState = 'options'; continue; } const optionMatch = line.match(/^([A-D])\)\s*(.*)/i); if (optionMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } options[optionMatch[1].toUpperCase()] = optionMatch[2].trim(); continue; } const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i); if (correctMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } correctOptionKey = correctMatch[1].toUpperCase(); parsingState = 'explanation'; explanationForAnswer = ""; continue; } const explanationKeywordMatch = line.match(/^Explanation:\s*(.*)/i); if (explanationKeywordMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } explanationForAnswer = explanationKeywordMatch[1].trim(); parsingState = 'explanation'; continue; } if (parsingState === 'question') { questionLines.push(line); } else if (parsingState === 'explanation') { explanationForAnswer += " " + line.trim(); } } if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); explanationForAnswer = explanationForAnswer.trim(); if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) { return null; } return { question, options, correctOptionKey, explanation: explanationForAnswer || undefined }; }).filter(q => q !== null) as ParsedQuizQuestion[]; };
 
 function App() {
-  // ... [Keep all existing state declarations as they are] ...
   const [inputValue, setInputValue] = useState('');
   const [currentFocusWord, setCurrentFocusWord] = useState<string | null>(null);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent>({});
@@ -78,7 +78,6 @@ function App() {
   const [warningAction, setWarningAction] = useState<{ action: () => void } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // --- LOGIC FUNCTIONS ---
   const getDisplayWord = useCallback(() => isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
   const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null): Promise<StreakRecord[] | null> => { if (!token || !streakToSave || streakToSave.score < 2) return null; try { const response = await fetch(`${API_BASE_URL}/save_streak`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }), }); if (!response.ok) return null; const data = await response.json(); return data.streakHistory; } catch (err: any) { console.error('Error saving streak:', err.message); return null; }}, []);
   const handleLogout = useCallback(async () => { if (liveStreak && liveStreak.score >= 2 && authToken) { await saveStreakToServer(liveStreak, authToken); } localStorage.removeItem('authToken'); setAuthToken(null); setCurrentUser(null); setUserProfileData(null); setLiveStreak(null); setCurrentFocusWord(null); setGeneratedContent({}); setError(null); setAuthError(null); setAuthSuccessMessage(null); setShowAuthModal(false); setActiveView('main'); setLiveStreakQuizQueue([]); }, [liveStreak, authToken, saveStreakToServer]);
@@ -96,7 +95,7 @@ function App() {
   const handleDragEnd = (event: DragEndEvent) => { const { delta } = event; if (Math.abs(delta.x) < 5 && Math.abs(delta.y) < 5) { setIsQuizVisible(true); return; } setQuizButtonPosition(({ x, y }) => ({ x: x + delta.x, y: y + delta.y, })); };
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [generatedContent, currentFocusWord, liveStreak, isQuizVisible]);
   const unattemptedStreakQuizCount = liveStreakQuizQueue.filter(item => !item.attempted).length;
-  const resetChat = useCallback(() => { const action = async () => { if (liveStreak && authToken) { const newHistory = await saveStreakToServer(liveStreak, authToken); if (newHistory && userProfileData) { setUserProfileData(prev => ({...prev!, streakHistory: newHistory})); } } setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); setIsInitialView(true); }; if (liveStreak && liveStreak.score >= 2) { setWarningAction({ action }); setShowWarningModal(true); } else { action(); }}, [liveStreak, authToken, saveStreakToServer, userProfileData]);
+  const resetChat = useCallback(() => { const action = async () => { if (liveStreak && liveStreak.score > 0 && authToken) { const newHistory = await saveStreakToServer(liveStreak, authToken); if (newHistory && userProfileData) { setUserProfileData(prev => ({...prev!, streakHistory: newHistory})); } } setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); setIsInitialView(true); }; if (liveStreak && liveStreak.score >= 2) { setWarningAction({ action }); setShowWarningModal(true); } else { action(); }}, [liveStreak, authToken, saveStreakToServer, userProfileData]);
   const confirmWarning = () => { if (warningAction) { warningAction.action(); } setShowWarningModal(false); setWarningAction(null); };
 
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
@@ -179,18 +178,20 @@ function App() {
                 {renderQuizPopup()}
             </main>
             
-            <div className={`absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[--background-default] to-transparent transition-opacity duration-300 ${isInitialView && activeView === 'main' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-              <div className="max-w-4xl mx-auto">
-                <form onSubmit={(e) => { e.preventDefault(); if (startMode === 'word_game') { handleGenerateExplanation(inputValue, true); } else { setError("Story Mode is coming soon!"); } }} className="bg-[--background-input] rounded-full p-2 flex items-center shadow-lg border border-transparent focus-within:border-[--accent-primary] transition-colors">
-                  <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept..." className="w-full bg-transparent px-4 focus:outline-none"/>
-                  <button type="submit" disabled={isLoading || !inputValue.trim()} className="p-2 rounded-full bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed"> <Sparkles size={20} /> </button>
-                </form>
-                <div className="flex items-center justify-center gap-2 mt-3">
-                     <button onClick={() => setStartMode('word_game')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'word_game' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Word Game </button>
-                     <button onClick={() => setStartMode('story_mode')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'story_mode' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Story Mode </button>
+            {activeView === 'main' && (
+              <div className={`absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[--background-default] to-transparent ${isInitialView ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                <div className="max-w-4xl mx-auto">
+                  <form onSubmit={(e) => { e.preventDefault(); if (startMode === 'word_game') { handleGenerateExplanation(inputValue, true); } else { setError("Story Mode is coming soon!"); } }} className="bg-[--background-input] rounded-full p-2 flex items-center shadow-lg border border-transparent focus-within:border-[--accent-primary] transition-colors">
+                    <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept..." className="w-full bg-transparent px-4 focus:outline-none"/>
+                    <button type="submit" disabled={isLoading || !inputValue.trim()} className="p-2 rounded-full bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed"> <Sparkles size={20} /> </button>
+                  </form>
+                  <div className="flex items-center justify-center gap-2 mt-3">
+                       <button onClick={() => setStartMode('word_game')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'word_game' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Word Game </button>
+                       <button onClick={() => setStartMode('story_mode')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'story_mode' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Story Mode </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import {
-  BookOpen, Heart, ImageIcon, Lightbulb, LogIn, LogOut, RefreshCw, Sparkles, User, X,
-  MessageSquareQuote, Brain, Home, HelpCircle, ChevronRight, CheckCircle, XCircle, FileText
+   Heart, Lightbulb, LogIn, LogOut, RefreshCw, Sparkles, User, X,
+  MessageSquareQuote, Home, HelpCircle, ChevronRight, CheckCircle, XCircle, FileText
 } from 'lucide-react';
 import './App.css';
 import './index.css';
@@ -10,13 +10,15 @@ import ProfilePageComponent from './ProfilePage';
 // --- Types ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; originalString?: string; }
+// Keep old fields in GeneratedContentItem for compatibility with existing data
 interface GeneratedContentItem { explanation?: string; fact?: string; image_prompt?: string; image_url?: string; deep_dive?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; modes_generated?: string[]; }
 interface GeneratedContent { [wordId: string]: GeneratedContentItem; }
-interface LiveStreak { score: number; words: string[]; }
+interface LiveStreak { score: number; words:string[]; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
 interface ExploredWordEntry { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string; }
 interface UserProfileData { username: string; email: string; totalWordsExplored: number; exploredWords: ExploredWordEntry[]; favoriteWords: ExploredWordEntry[]; streakHistory: StreakRecord[]; quiz_points?: number; total_quiz_questions_answered?: number; total_quiz_questions_correct?: number; }
-type ContentMode = 'explain' | 'quiz' | 'fact' | 'image' | 'deep_dive';
+// UPDATE: Simplify ContentMode type
+type ContentMode = 'explain' | 'quiz';
 interface StreakQuizItem { word: string; originalExplanation: string; quizQuestion: ParsedQuizQuestion; attempted: boolean; selectedOptionKey?: string; isCorrect?: boolean; }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
@@ -31,6 +33,9 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeContentMode, setActiveContentMode] = useState<ContentMode>('explain');
+  
+  // ADD: New state for the start mode
+  const [startMode, setStartMode] = useState<'word_game' | 'story_mode'>('word_game');
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -61,6 +66,7 @@ function App() {
   const [isFetchingProfile, setIsFetchingProfile] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
 
+  // --- CORE FUNCTIONS (Most are unchanged) ---
   const getDisplayWord = useCallback(() => isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
   const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null) => { if (!token || !streakToSave || streakToSave.score < 2) return; try { await fetch(`${API_BASE_URL}/save_streak`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }), }); } catch (err: any) { console.error('Error saving streak:', err.message); }}, []);
   const handleLogout = useCallback(async () => { if (liveStreak && liveStreak.score >= 2 && authToken) { await saveStreakToServer(liveStreak, authToken); } localStorage.removeItem('authToken'); setAuthToken(null); setCurrentUser(null); setUserProfileData(null); setLiveStreak(null); setCurrentFocusWord(null); setGeneratedContent({}); setActiveContentMode('explain'); setError(null); setAuthError(null); setAuthSuccessMessage(null); setShowAuthModal(false); setActiveView('main'); setInitialLoadDone(false); setLiveStreakQuizQueue([]); setCurrentStreakQuizItemIndex(0); setShowStreakQuizItemExplanation(false); setIsViewingStreakQuizSummary(false); console.log("User logged out"); }, [liveStreak, authToken, saveStreakToServer]);
@@ -93,12 +99,11 @@ function App() {
         setShowStreakQuizItemExplanation(false); setIsViewingStreakQuizSummary(false);
     }
     
-    // --- Moved Streak and Focus Word Updates Higher for UI Sync ---
     if (isNewPrimaryWordSearch || isProfileWordClick) {
         if (liveStreak && liveStreak.score >= 2 && authToken) {
             await saveStreakToServer(liveStreak, authToken);
         }
-        setLiveStreak(null); // Prepare for new streak
+        setLiveStreak(null); 
         setCurrentFocusWord(wordToFetch); 
         setIsReviewingStreakWord(false); 
         setWordForReview(null);
@@ -111,9 +116,8 @@ function App() {
         setIsReviewingStreakWord(false);
         setWordForReview(null);
     } else if (isReviewingStreakWord && wordForReview === wordToFetch) {
-        setCurrentFocusWord(wordToFetch); // Ensure focus word is the one being reviewed
+        setCurrentFocusWord(wordToFetch);
     }
-    // --- End of Early Streak/Focus Word Updates ---
     
     let streakContextForAPI: string[] = [];
     if (isSubTopicClick || (isReviewingStreakWord && wordForReview === wordToFetch)) {
@@ -135,9 +139,7 @@ function App() {
         if (item) {
             let contentFromCache: string | undefined = undefined;
             if (targetMode === 'explain' && item.explanation) contentFromCache = item.explanation;
-            else if (targetMode === 'fact' && item.fact) contentFromCache = item.fact;
-            else if (targetMode === 'deep_dive' && item.deep_dive) contentFromCache = item.deep_dive;
-            else if (targetMode === 'image' && (item.image_url || item.image_prompt)) contentFromCache = item.image_url || item.image_prompt;
+            // REMOVE cache check for fact, deep_dive, image
             
             if (contentFromCache) {
                 console.log(`CACHE HIT: Serving '${targetMode}' for '${wordToFetch}' from frontend cache.`);
@@ -191,7 +193,6 @@ function App() {
             explanationJustFetched = apiData.explain;
         }
         
-        // Update streak state synchronously with setting focus word if it's a new word in streak
         const isNewWordBeingAddedToStreakLogic = isNewPrimaryWordSearch || isProfileWordClick || 
                                    (isSubTopicClick && (!liveStreak || liveStreak.words[liveStreak.words.length - 1] !== wordToFetch || !liveStreak.words.includes(wordToFetch) ));
 
@@ -203,7 +204,20 @@ function App() {
             }
         }
             
-        setGeneratedContent(prev => { const existing = prev[wordId] || {}; const newGC: GeneratedContentItem = {...existing}; if(targetMode === 'explain' && apiData.explain !== undefined) newGC.explanation = apiData.explain; else if (targetMode === 'fact' && apiData.fact !== undefined) newGC.fact = apiData.fact; else if (targetMode === 'deep_dive' && apiData.deep_dive !== undefined) newGC.deep_dive = apiData.deep_dive; else if (targetMode === 'image') { if (apiData.image_url !== undefined) { newGC.image_url = apiData.image_url; if (apiData.image_prompt !== undefined) newGC.image_prompt = apiData.image_prompt; } else if (apiData.image !== undefined) { newGC.image_prompt = apiData.image; newGC.image_url = undefined; } } newGC.is_favorite = apiData.is_favorite !== undefined ? apiData.is_favorite : (existing.is_favorite || false); newGC.first_explored_at = existing.first_explored_at || new Date().toISOString(); newGC.last_explored_at = new Date().toISOString(); const modes = new Set(existing.modes_generated || []); modes.add(targetMode); if(apiData.modes_generated) apiData.modes_generated.forEach((m:string)=>modes.add(m)); newGC.modes_generated = Array.from(modes); return {...prev, [wordId]: newGC }; });
+        setGeneratedContent(prev => { 
+          const existing = prev[wordId] || {}; 
+          const newGC: GeneratedContentItem = {...existing}; 
+          if(targetMode === 'explain' && apiData.explain !== undefined) newGC.explanation = apiData.explain; 
+          // REMOVE logic for setting fact, deep_dive, image
+          newGC.is_favorite = apiData.is_favorite !== undefined ? apiData.is_favorite : (existing.is_favorite || false); 
+          newGC.first_explored_at = existing.first_explored_at || new Date().toISOString(); 
+          newGC.last_explored_at = new Date().toISOString(); 
+          const modes = new Set(existing.modes_generated || []); 
+          modes.add(targetMode); 
+          if(apiData.modes_generated) apiData.modes_generated.forEach((m:string)=>modes.add(m)); 
+          newGC.modes_generated = Array.from(modes); 
+          return {...prev, [wordId]: newGC }; 
+        });
         
         if (explanationJustFetched && authToken && isNewWordBeingAddedToStreakLogic) {
             console.log(`Streak progress: Fetching quiz for ${wordToFetch}`);
@@ -242,12 +256,9 @@ function App() {
             setCurrentStreakQuizItemIndex(itemIndex); 
             setShowStreakQuizItemExplanation(false); 
         } else { 
-            // If reviewing a streak word in quiz mode but it's not in queue, show its explanation.
-            // The user would then click quiz tab again if they want a quiz for it (which would be a singleWordQuiz)
             handleGenerateExplanation(clickedWord, false, false, true, 'explain'); 
         }
     } else { 
-        // For other modes, or if explain mode, try to show cached explanation by passing isUserRefreshClick: false
         handleGenerateExplanation(clickedWord, false, false, true, 'explain'); 
     }
   }, [ isReviewingStreakWord, wordForReview, activeContentMode, handleGenerateExplanation, liveStreakQuizQueue]);
@@ -268,21 +279,22 @@ function App() {
 
     if (newMode === 'quiz') {
         setActiveContentMode('quiz'); 
-        if (liveStreakQuizQueue.length > 0 && wordToUse && liveStreak?.words.includes(wordToUse)) { // Check if current word is part of active streak
+        if (liveStreakQuizQueue.length > 0 && wordToUse && liveStreak?.words.includes(wordToUse)) {
             const itemIndex = liveStreakQuizQueue.findIndex(item => item.word === wordToUse);
             if (itemIndex !== -1) {
                 setCurrentStreakQuizItemIndex(itemIndex);
-            } else { // Word is in streak but not in queue (should not happen if logic is correct)
-                 if (wordToUse) handleGenerateExplanation(wordToUse, false, true, false, 'quiz'); // Fetch as single word quiz
+            } else {
+                 if (wordToUse) handleGenerateExplanation(wordToUse, false, true, false, 'quiz');
             }
-        } else if (wordToUse) { // Not a streak quiz context, or streak word not in queue
+        } else if (wordToUse) {
             handleGenerateExplanation(wordToUse, false, true, false, 'quiz'); 
         }
-    } else if (wordToUse) { 
-        // For non-quiz modes, pass isUserRefreshClick as false to attempt cache first
-        handleGenerateExplanation(wordToUse, false, false, false, newMode);
-    } else if (newMode === 'explain') { 
-        setActiveContentMode('explain');
+    } else if (newMode === 'explain') {
+        if (wordToUse) {
+          handleGenerateExplanation(wordToUse, false, false, false, 'explain');
+        } else {
+          setActiveContentMode('explain');
+        }
     }
   }, [getDisplayWord, inputValue, handleGenerateExplanation, liveStreakQuizQueue, activeContentMode, liveStreak]);
   
@@ -298,10 +310,203 @@ function App() {
   const handleSingleWordQuizOptionSelect = useCallback((optionKey: string) => { if (!currentSingleWordQuiz || currentSingleWordQuizIdx >= currentSingleWordQuiz.length || singleWordQuizAttempted || !currentFocusWord) return; const currentQuestion = currentSingleWordQuiz[currentSingleWordQuizIdx]; const isCorrect = currentQuestion.correctOptionKey === optionKey; setSingleWordSelectedOption(optionKey); setSingleWordQuizFeedback({ message: isCorrect ? "Correct!" : `Incorrect. Correct: ${currentQuestion.options[currentQuestion.correctOptionKey]}`, isCorrect }); setSingleWordQuizAttempted(true); handleSaveQuizAttempt(currentFocusWord, currentSingleWordQuizIdx, optionKey, isCorrect); }, [currentSingleWordQuiz, currentSingleWordQuizIdx, singleWordQuizAttempted, currentFocusWord, handleSaveQuizAttempt]);
   const handleNextSingleWordQuizQuestion = useCallback(() => { if (!currentSingleWordQuiz) return; if (currentSingleWordQuizIdx < currentSingleWordQuiz.length - 1) { setCurrentSingleWordQuizIdx(prev => prev + 1); setSingleWordSelectedOption(null); setSingleWordQuizFeedback(null); setSingleWordQuizAttempted(false); } else { setCurrentSingleWordQuiz(null); }  }, [currentSingleWordQuiz, currentSingleWordQuizIdx]);
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-slate-800 p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-slate-400 hover:text-slate-200"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-sky-400 mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-500/20 text-green-400 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-slate-300 mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-slate-300 mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-slate-300 mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-slate-300 mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-slate-400 mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-sky-400 hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-sky-400 hover:underline">Login</button> </> )} </p></div></div>);};
-  const renderContent = () => { const wordToUse = getDisplayWord(); if (activeContentMode === 'quiz') { if (liveStreakQuizQueue.length > 0 && !isViewingStreakQuizSummary) { const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem) { return <div className="text-center p-10 text-slate-400">Loading streak quiz question...</div>; } const { word, quizQuestion, attempted, selectedOptionKey, isCorrect, originalExplanation } = currentItem; return ( <div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative text-slate-200"><p className="text-sm text-sky-300 mb-2 font-semibold">Streak Quiz: Question {currentStreakQuizItemIndex + 1} of {liveStreakQuizQueue.length} (Word: {word})</p><h3 className="text-lg font-semibold mb-4">{quizQuestion.question}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">{Object.entries(quizQuestion.options).map(([key, optionText]) => ( <button key={key} onClick={() => handleStreakQuizOptionSelect(key)} disabled={attempted} className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out ${attempted ? (key === selectedOptionKey ? (isCorrect ? 'bg-green-500/80 ring-2 ring-green-400' : 'bg-red-500/80 ring-2 ring-red-400') : (key === quizQuestion.correctOptionKey ? 'bg-green-500/50' : 'bg-slate-600 opacity-60')) : 'bg-slate-650 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'} ${attempted && 'cursor-not-allowed'} ${!attempted && 'cursor-pointer'}`}>{optionText}</button>))}</div>{attempted && (<div className={`p-3 rounded-md my-4 text-sm ${isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>{isCorrect ? <><CheckCircle className="inline mr-2"/>Correct!</> : <><XCircle className="inline mr-2"/>Incorrect.</>}{!isCorrect && quizQuestion.options[quizQuestion.correctOptionKey] && (<span className="block mt-1">Correct Answer: {quizQuestion.options[quizQuestion.correctOptionKey]}</span>)}{quizQuestion.explanation && (<p className="mt-1 text-xs italic">Explanation: {quizQuestion.explanation}</p>)}</div>)}<div className="mt-4 flex flex-col sm:flex-row gap-2 justify-between items-center"><button onClick={() => setShowStreakQuizItemExplanation(!showStreakQuizItemExplanation)} className="text-sm text-sky-400 hover:text-sky-300 underline p-1 flex items-center"><HelpCircle size={16} className="mr-1"/> {showStreakQuizItemExplanation ? "Hide" : "Show"} Word Explanation</button>{attempted && (<button onClick={handleNextStreakQuizItem} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center">{currentStreakQuizItemIndex < liveStreakQuizQueue.length - 1 ? (<>Next Question <ChevronRight size={20} className="ml-1"/></>) : (<>View Streak Summary <FileText size={18} className="ml-1"/></>)}</button>)}</div>{showStreakQuizItemExplanation && (<div className="mt-4 p-3 bg-slate-800 rounded prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed"><h4 className="font-semibold text-sky-400">Explanation for "{word}"</h4><p dangerouslySetInnerHTML={{ __html: originalExplanation.replace(/\n/g, '<br />') }} /></div>)}</div>); } else if (isViewingStreakQuizSummary) { const correctAnswers = liveStreakQuizQueue.filter(item => item.isCorrect).length; const totalAnswered = liveStreakQuizQueue.filter(item => item.attempted).length; return (<div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 text-slate-200 text-center"><h3 className="text-2xl font-bold text-sky-400 mb-4">Streak Quiz Summary</h3><p className="text-lg mb-2">You answered <span className="font-bold text-emerald-400">{correctAnswers}</span> out of <span className="font-bold text-sky-300">{totalAnswered}</span> questions correctly!</p><p className="text-lg mb-6">Points Earned: <span className="font-bold text-amber-400">{correctAnswers * 10}</span></p><button onClick={() => {setIsViewingStreakQuizSummary(false); setActiveContentMode('explain'); if(currentFocusWord) handleGenerateExplanation(currentFocusWord, false, false, false, 'explain');}} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg">Done</button></div>);} else if (currentSingleWordQuiz && currentSingleWordQuiz.length > 0 && currentFocusWord) { const quizSet = currentSingleWordQuiz; const cq = quizSet[currentSingleWordQuizIdx]; if (!cq || !cq.options) return <p className="text-red-400">Error: Quiz data invalid.</p>; return (<div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative text-slate-200"><p className="text-sm text-slate-400 mb-2">Quiz for "{currentFocusWord}" (Question {currentSingleWordQuizIdx + 1} of {quizSet.length})</p><h3 className="text-lg font-semibold mb-4">{cq.question}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">{Object.entries(cq.options).map(([k, o]) => ( <button key={k} onClick={() => handleSingleWordQuizOptionSelect(k)} disabled={singleWordQuizAttempted} className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out ${singleWordSelectedOption === k ? (singleWordQuizFeedback?.isCorrect ? 'bg-green-500 hover:bg-green-600 ring-2 ring-green-400' : 'bg-red-500 hover:bg-red-600 ring-2 ring-red-400') : 'bg-slate-650 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'} ${singleWordQuizAttempted && 'cursor-not-allowed'}`}>{o}</button>))}</div>{singleWordQuizFeedback && (<div className={`p-3 rounded-md my-4 text-sm ${singleWordQuizFeedback.isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>{singleWordQuizFeedback.message}{!singleWordQuizFeedback.isCorrect && cq.explanation && <p className="mt-1 text-xs">{cq.explanation}</p>}</div>)}{singleWordQuizAttempted && currentSingleWordQuizIdx < quizSet.length -1 && (<button onClick={handleNextSingleWordQuizQuestion} className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg mt-4">Next Question</button>)}{singleWordQuizAttempted && currentSingleWordQuizIdx === quizSet.length -1 && (<p className="text-center text-slate-400 mt-4 p-2">End of this quiz. Click 'Quiz' tab again for new questions.</p>)}</div>);} else if (isLoading && currentFocusWord) { return <div className="text-center p-10 text-slate-400">Generating quiz for "{currentFocusWord}"...</div>; } else if (currentFocusWord) { return <div className="text-center p-10 text-slate-400">Click 'Quiz' tab to get questions for "{currentFocusWord}".</div>;} else { return <div className="text-center p-10 text-slate-400">Explore a word to start a quiz!</div>;}} if (!wordToUse && isLoading) return <div className="text-center p-10 text-slate-400">Loading...</div>; if (!wordToUse) return <div className="text-center p-10 text-slate-400 text-lg">Enter a word or concept to begin!</div>; const wordIdForContent = sanitizeWordForId(wordToUse); const contentItem = generatedContent[wordIdForContent];  let modeContentAvailable = false; if (contentItem) { if (activeContentMode === 'explain') modeContentAvailable = typeof contentItem.explanation === 'string' && contentItem.explanation.length > 0; else if (activeContentMode === 'fact') modeContentAvailable = typeof contentItem.fact === 'string' && contentItem.fact.length > 0; else if (activeContentMode === 'deep_dive') modeContentAvailable = typeof contentItem.deep_dive === 'string' && contentItem.deep_dive.length > 0; else if (activeContentMode === 'image') modeContentAvailable = (typeof contentItem.image_url === 'string' && contentItem.image_url.length > 0) || (typeof contentItem.image_prompt === 'string' && contentItem.image_prompt.length > 0); } if (isLoading && !modeContentAvailable) return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>; if (error && !modeContentAvailable) return <div className="text-center p-10 text-red-400">Error: {error}</div>; if (!contentItem && activeContentMode !== 'explain' ) return <div className="text-center p-10 text-slate-400">No content for "{wordToUse}" yet. Try generating.</div>; if (!modeContentAvailable && !isLoading && activeContentMode !== 'explain') { return <div className="text-center p-10 text-slate-400">No {activeContentMode} content for "{wordToUse}". Try generating.</div>;} const currentIsFavorite = contentItem?.is_favorite || false; const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-sky-400 hover:text-sky-300 underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; let modeContentElement = null; switch (activeContentMode) { case 'explain': modeContentElement = contentItem?.explanation ? (<div className="prose prose-invert prose-sm sm:prose-base max-w-none text-slate-200 leading-relaxed">{renderClickableText(contentItem.explanation)}</div>) : (isLoading ? <p>Generating explanation...</p> : <p>No explanation available. Click 'Explain' to generate.</p>); break; case 'fact': modeContentElement = contentItem?.fact ? <p className="text-lg text-amber-300 italic leading-relaxed">{renderClickableText(contentItem.fact)}</p> : <p>No fact.</p>; break; case 'image': modeContentElement = (<div>{(contentItem?.image_url?.length)?(<img src={contentItem.image_url} alt={`For ${wordToUse}`} className="rounded-lg shadow-lg mx-auto max-w-full h-auto max-h-[400px] object-contain"/>):(contentItem?.image_prompt?.length)?(<p className="text-slate-400 italic">{contentItem.image_prompt}</p>):(<p>No image.</p>)}</div>); break; case 'deep_dive': modeContentElement = contentItem?.deep_dive ? <div className="prose prose-invert max-w-none text-slate-200 leading-relaxed">{renderClickableText(contentItem.deep_dive)}</div> : <p>No deep dive.</p>; break; default: modeContentElement = <p>Select a mode to view content.</p>;  } return ( <div key={wordToUse + activeContentMode} className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative"> <div className="absolute top-3 right-3 flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-slate-600 transition-colors ${currentIsFavorite?'text-pink-500':'text-slate-400'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> {activeContentMode==='explain'&&(<button onClick={handleRefreshContent} className="p-1.5 rounded-full text-slate-400 hover:text-sky-300 hover:bg-slate-600 transition-colors" title={`Regen ${activeContentMode}`}><RefreshCw size={18}/></button>)} </div> <h2 className="text-2xl sm:text-3xl font-bold text-sky-400 mb-4 capitalize">{wordToUse} - <span className="text-sky-500">{activeContentMode}</span></h2> {modeContentElement} </div> );};
-  const modeButtons: { mode: ContentMode; label: string; icon: React.ElementType }[] = [ { mode: 'explain', label: 'Explain', icon: MessageSquareQuote }, { mode: 'quiz', label: 'Quiz', icon: Lightbulb }, { mode: 'fact', label: 'Fact', icon: Sparkles }, { mode: 'image', label: 'Image', icon: ImageIcon }, { mode: 'deep_dive', label: 'Deep Dive', icon: Brain }, ];
+  
+  // UPDATE: Cleanup renderContent
+  const renderContent = () => { 
+    const wordToUse = getDisplayWord(); 
+    if (activeContentMode === 'quiz') { 
+        if (liveStreakQuizQueue.length > 0 && !isViewingStreakQuizSummary) { const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem) { return <div className="text-center p-10 text-slate-400">Loading streak quiz question...</div>; } const { word, quizQuestion, attempted, selectedOptionKey, isCorrect, originalExplanation } = currentItem; return ( <div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative text-slate-200"><p className="text-sm text-sky-300 mb-2 font-semibold">Streak Quiz: Question {currentStreakQuizItemIndex + 1} of {liveStreakQuizQueue.length} (Word: {word})</p><h3 className="text-lg font-semibold mb-4">{quizQuestion.question}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">{Object.entries(quizQuestion.options).map(([key, optionText]) => ( <button key={key} onClick={() => handleStreakQuizOptionSelect(key)} disabled={attempted} className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out ${attempted ? (key === selectedOptionKey ? (isCorrect ? 'bg-green-500/80 ring-2 ring-green-400' : 'bg-red-500/80 ring-2 ring-red-400') : (key === quizQuestion.correctOptionKey ? 'bg-green-500/50' : 'bg-slate-600 opacity-60')) : 'bg-slate-650 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'} ${attempted && 'cursor-not-allowed'} ${!attempted && 'cursor-pointer'}`}>{optionText}</button>))}</div>{attempted && (<div className={`p-3 rounded-md my-4 text-sm ${isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>{isCorrect ? <><CheckCircle className="inline mr-2"/>Correct!</> : <><XCircle className="inline mr-2"/>Incorrect.</>}{!isCorrect && quizQuestion.options[quizQuestion.correctOptionKey] && (<span className="block mt-1">Correct Answer: {quizQuestion.options[quizQuestion.correctOptionKey]}</span>)}{quizQuestion.explanation && (<p className="mt-1 text-xs italic">Explanation: {quizQuestion.explanation}</p>)}</div>)}<div className="mt-4 flex flex-col sm:flex-row gap-2 justify-between items-center"><button onClick={() => setShowStreakQuizItemExplanation(!showStreakQuizItemExplanation)} className="text-sm text-sky-400 hover:text-sky-300 underline p-1 flex items-center"><HelpCircle size={16} className="mr-1"/> {showStreakQuizItemExplanation ? "Hide" : "Show"} Word Explanation</button>{attempted && (<button onClick={handleNextStreakQuizItem} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center">{currentStreakQuizItemIndex < liveStreakQuizQueue.length - 1 ? (<>Next Question <ChevronRight size={20} className="ml-1"/></>) : (<>View Streak Summary <FileText size={18} className="ml-1"/></>)}</button>)}</div>{showStreakQuizItemExplanation && (<div className="mt-4 p-3 bg-slate-800 rounded prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed"><h4 className="font-semibold text-sky-400">Explanation for "{word}"</h4><p dangerouslySetInnerHTML={{ __html: originalExplanation.replace(/\n/g, '<br />') }} /></div>)}</div>); } else if (isViewingStreakQuizSummary) { const correctAnswers = liveStreakQuizQueue.filter(item => item.isCorrect).length; const totalAnswered = liveStreakQuizQueue.filter(item => item.attempted).length; return (<div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 text-slate-200 text-center"><h3 className="text-2xl font-bold text-sky-400 mb-4">Streak Quiz Summary</h3><p className="text-lg mb-2">You answered <span className="font-bold text-emerald-400">{correctAnswers}</span> out of <span className="font-bold text-sky-300">{totalAnswered}</span> questions correctly!</p><p className="text-lg mb-6">Points Earned: <span className="font-bold text-amber-400">{correctAnswers * 10}</span></p><button onClick={() => {setIsViewingStreakQuizSummary(false); setActiveContentMode('explain'); if(currentFocusWord) handleGenerateExplanation(currentFocusWord, false, false, false, 'explain');}} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg">Done</button></div>);} else if (currentSingleWordQuiz && currentSingleWordQuiz.length > 0 && currentFocusWord) { const quizSet = currentSingleWordQuiz; const cq = quizSet[currentSingleWordQuizIdx]; if (!cq || !cq.options) return <p className="text-red-400">Error: Quiz data invalid.</p>; return (<div className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative text-slate-200"><p className="text-sm text-slate-400 mb-2">Quiz for "{currentFocusWord}" (Question {currentSingleWordQuizIdx + 1} of {quizSet.length})</p><h3 className="text-lg font-semibold mb-4">{cq.question}</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">{Object.entries(cq.options).map(([k, o]) => ( <button key={k} onClick={() => handleSingleWordQuizOptionSelect(k)} disabled={singleWordQuizAttempted} className={`p-3 rounded-lg text-left transition-all duration-200 ease-in-out ${singleWordSelectedOption === k ? (singleWordQuizFeedback?.isCorrect ? 'bg-green-500 hover:bg-green-600 ring-2 ring-green-400' : 'bg-red-500 hover:bg-red-600 ring-2 ring-red-400') : 'bg-slate-650 hover:bg-slate-600 focus:ring-2 focus:ring-sky-500'} ${singleWordQuizAttempted && 'cursor-not-allowed'}`}>{o}</button>))}</div>{singleWordQuizFeedback && (<div className={`p-3 rounded-md my-4 text-sm ${singleWordQuizFeedback.isCorrect ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>{singleWordQuizFeedback.message}{!singleWordQuizFeedback.isCorrect && cq.explanation && <p className="mt-1 text-xs">{cq.explanation}</p>}</div>)}{singleWordQuizAttempted && currentSingleWordQuizIdx < quizSet.length -1 && (<button onClick={handleNextSingleWordQuizQuestion} className="w-full sm:w-auto bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg mt-4">Next Question</button>)}{singleWordQuizAttempted && currentSingleWordQuizIdx === quizSet.length -1 && (<p className="text-center text-slate-400 mt-4 p-2">End of this quiz. Click 'Quiz' tab again for new questions.</p>)}</div>);} else if (isLoading && currentFocusWord) { return <div className="text-center p-10 text-slate-400">Generating quiz for "{currentFocusWord}"...</div>; } else if (currentFocusWord) { return <div className="text-center p-10 text-slate-400">Click 'Quiz' tab to get questions for "{currentFocusWord}".</div>;} else { return <div className="text-center p-10 text-slate-400">Explore a word to start a quiz!</div>;}
+    } 
+
+    if (!wordToUse && isLoading) return <div className="text-center p-10 text-slate-400">Loading...</div>; 
+    // Show this only if not in story mode and no word is focused yet.
+    if (!wordToUse && startMode === 'word_game') return <div className="text-center p-10 text-slate-400 text-lg">Enter a word or concept to begin!</div>;
+    if (!wordToUse) return null; // Don't show anything if a word hasn't been generated yet
+
+    const wordIdForContent = sanitizeWordForId(wordToUse); 
+    const contentItem = generatedContent[wordIdForContent];  
+    let modeContentAvailable = false; 
+    if (contentItem) { 
+      if (activeContentMode === 'explain') modeContentAvailable = typeof contentItem.explanation === 'string' && contentItem.explanation.length > 0;
+    } 
+    if (isLoading && !modeContentAvailable) return <div className="text-center p-10 text-slate-400">Generating {activeContentMode} for "{wordToUse}"...</div>; 
+    if (error && !modeContentAvailable) return <div className="text-center p-10 text-red-400">Error: {error}</div>; 
+    if (!contentItem && activeContentMode !== 'explain' ) return <div className="text-center p-10 text-slate-400">No content for "{wordToUse}" yet. Try generating.</div>; 
+    if (!modeContentAvailable && !isLoading && activeContentMode !== 'explain') { return <div className="text-center p-10 text-slate-400">No {activeContentMode} content for "{wordToUse}". Try generating.</div>;} 
+    
+    const currentIsFavorite = contentItem?.is_favorite || false; 
+    const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-sky-400 hover:text-sky-300 underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; 
+    
+    let modeContentElement = null; 
+    switch (activeContentMode) { 
+      case 'explain': 
+        modeContentElement = contentItem?.explanation ? (<div className="prose prose-invert prose-sm sm:prose-base max-w-none text-slate-200 leading-relaxed">{renderClickableText(contentItem.explanation)}</div>) : (isLoading ? <p>Generating explanation...</p> : <p>No explanation available. Click 'Explain' to generate.</p>); 
+        break; 
+      default: 
+        modeContentElement = <p>Select a mode to view content.</p>;  
+    } 
+
+    return ( <div key={wordToUse + activeContentMode} className="bg-slate-700 p-4 sm:p-6 rounded-lg shadow-xl mt-1 relative"> <div className="absolute top-3 right-3 flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-slate-600 transition-colors ${currentIsFavorite?'text-pink-500':'text-slate-400'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> {activeContentMode==='explain'&&(<button onClick={handleRefreshContent} className="p-1.5 rounded-full text-slate-400 hover:text-sky-300 hover:bg-slate-600 transition-colors" title={`Regen ${activeContentMode}`}><RefreshCw size={18}/></button>)} </div> <h2 className="text-2xl sm:text-3xl font-bold text-sky-400 mb-4 capitalize">{wordToUse} - <span className="text-sky-500">{activeContentMode}</span></h2> {modeContentElement} </div> );
+  };
+
+  // UPDATE: Simplify modeButtons array
+  const modeButtons: { mode: ContentMode; label: string; icon: React.ElementType }[] = [ 
+    { mode: 'explain', label: 'Explain', icon: MessageSquareQuote }, 
+    { mode: 'quiz', label: 'Quiz', icon: Lightbulb },
+  ];
   const unattemptedStreakQuizCount = liveStreakQuizQueue.filter(item => !item.attempted).length;
 
-  return ( <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col"> <header className="bg-slate-800 shadow-md p-3 sm:p-4 sticky top-0 z-40"> <div className="container mx-auto flex justify-between items-center max-w-6xl"> <div className="text-2xl sm:text-3xl font-bold text-sky-400 cursor-pointer hover:text-sky-300 transition-colors" onClick={() => { setActiveView('main'); setActiveContentMode('explain'); setIsViewingStreakQuizSummary(false); }} title="Tiny Tutor Home" > Tiny Tutor AI </div> <div className="flex items-center space-x-2 sm:space-x-3"> {currentUser ? ( <> <span className="text-sm sm:text-base hidden md:inline">Hi, {currentUser.username}!</span> <button onClick={() => { if (activeView === 'profile') {setActiveView('main'); setActiveContentMode('explain');} else { if (authToken) fetchUserProfile(authToken); setActiveView('profile');} setIsViewingStreakQuizSummary(false);}} className={`p-2 rounded-full hover:bg-slate-700 transition-colors ${activeView === 'profile' ? 'text-sky-400 bg-slate-700' : 'text-slate-300'}`} title={activeView === 'profile' ? "Back to Explorer" : "View Profile"} > {activeView === 'profile' ? <Home size={20} /> : <User size={20} />} </button> <button onClick={handleLogout} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-red-400 transition-colors" title="Logout"> <LogOut size={20} /> </button> </> ) : ( <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-sky-400 transition-colors" title="Login/Signup"> <LogIn size={20} /> </button> )} </div> </div> </header> {activeView === 'main' && ( <main className="container mx-auto p-3 sm:p-4 md:p-6 flex-grow max-w-3xl w-full">  <form onSubmit={(e) => { e.preventDefault(); handleGenerateExplanation(inputValue, true, false, false, 'explain'); }} className="mb-6 flex flex-col sm:flex-row items-stretch gap-2">  <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept (e.g., photosynthesis)" className="flex-grow p-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none placeholder-slate-500" />  <button type="submit" disabled={isLoading || !inputValue.trim()} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 px-4 sm:px-6 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" > <BookOpen size={20} className="mr-2 hidden sm:inline" /> Generate </button>  </form>  {error && !isLoading && <div className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm animate-fadeIn">{error}</div>}  {liveStreak && liveStreak.score > 0 && currentFocusWord && ( <div className="mb-4 p-3 bg-slate-800 rounded-lg shadow text-sm text-emerald-400"> <span className="font-semibold">Live Streak: {liveStreak.score} </span> <span>({liveStreak.words.map((word, index) => ( <React.Fragment key={word + index}> <span className={`cursor-pointer hover:text-emerald-300 ${getDisplayWord() === word ? 'font-bold underline' : ''}`} onClick={() => handleStreakWordClick(word)} title={`Review: ${word}`} >{word}</span> {index < liveStreak.words.length - 1 && ' → '} </React.Fragment> ))} ) </span> {isReviewingStreakWord && wordForReview && <span className="ml-2 text-xs text-slate-400">(Reviewing: {wordForReview})</span>} </div> )}  {(getDisplayWord() || (activeContentMode === 'quiz' && liveStreakQuizQueue.length > 0)) && ( <div className="mb-6 flex flex-wrap justify-center gap-2 sm:gap-3">  {modeButtons.map(({ mode, label, icon: Icon }) => (  <button key={mode} onClick={() => handleModeChange(mode)} disabled={isLoading && activeContentMode !== mode && !(mode === 'quiz' && liveStreakQuizQueue.length > 0)} className={`relative flex items-center py-2 px-3 sm:px-4 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-105 ${activeContentMode === mode ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-sky-300'} disabled:opacity-70 disabled:cursor-not-allowed`} title={label} > <Icon size={16} className="mr-1.5" /> {label} {mode === 'quiz' && unattemptedStreakQuizCount > 0 && (<span className="absolute -top-2 -right-2 bg-pink-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">{unattemptedStreakQuizCount}</span>)} </button>  ))}  </div> )}  <div className="animate-fadeIn">{renderContent()}</div>  </main> )} {activeView === 'profile' && currentUser && userProfileData && ( <ProfilePageComponent currentUser={currentUser} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onToggleFavorite={handleToggleFavorite} onNavigateBack={() => {setActiveView('main'); setActiveContentMode('explain');}} generatedContent={generatedContent} /> )} {activeView === 'profile' && (isLoading || isFetchingProfile) && !userProfileData && ( <div className="flex-grow flex items-center justify-center text-slate-400">Loading profile...</div> )} {activeView === 'profile' && !currentUser && !isFetchingProfile && ( <div className="flex-grow flex flex-col items-center justify-center text-slate-400 p-6"> <p className="mb-4 text-lg">Please log in to view your profile.</p> <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors" >Login</button> </div> )} {renderAuthModal()} <footer className="bg-slate-800 text-center p-4 text-xs text-slate-500 border-t border-slate-700 mt-auto"> © {new Date().getFullYear()} Tiny Tutor AI. All rights reserved. </footer> </div>);
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
+      <header className="bg-slate-800 shadow-md p-3 sm:p-4 sticky top-0 z-40">
+        <div className="container mx-auto flex justify-between items-center max-w-6xl">
+          <div className="text-2xl sm:text-3xl font-bold text-sky-400 cursor-pointer hover:text-sky-300 transition-colors" onClick={() => { setActiveView('main'); setActiveContentMode('explain'); setIsViewingStreakQuizSummary(false); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); }} title="Tiny Tutor Home">
+            Tiny Tutor AI
+          </div>
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            {currentUser ? (
+              <>
+                <span className="text-sm sm:text-base hidden md:inline">Hi, {currentUser.username}!</span>
+                <button onClick={() => { if (activeView === 'profile') {setActiveView('main');} else { if (authToken) fetchUserProfile(authToken); setActiveView('profile');} setIsViewingStreakQuizSummary(false);}} className={`p-2 rounded-full hover:bg-slate-700 transition-colors ${activeView === 'profile' ? 'text-sky-400 bg-slate-700' : 'text-slate-300'}`} title={activeView === 'profile' ? "Back to Explorer" : "View Profile"}>
+                  {activeView === 'profile' ? <Home size={20} /> : <User size={20} />}
+                </button>
+                <button onClick={handleLogout} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-red-400 transition-colors" title="Logout">
+                  <LogOut size={20} />
+                </button>
+              </>
+            ) : (
+              <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="p-2 rounded-full text-slate-300 hover:bg-slate-700 hover:text-sky-400 transition-colors" title="Login/Signup">
+                <LogIn size={20} />
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* UPDATE: Main view with new form and conditional rendering */}
+      {activeView === 'main' && (
+        <main className="container mx-auto p-3 sm:p-4 md:p-6 flex-grow max-w-3xl w-full">
+          <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-lg mb-6">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              // Reset error on new submission
+              setError(null);
+              if (startMode === 'word_game') {
+                handleGenerateExplanation(inputValue, true, false, false, 'explain');
+              } else {
+                // Logic for story mode will go here.
+                setError("Story Mode is coming soon!");
+                // Optionally clear the focus word to hide old content
+                setCurrentFocusWord(null); 
+              }
+            }}>
+              <div className="flex items-center">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="Enter a word or concept"
+                  className="flex-grow p-2 bg-transparent text-slate-100 focus:outline-none placeholder-slate-500"
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading || !inputValue.trim()}
+                  className="bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold p-2 rounded-full transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Generate"
+                >
+                  <Sparkles size={20} />
+                </button>
+              </div>
+            </form>
+            <div className="mt-2 pt-2 border-t border-slate-700 flex items-center gap-2">
+              <button
+                onClick={() => setStartMode('word_game')}
+                className={`py-1 px-3 rounded-full text-sm font-medium transition-colors ${startMode === 'word_game' ? 'bg-sky-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+              >
+                Word Game
+              </button>
+              <button
+                onClick={() => setStartMode('story_mode')}
+                className={`py-1 px-3 rounded-full text-sm font-medium transition-colors ${startMode === 'story_mode' ? 'bg-sky-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+              >
+                Story Mode
+              </button>
+            </div>
+          </div>
+          
+          {error && !isLoading && <div className="bg-red-500/20 text-red-400 p-3 rounded-md mb-4 text-sm animate-fadeIn">{error}</div>}
+          
+          {/* Conditionally render the rest of the UI only if a word has been searched in word_game mode */}
+          {currentFocusWord && startMode === 'word_game' && (
+            <>
+              {liveStreak && liveStreak.score > 0 && (
+                <div className="mb-4 p-3 bg-slate-800 rounded-lg shadow text-sm text-emerald-400">
+                  <span className="font-semibold">Live Streak: {liveStreak.score} </span>
+                  <span>({liveStreak.words.map((word, index) => (
+                    <React.Fragment key={word + index}>
+                      <span className={`cursor-pointer hover:text-emerald-300 ${getDisplayWord() === word ? 'font-bold underline' : ''}`} onClick={() => handleStreakWordClick(word)} title={`Review: ${word}`}>
+                        {word}
+                      </span>
+                      {index < liveStreak.words.length - 1 && ' → '}
+                    </React.Fragment>
+                  ))})</span>
+                  {isReviewingStreakWord && wordForReview && <span className="ml-2 text-xs text-slate-400">(Reviewing: {wordForReview})</span>}
+                </div>
+              )}
+
+              {(getDisplayWord() || (activeContentMode === 'quiz' && liveStreakQuizQueue.length > 0)) && (
+                <div className="mb-6 flex flex-wrap justify-center gap-2 sm:gap-3">
+                  {modeButtons.map(({ mode, label, icon: Icon }) => (
+                    <button
+                      key={mode}
+                      onClick={() => handleModeChange(mode)}
+                      disabled={isLoading && activeContentMode !== mode && !(mode === 'quiz' && liveStreakQuizQueue.length > 0)}
+                      className={`relative flex items-center py-2 px-3 sm:px-4 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-105 ${activeContentMode === mode ? 'bg-sky-500 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-sky-300'} disabled:opacity-70 disabled:cursor-not-allowed`}
+                      title={label}
+                    >
+                      <Icon size={16} className="mr-1.5" />
+                      {label}
+                      {mode === 'quiz' && unattemptedStreakQuizCount > 0 && (
+                        <span className="absolute -top-2 -right-2 bg-pink-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">{unattemptedStreakQuizCount}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="animate-fadeIn">{renderContent()}</div>
+            </>
+          )}
+        </main>
+      )}
+
+      {/* --- Profile Page Rendering (Unchanged) --- */}
+      {activeView === 'profile' && currentUser && userProfileData && (
+        <ProfilePageComponent
+          currentUser={currentUser}
+          userProfileData={userProfileData}
+          onWordSelect={handleWordSelectionFromProfile}
+          onToggleFavorite={handleToggleFavorite}
+          onNavigateBack={() => {setActiveView('main');}}
+          generatedContent={generatedContent}
+        />
+      )}
+      {activeView === 'profile' && (isLoading || isFetchingProfile) && !userProfileData && (
+        <div className="flex-grow flex items-center justify-center text-slate-400">Loading profile...</div>
+      )}
+      {activeView === 'profile' && !currentUser && !isFetchingProfile && (
+        <div className="flex-grow flex flex-col items-center justify-center text-slate-400 p-6">
+          <p className="mb-4 text-lg">Please log in to view your profile.</p>
+          <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+            Login
+          </button>
+        </div>
+      )}
+
+      {renderAuthModal()}
+      <footer className="bg-slate-800 text-center p-4 text-xs text-slate-500 border-t border-slate-700 mt-auto">
+        © {new Date().getFullYear()} Tiny Tutor AI. All rights reserved.
+      </footer>
+    </div>
+  );
 }
 export default App;

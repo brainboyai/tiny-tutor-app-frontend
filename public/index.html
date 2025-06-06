@@ -5,27 +5,28 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tiny Tutor AI</title>
-    
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-    
+    <title>Tiny Tutor App</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Basic reset and full-height setup */
-        html, body, #root {
-            height: 100%;
+        body {
             margin: 0;
-            padding: 0;
-            overflow: hidden; /* Prevent double scrollbars */
+            font-family: sans-serif;
+            background-color: #f0f4f8;
+        }
+
+        #root {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
     </style>
 </head>
 
 <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    {/* CORRECTED PATH: Changed src to point one directory up */}
+    <script type="module" src="../src/main.tsx"></script>
 </body>
 
 </html>

@@ -29,7 +29,7 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
       </div>
     );
   }
-
+  
   const renderWordItem = (wordData: ExploredWordEntry) => {
     return (
       <li key={wordData.word} className="mb-3 p-4 bg-[--hover-bg-color] rounded-lg shadow-sm transition-colors hover:bg-[--border-color]">

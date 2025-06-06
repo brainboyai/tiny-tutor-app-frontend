@@ -1,7 +1,7 @@
 import React from 'react';
 import { User, Home, Heart } from 'lucide-react';
 
-// --- Types ---
+// --- Types (No Changes) ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
 interface ExploredWordEntry { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }
@@ -12,6 +12,7 @@ interface ProfilePageProps {
   userProfileData: UserProfileData | null;
   onWordSelect: (word: string) => void;
   onNavigateBack: () => void;
+  onToggleFavorite: (word: string, currentStatus: boolean) => void;
 }
 
 const ProfilePageComponent: React.FC<ProfilePageProps> = ({
@@ -19,6 +20,7 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
   userProfileData,
   onWordSelect,
   onNavigateBack,
+  onToggleFavorite
 }) => {
   const [activeTab, setActiveTab] = React.useState<'explored' | 'favorites' | 'streaks'>('explored');
 
@@ -41,7 +43,9 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
           >
             {wordData.word}
           </button>
-          {wordData.is_favorite && <Heart size={18} className="text-pink-500 flex-shrink-0" fill="currentColor"/>}
+          <button onClick={() => onToggleFavorite(wordData.word, wordData.is_favorite)} className={`p-1.5 rounded-full hover:bg-slate-600 transition-colors ${wordData.is_favorite ?'text-pink-500':'text-[--text-tertiary]'}`} title={wordData.is_favorite?"Unfavorite":"Favorite"}>
+            <Heart size={18} fill={wordData.is_favorite ?'currentColor':'none'}/>
+          </button>
         </div>
         {wordData.last_explored_at && (
           <p className="text-xs text-[--text-tertiary] mt-1">
@@ -75,15 +79,19 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
 
   return (
     <div className="w-full">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-[--text-primary]">Your Profile</h1>
-        <button
-          onClick={onNavigateBack}
-          className="flex items-center px-4 py-2 bg-[--accent-primary] hover:bg-[--accent-secondary] text-black rounded-lg transition-colors font-semibold"
-        >
-          <Home size={20} className="mr-2" /> Back to Explorer
-        </button>
+      {/* --- UPDATED: Sticky Header --- */}
+      <div className="sticky top-0 z-10 bg-[--background-default] py-4 -mt-8 pt-8 mb-6">
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold text-[--text-primary]">Your Profile</h1>
+          <button
+            onClick={onNavigateBack}
+            className="flex items-center px-4 py-2 bg-[--accent-primary] hover:bg-[--accent-secondary] text-black rounded-lg transition-colors font-semibold"
+          >
+            <Home size={20} className="mr-2" /> Back to Explorer
+          </button>
+        </div>
       </div>
+      {/* --- END: Sticky Header --- */}
 
       <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-8">
         <div className="flex items-center mb-4">

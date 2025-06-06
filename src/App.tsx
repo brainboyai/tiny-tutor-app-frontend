@@ -33,7 +33,7 @@ function DraggableQuizButton({ unattemptedCount, position }: DraggableQuizButton
       style={style}
       {...listeners}
       {...attributes}
-      className="fixed bottom-24 right-8 z-30 flex items-center justify-center h-16 w-16 bg-sky-600 text-white rounded-full shadow-lg hover:bg-sky-500 transition-all cursor-grab active:cursor-grabbing"
+      className="fixed bottom-28 right-10 z-30 flex items-center justify-center h-16 w-16 bg-sky-600 text-white rounded-full shadow-lg hover:bg-sky-500 transition-all cursor-grab active:cursor-grabbing"
       title={`${unattemptedCount} questions available`}
     >
       <HelpCircle size={32} />
@@ -91,6 +91,8 @@ function App() {
   const [isQuizVisible, setIsQuizVisible] = useState(false);
   const [quizButtonPosition, setQuizButtonPosition] = useState({ x: 0, y: 0 });
   const [isInitialView, setIsInitialView] = useState(true);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningAction, setWarningAction] = useState<{ action: () => void } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const getDisplayWord = useCallback(() => isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
@@ -105,38 +107,54 @@ function App() {
   const handleSubTopicClick = useCallback((subTopic: string) => { setIsQuizVisible(false); if (liveStreak && liveStreak.words.includes(subTopic)) { handleStreakWordClick(subTopic); } else { handleGenerateExplanation(subTopic, false, false, true); } }, [liveStreak, handleGenerateExplanation, handleStreakWordClick]);
   const handleRefreshContent = useCallback(() => { const wordToUse = getDisplayWord(); if (!wordToUse) return; handleGenerateExplanation(wordToUse, false, true);}, [getDisplayWord, handleGenerateExplanation]);
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => { if (!authToken || !word) return; const wordId = sanitizeWordForId(word); setGeneratedContent(prev => ({...prev, [wordId]: { ...(prev[wordId] || {}), is_favorite: !currentStatus }})); try { await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word }) }); if (authToken) await fetchUserProfile(authToken); } catch (err: any) { if (authToken) await fetchUserProfile(authToken); } }, [authToken, fetchUserProfile]);
-  const handleWordSelectionFromProfile = useCallback((word: string) => { setActiveView('main'); setInputValue(word); handleGenerateExplanation(word, true); }, [handleGenerateExplanation]);
+  const handleWordSelectionFromProfile = useCallback((word: string) => { const action = () => { setActiveView('main'); setInputValue(word); handleGenerateExplanation(word, true); }; if (liveStreak && liveStreak.score > 0) { setWarningAction({ action }); setShowWarningModal(true); } else { action(); } }, [liveStreak, handleGenerateExplanation]);
   const handlePopupQuizAnswer = (optionKey: string) => { const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem || currentItem.attempted) return; const isCorrect = currentItem.quizQuestion.correctOptionKey === optionKey; handleSaveQuizAttempt(currentItem.word, isCorrect); setLiveStreakQuizQueue(prev => prev.map((item, index) => index === currentStreakQuizItemIndex ? { ...item, attempted: true, selectedOptionKey: optionKey, isCorrect } : item )); };
   const handleDragEnd = (event: DragEndEvent) => { const { delta } = event; if (Math.abs(delta.x) < 5 && Math.abs(delta.y) < 5) { setIsQuizVisible(true); return; } setQuizButtonPosition(({ x, y }) => ({ x: x + delta.x, y: y + delta.y, })); };
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [generatedContent, currentFocusWord, liveStreak, isQuizVisible]);
   const unattemptedStreakQuizCount = liveStreakQuizQueue.filter(item => !item.attempted).length;
-  const resetChat = () => { setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); setIsInitialView(true); }
+  const resetChat = () => { const action = () => { setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); setIsInitialView(true); }; if (liveStreak && liveStreak.score > 0) { setWarningAction({ action }); setShowWarningModal(true); } else { action(); }};
+  const confirmWarning = () => { if (warningAction) { warningAction.action(); } setShowWarningModal(false); setWarningAction(null); };
 
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
   const renderWordGameContent = () => { const wordToUse = getDisplayWord(); if (!wordToUse) { return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>How can I help you today?</span></div>); } if (isLoading && !generatedContent[sanitizeWordForId(wordToUse)]) { return <div className="text-center p-10 text-slate-400">Generating...</div>; } if (error) return <div className="text-center p-10 text-red-400">Error: {error}</div>; const wordId = sanitizeWordForId(wordToUse); const contentItem = generatedContent[wordId]; if (!contentItem?.explanation) return null; const currentIsFavorite = contentItem?.is_favorite || false; const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-[--accent-primary] hover:text-[--accent-secondary] underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; return ( <div className="bg-transparent p-1 animate-fadeIn"> <div className="flex justify-between items-start mb-4"> <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2> <div className="flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> <button onClick={handleRefreshContent} className="p-1.5 rounded-full text-[--text-tertiary] hover:text-[--text-primary] hover:bg-[--hover-bg-color] transition-colors" title="Regenerate Explanation"><RefreshCw size={18}/></button> </div> </div> <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg"> {renderClickableText(contentItem.explanation)} </div> </div> ); };
   const renderQuizPopup = () => { if (!isQuizVisible || unattemptedStreakQuizCount === 0) return null; const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem) return null; const { quizQuestion, attempted, selectedOptionKey } = currentItem; return ( <div className="absolute top-4 right-4 w-full max-w-md bg-[--background-secondary] rounded-lg shadow-2xl p-6 z-20 border border-[--border-color] animate-fadeIn"> <div className="flex justify-between items-center mb-4"> <h3 className="font-semibold text-lg text-[--text-primary]">Quiz Time!</h3> <button onClick={() => setIsQuizVisible(false)} className="text-[--text-tertiary] hover:text-[--text-primary]"><X size={20}/></button> </div> <p className="text-[--text-secondary] mb-1 text-sm">Question {currentStreakQuizItemIndex + 1} of {liveStreakQuizQueue.length} (for "{currentItem.word}")</p> <p className="text-[--text-primary] mb-4">{quizQuestion.question}</p> <div className="space-y-2"> {Object.entries(quizQuestion.options).map(([key, text]) => { let buttonColor = "bg-[--hover-bg-color] hover:bg-[--border-color]"; if (attempted) { if (key === quizQuestion.correctOptionKey) { buttonColor = "bg-green-800/80"; } else if (key === selectedOptionKey) { buttonColor = "bg-red-800/80"; } else { buttonColor = "bg-[--hover-bg-color] opacity-60"; } } return (<button key={key} onClick={() => handlePopupQuizAnswer(key)} disabled={attempted} className={`w-full text-left p-3 rounded-md transition-colors ${buttonColor}`}> {text} </button>); })} </div> {attempted && ( <div className="flex justify-end mt-4"> <button onClick={() => { if(currentStreakQuizItemIndex < liveStreakQuizQueue.length - 1) { setCurrentStreakQuizItemIndex(i => i + 1); } else { setIsQuizVisible(false); } }} className="bg-[--accent-primary] text-black font-semibold py-2 px-4 rounded-md"> Next </button> </div> )} </div> ); };
+  const renderWarningModal = () => { if (!showWarningModal) return null; return ( <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-sm"> <h3 className="font-bold text-lg text-amber-400 mb-2">End Streak?</h3> <p className="text-[--text-secondary] mb-6">Your current streak progress will be lost. Are you sure you want to continue?</p> <div className="flex justify-end gap-4"> <button onClick={() => setShowWarningModal(false)} className="py-2 px-4 rounded-md text-sm hover:bg-[--hover-bg-color]">No, continue streak</button> <button onClick={confirmWarning} className="py-2 px-4 rounded-md text-sm bg-amber-600 hover:bg-amber-500 text-white font-semibold">Yes, end streak</button> </div> </div> </div> ); };
 
   return (
     <DndContext onDragEnd={handleDragEnd}>
       <div className="flex h-dvh w-full bg-[--background-default] text-[--text-primary] font-sans">
         <aside className={`bg-[--background-secondary] flex-shrink-0 transition-all duration-300 flex flex-col ${isSidebarOpen ? 'w-64 p-2' : 'w-0 p-0'} overflow-hidden`}>
-            <div className="flex-grow">
-              <button onClick={resetChat} className="flex items-center w-full p-2 mb-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+            <div className="flex-grow space-y-1">
+              <button onClick={() => setShowUserMenu(!showUserMenu)} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                  <div className="p-1 rounded-full bg-sky-500 text-white flex items-center justify-center h-8 w-8 mr-3 flex-shrink-0">
+                      {currentUser ? currentUser.username.charAt(0).toUpperCase() : <User size={20}/>}
+                  </div>
+                  <span className="truncate font-semibold">{currentUser ? currentUser.username : "Guest"}</span>
+              </button>
+              <button onClick={resetChat} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
                   <Plus size={16} className="mr-3"/> New Chat
               </button>
+              {currentUser && (
+                <>
+                  <button onClick={() => { setActiveView('profile'); setShowUserMenu(false); }} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                    <User size={16} className="mr-3"/> Profile
+                  </button>
+                  <button className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color] text-gray-500 cursor-not-allowed">
+                    <Settings size={16} className="mr-3"/> Settings
+                  </button>
+                </>
+              )}
             </div>
-            <div className="relative">
-                <button onClick={() => setShowUserMenu(!showUserMenu)} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
-                    <div className="p-1 rounded-full bg-sky-500 text-white flex items-center justify-center h-8 w-8 mr-2 flex-shrink-0">
-                        {currentUser ? currentUser.username.charAt(0).toUpperCase() : <User size={20}/>}
-                    </div>
-                    <span className="truncate">{currentUser ? currentUser.username : "Guest"}</span>
+            <div>
+              {currentUser ? (
+                <button onClick={() => { handleLogout(); setShowUserMenu(false); }} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                    <LogOut size={16} className="mr-3"/> Logout
                 </button>
-                {showUserMenu && (
-                    <div className="absolute bottom-12 left-2 w-[calc(100%-1rem)] bg-[--background-tertiary] rounded-md shadow-lg py-1 z-50">
-                        {currentUser ? ( <> <button onClick={() => { setActiveView('profile'); setShowUserMenu(false); }} className="flex items-center w-full text-left px-3 py-2 text-sm text-[--text-primary] hover:bg-[--hover-bg-color] rounded-md"> <User size={16} className="mr-2"/> Profile </button> <button className="flex items-center w-full text-left px-3 py-2 text-sm text-[--text-primary] hover:bg-[--hover-bg-color] rounded-md"> <Settings size={16} className="mr-2"/> Settings </button> <button onClick={() => { handleLogout(); setShowUserMenu(false); }} className="flex items-center w-full text-left px-3 py-2 text-sm text-[--text-primary] hover:bg-[--hover-bg-color] rounded-md"> <LogOut size={16} className="mr-2"/> Logout </button> </> ) : ( <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); setShowUserMenu(false);}} className="flex items-center w-full text-left px-3 py-2 text-sm text-[--text-primary] hover:bg-[--hover-bg-color] rounded-md"> <LogIn size={16} className="mr-2"/> Login / Signup </button> )}
-                    </div>
-                )}
+              ) : (
+                <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                    <LogIn size={16} className="mr-3"/> Login / Signup
+                </button>
+              )}
             </div>
         </aside>
 
@@ -177,24 +195,24 @@ function App() {
                 {renderQuizPopup()}
             </main>
             
-            <footer className={`p-4 flex-shrink-0 absolute bottom-0 w-full left-0 bg-gradient-to-t from-[--background-default] to-transparent transition-opacity duration-500 ${isInitialView ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+            <div className={`absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[--background-default] to-transparent transition-opacity duration-300 ${isInitialView ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
               <div className="max-w-4xl mx-auto">
                 <form onSubmit={(e) => { e.preventDefault(); if (startMode === 'word_game') { handleGenerateExplanation(inputValue, true); } else { setError("Story Mode is coming soon!"); } }} className="bg-[--background-input] rounded-full p-2 flex items-center shadow-lg border border-transparent focus-within:border-[--accent-primary] transition-colors">
                   <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Enter a word or concept..." className="w-full bg-transparent px-4 focus:outline-none"/>
                   <button type="submit" disabled={isLoading || !inputValue.trim()} className="p-2 rounded-full bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed"> <Sparkles size={20} /> </button>
                 </form>
-
                 <div className="flex items-center justify-center gap-2 mt-3">
                      <button onClick={() => setStartMode('word_game')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'word_game' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Word Game </button>
                      <button onClick={() => setStartMode('story_mode')} className={`py-1 px-3 rounded-full text-xs font-medium transition-colors ${startMode === 'story_mode' ? 'bg-[--accent-primary] text-black' : 'bg-[--background-tertiary] hover:bg-[--hover-bg-color] text-[--text-secondary]'}`}> Story Mode </button>
                 </div>
               </div>
-            </footer>
+            </div>
           </div>
         </div>
 
         {showAuthModal && renderAuthModal()}
-        {unattemptedStreakQuizCount > 0 && <DraggableQuizButton unattemptedCount={unattemptedStreakQuizCount} position={quizButtonPosition} />}
+        {renderWarningModal()}
+        {!isInitialView && unattemptedStreakQuizCount > 0 && <DraggableQuizButton unattemptedCount={unattemptedStreakQuizCount} position={quizButtonPosition} />}
       </div>
     </DndContext>
   );

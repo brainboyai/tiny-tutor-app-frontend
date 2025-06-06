@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
 import {
   Heart, LogIn, LogOut, RefreshCw, Sparkles, User, X,
-  Settings, Menu, Plus, Flame, HelpCircle
+  Settings, Menu, Plus, Flame, HelpCircle, Home
 } from 'lucide-react';
 import './App.css';
 import './index.css';
@@ -95,8 +95,6 @@ function App() {
   const [warningAction, setWarningAction] = useState<{ action: () => void } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const unattemptedStreakQuizCount = liveStreakQuizQueue.filter(item => !item.attempted).length;
-
   const getDisplayWord = useCallback(() => isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
   const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null): Promise<StreakRecord[] | null> => { if (!token || !streakToSave || streakToSave.score < 2) return null; try { const response = await fetch(`${API_BASE_URL}/save_streak`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }), }); if (!response.ok) return null; const data = await response.json(); return data.streakHistory; } catch (err: any) { console.error('Error saving streak:', err.message); return null; }}, []);
   const handleLogout = useCallback(async () => { if (liveStreak && liveStreak.score >= 2 && authToken) { await saveStreakToServer(liveStreak, authToken); } localStorage.removeItem('authToken'); setAuthToken(null); setCurrentUser(null); setUserProfileData(null); setLiveStreak(null); setCurrentFocusWord(null); setGeneratedContent({}); setError(null); setAuthError(null); setAuthSuccessMessage(null); setShowAuthModal(false); setActiveView('main'); setLiveStreakQuizQueue([]); }, [liveStreak, authToken, saveStreakToServer]);
@@ -189,7 +187,7 @@ function App() {
                       {renderWordGameContent()}
                     </div>
                   ) : (
-                    <ProfilePageComponent currentUser={currentUser!} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onNavigateBack={() => setActiveView('main')} onToggleFavorite={handleToggleFavorite} />
+                    <ProfilePageComponent currentUser={currentUser!} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onNavigateBack={() => setActiveView('main')} />
                   )}
                   <div ref={chatEndRef} />
                 </div>

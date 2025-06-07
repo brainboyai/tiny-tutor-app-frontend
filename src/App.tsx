@@ -186,45 +186,56 @@ const renderQuizPopup = () => {
     //<DndContext onDragEnd={handleDragEnd}>
       <div className="flex h-dvh w-full bg-[--background-default] text-[--text-primary] font-sans">
         <aside className={`bg-[--background-secondary] flex-shrink-0 transition-all duration-300 flex flex-col ${isSidebarOpen ? 'w-64 p-2' : 'w-0 p-0'} overflow-hidden`}>
-            <div className="flex-grow space-y-1">
-              <button onClick={() => setShowUserMenu(!showUserMenu)} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
-                  <div className="p-1 rounded-full bg-sky-500 text-white flex items-center justify-center h-8 w-8 mr-3 flex-shrink-0">
-                      {currentUser ? currentUser.username.charAt(0).toUpperCase() : <User size={20}/>}
-                  </div>
-                  <span className="truncate font-semibold">{currentUser ? currentUser.username : "Guest"}</span>
-              </button>
-              <button onClick={resetChat} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
-                  <Plus size={16} className="mr-3"/> New Chat
-              </button>
-              {currentUser && (
-                <>
-                  <button onClick={() => { setActiveView('profile'); }} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
-                    <User size={16} className="mr-3"/> Profile
-                  </button>
-                  <button className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color] text-gray-500 cursor-not-allowed">
-                    <Settings size={16} className="mr-3"/> Settings
-                  </button>
-                </>
-              )}
-            </div>
-            <div>
-              {currentUser ? (
-                <button onClick={() => { handleLogout(); }} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
-                    <LogOut size={16} className="mr-3"/> Logout
+          <div className="flex-grow space-y-1">
+            {/* User info, New Chat, Profile, Settings buttons remain here */}
+            <button onClick={() => setShowUserMenu(!showUserMenu)} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                <div className="p-1 rounded-full bg-sky-500 text-white flex items-center justify-center h-8 w-8 mr-3 flex-shrink-0">
+                    {currentUser ? currentUser.username.charAt(0).toUpperCase() : <User size={20}/>}
+                </div>
+                <span className="truncate font-semibold">{currentUser ? currentUser.username : "Guest"}</span>
+            </button>
+            <button onClick={resetChat} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                <Plus size={16} className="mr-3"/> New Chat
+            </button>
+            {currentUser && (
+              <>
+                <button onClick={() => { setActiveView('profile'); }} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                  <User size={16} className="mr-3"/> Profile
                 </button>
-              ) : (
-                <button onClick={() => { setShowAuthModal(true); setAuthMode('login');}} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
-                    <LogIn size={16} className="mr-3"/> Login / Signup
+                <button className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color] text-gray-500 cursor-not-allowed">
+                  <Settings size={16} className="mr-3"/> Settings
                 </button>
-              )}
-            </div>
-        </aside>
+              </>
+            )}
+          </div>
+          {/* The Login/Signup button is removed from this section */}
+          <div>
+            {currentUser && (
+              <button onClick={() => { handleLogout(); }} className="flex items-center w-full p-2 rounded-md text-sm hover:bg-[--hover-bg-color]">
+                  <LogOut size={16} className="mr-3"/> Logout
+              </button>
+            )}
+          </div>
+      </aside>
+
 
         <div className="flex flex-col flex-grow h-full max-h-screen">
-          <header className="flex items-center p-2 flex-shrink-0 border-b border-[--border-color]">
-              <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-full hover:bg-[--hover-bg-color]"> <Menu size={20} /> </button>
-              <h1 className="text-lg font-medium ml-2 truncate">{activeView === 'profile' ? 'Profile' : (getDisplayWord() || "Tiny Tutor AI")}</h1>
-          </header>
+          <header className="flex items-center p-2 pr-4 flex-shrink-0 border-b border-[--border-color]">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 rounded-full hover:bg-[--hover-bg-color]"> <Menu size={20} /> </button>
+            <h1 className="text-lg font-medium ml-2 truncate">{activeView === 'profile' ? 'Profile' : (getDisplayWord() || "Tiny Tutor AI")}</h1>
+            
+            {/* This div will push the button to the far right */}
+            <div className="ml-auto">
+              {!currentUser && (
+                <button
+                  onClick={() => { setShowAuthModal(true); setAuthMode('login');}}
+                  className="bg-[#a8c7fa] hover:bg-[#89b4fa] text-black font-semibold py-1.5 px-5 rounded-full transition-colors text-sm"
+                >
+                  Sign in
+                </button>
+              )}
+            </div>
+        </header>
 
           <div className="flex-grow flex flex-col relative overflow-hidden">
             <main className="flex-grow overflow-y-auto">

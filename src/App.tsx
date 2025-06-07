@@ -6,11 +6,11 @@ import {
 import './App.css';
 import './index.css';
 import ProfilePageComponent from './ProfilePage';
-import { DndContext, useDraggable } from '@dnd-kit/core';
-import type { DragEndEvent } from '@dnd-kit/core';
+//import { DndContext, useDraggable } from '@dnd-kit/core';
+//import type { DragEndEvent } from '@dnd-kit/core';
 
 // --- DraggableQuizButton Component ---
-interface DraggableQuizButtonProps {
+/*interface DraggableQuizButtonProps {
   unattemptedCount: number;
   position: { x: number; y: number };
 }
@@ -44,7 +44,7 @@ function DraggableQuizButton({ unattemptedCount, position }: DraggableQuizButton
       )}
     </button>
   );
-}
+} */
 
 // --- Types ---
 interface CurrentUser { username: string; email: string; id: string; }
@@ -90,7 +90,7 @@ function App() {
   const [isFetchingProfile, setIsFetchingProfile] = useState(false);
   const [profileFetchFailed, setProfileFetchFailed] = useState(false);
   const [isQuizVisible, setIsQuizVisible] = useState(false);
-  const [quizButtonPosition, setQuizButtonPosition] = useState({ x: 0, y: 0 });
+  //const [quizButtonPosition, setQuizButtonPosition] = useState({ x: 0, y: 0 });
   const [isInitialView, setIsInitialView] = useState(true);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [warningAction, setWarningAction] = useState<{ action: () => void } | null>(null);
@@ -117,12 +117,12 @@ function App() {
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => { if (!authToken || !userProfileData) return; const wordId = sanitizeWordForId(word); setGeneratedContent(prev => ({...prev, [wordId]: { ...(prev[wordId] || {}), is_favorite: !currentStatus }})); setUserProfileData(prev => { if (!prev) return null; const updatedExplored = prev.exploredWords.map(w => w.word === word ? { ...w, is_favorite: !currentStatus } : w); const wordEntry = updatedExplored.find(w => w.word === word); let updatedFavorites = prev.favoriteWords.filter(fw => fw.word !== word); if (!currentStatus && wordEntry) { updatedFavorites = [wordEntry, ...updatedFavorites]; } return { ...prev, exploredWords: updatedExplored, favoriteWords: updatedFavorites, }; }); try { await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word }) }); } catch (err: any) { console.error("Error toggling favorite:", err); if (authToken) await fetchUserProfile(authToken); } }, [authToken, userProfileData, fetchUserProfile]);
   const handleWordSelectionFromProfile = useCallback((word: string) => { const action = async () => { if (liveStreak && authToken) { const newHistory = await saveStreakToServer(liveStreak, authToken); if (newHistory && userProfileData) { setUserProfileData(prev => ({...prev!, streakHistory: newHistory})); } } setActiveView('main'); handleGenerateExplanation(word, true); }; if (liveStreak && liveStreak.score >= 2) { setWarningAction({ action }); setShowWarningModal(true); } else { action(); } }, [liveStreak, handleGenerateExplanation, saveStreakToServer, authToken, userProfileData]);
   const handlePopupQuizAnswer = (optionKey: string) => { const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem || currentItem.attempted) return; const isCorrect = currentItem.quizQuestion.correctOptionKey === optionKey; handleSaveQuizAttempt(currentItem.word, isCorrect); setLiveStreakQuizQueue(prev => prev.map((item, index) => index === currentStreakQuizItemIndex ? { ...item, attempted: true, selectedOptionKey: optionKey, isCorrect } : item )); if (currentStreakQuizItemIndex >= unattemptedStreakQuizCount - 1) { setTimeout(() => { setIsQuizVisible(false); }, 1500); } };
-  const handleDragEnd = (event: DragEndEvent) => { const { delta } = event; if (Math.abs(delta.x) < 5 && Math.abs(delta.y) < 5) { setIsQuizVisible(true); return; } setQuizButtonPosition(({ x, y }) => ({ x: x + delta.x, y: y + delta.y, })); };
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [generatedContent, currentFocusWord, liveStreak, isQuizVisible]);
+  //const handleDragEnd = (event: DragEndEvent) => { const { delta } = event; if (Math.abs(delta.x) < 5 && Math.abs(delta.y) < 5) { setIsQuizVisible(true); return; } setQuizButtonPosition(({ x, y }) => ({ x: x + delta.x, y: y + delta.y, })); };
+  //useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [generatedContent, currentFocusWord, liveStreak, isQuizVisible]);
   const resetChat = useCallback(() => { const action = async () => { if (liveStreak && authToken) { const newHistory = await saveStreakToServer(liveStreak, authToken); if (newHistory && userProfileData) { setUserProfileData(prev => ({...prev!, streakHistory: newHistory})); } } setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); setIsInitialView(true); }; if (liveStreak && liveStreak.score >= 2) { setWarningAction({ action }); setShowWarningModal(true); } else { action(); }}, [liveStreak, authToken, saveStreakToServer, userProfileData]);
   const confirmWarning = () => { if (warningAction) { warningAction.action(); } setShowWarningModal(false); setWarningAction(null); };
   
-  useEffect(() => { const handleBeforeUnload = (_e: BeforeUnloadEvent) => { if (liveStreak && liveStreak.score >= 2 && authToken) { const data = JSON.stringify({ words: liveStreak.words, score: liveStreak.score }); const blob = new Blob([data], { type: 'application/json; charset=UTF-8' }); navigator.sendBeacon(`${API_BASE_URL}/save_streak`, blob); } }; window.addEventListener('beforeunload', handleBeforeUnload); return () => { window.removeEventListener('beforeunload', handleBeforeUnload); }; }, [liveStreak, authToken]);
+  useEffect(() => { const handleBeforeUnload = (e: BeforeUnloadEvent) => { if (liveStreak && liveStreak.score >= 2 && authToken) {e.preventDefault(); e.returnValue = "Your live streak will end if the page is refreshed."; const data = JSON.stringify({ words: liveStreak.words, score: liveStreak.score }); const blob = new Blob([data], { type: 'application/json; charset=UTF-8' }); navigator.sendBeacon(`${API_BASE_URL}/save_streak`, blob); } }; window.addEventListener('beforeunload', handleBeforeUnload); return () => { window.removeEventListener('beforeunload', handleBeforeUnload); }; }, [liveStreak, authToken, saveStreakToServer]);
 
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
   const renderWordGameContent = () => { const wordToUse = getDisplayWord(); if (isInitialView) { return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16 animate-fadeIn"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>How can I help you today?</span></div>); } if (isLoading && !generatedContent[sanitizeWordForId(wordToUse!)]) { return <div className="text-center p-10 text-slate-400">Generating...</div>; } if (error) return <div className="text-center p-10 text-red-400">Error: {error}</div>; if (!wordToUse) return null; const wordId = sanitizeWordForId(wordToUse); const contentItem = generatedContent[wordId]; if (!contentItem?.explanation) return null; const currentIsFavorite = contentItem?.is_favorite || false; const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-[--accent-primary] hover:text-[--accent-secondary] underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; return ( <div className="bg-transparent p-1 animate-fadeIn"> <div className="flex justify-between items-start mb-4"> <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2> <div className="flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> <button onClick={handleRefreshContent} className="p-1.5 rounded-full text-[--text-tertiary] hover:text-[--text-primary] hover:bg-[--hover-bg-color] transition-colors" title="Regenerate Explanation"><RefreshCw size={18}/></button> </div> </div> <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg"> {renderClickableText(contentItem.explanation)} </div> </div> ); };
@@ -130,7 +130,7 @@ function App() {
   const renderWarningModal = () => { if (!showWarningModal) return null; return ( <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-sm"> <h3 className="font-bold text-lg text-amber-400 mb-2">End Streak?</h3> <p className="text-[--text-secondary] mb-6">Your current streak progress will be lost. Are you sure you want to continue?</p> <div className="flex justify-end gap-4"> <button onClick={() => setShowWarningModal(false)} className="py-2 px-4 rounded-md text-sm hover:bg-[--hover-bg-color]">No, continue streak</button> <button onClick={confirmWarning} className="py-2 px-4 rounded-md text-sm bg-amber-600 hover:bg-amber-500 text-white font-semibold">Yes, end streak</button> </div> </div> </div> ); };
 
   return (
-    <DndContext onDragEnd={handleDragEnd}>
+    //<DndContext onDragEnd={handleDragEnd}>
       <div className="flex h-dvh w-full bg-[--background-default] text-[--text-primary] font-sans">
         <aside className={`bg-[--background-secondary] flex-shrink-0 transition-all duration-300 flex flex-col ${isSidebarOpen ? 'w-64 p-2' : 'w-0 p-0'} overflow-hidden`}>
             <div className="flex-grow space-y-1">
@@ -223,9 +223,18 @@ function App() {
 
         {showAuthModal && renderAuthModal()}
         {renderWarningModal()}
-        {!isInitialView && unattemptedStreakQuizCount > 0 && <DraggableQuizButton unattemptedCount={unattemptedStreakQuizCount} position={quizButtonPosition} />}
+        {!isInitialView && unattemptedStreakQuizCount > 0 && <button
+            onClick={() => setIsQuizVisible(true)}
+            className="fixed bottom-10 right-10 z-30 flex items-center justify-center h-16 w-16 bg-sky-600 text-white rounded-full shadow-lg hover:bg-sky-500 transition-all transform hover:scale-110"
+            title={`${unattemptedStreakQuizCount} questions available`}
+          >
+            <HelpCircle size={32} />
+            <span className="absolute -top-1 -right-1 bg-pink-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center border-2 border-[--background-default]">
+              {unattemptedStreakQuizCount}
+            </span>
+          </button>}
       </div>
-    </DndContext>
+    //</DndContext>
   );
 }
 

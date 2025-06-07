@@ -1,50 +1,11 @@
 import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
 import {
-  Heart, LogIn, LogOut, RefreshCw, Sparkles, User, X,
+  Heart, LogOut, RefreshCw, Sparkles, User, X,
   Settings, Menu, Plus, Flame, HelpCircle
 } from 'lucide-react';
 import './App.css';
 import './index.css';
 import ProfilePageComponent from './ProfilePage';
-//import { DndContext, useDraggable } from '@dnd-kit/core';
-//import type { DragEndEvent } from '@dnd-kit/core';
-
-// --- DraggableQuizButton Component ---
-/*interface DraggableQuizButtonProps {
-  unattemptedCount: number;
-  position: { x: number; y: number };
-}
-function DraggableQuizButton({ unattemptedCount, position }: DraggableQuizButtonProps) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
-    id: 'draggable-quiz-button',
-  });
-  
-  const style = {
-    transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
-  };
-
-  if (transform) {
-    style.transform = `translate3d(${position.x + transform.x}px, ${position.y + transform.y}px, 0)`;
-  }
-
-  return (
-    <button
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className="fixed bottom-28 right-10 z-30 flex items-center justify-center h-16 w-16 bg-sky-600 text-white rounded-full shadow-lg hover:bg-sky-500 transition-all cursor-grab active:cursor-grabbing"
-      title={`${unattemptedCount} questions available`}
-    >
-      <HelpCircle size={32} />
-      {unattemptedCount > 0 && (
-        <span className="absolute -top-1 -right-1 bg-pink-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center border-2 border-[--background-default]">
-          {unattemptedCount}
-        </span>
-      )}
-    </button>
-  );
-} */
 
 // --- Types ---
 interface CurrentUser { username: string; email: string; id: string; }

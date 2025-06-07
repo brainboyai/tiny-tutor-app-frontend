@@ -1,7 +1,7 @@
 import React from 'react';
 import { User, Home, Heart } from 'lucide-react';
 
-// --- Types ---
+// --- Types (No Changes) ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
 interface ExploredWordEntry { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string }
@@ -31,10 +31,6 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
       </div>
     );
   }
-
-  // --- ADDED: Safe variables for optional stats ---
-  const totalAnswered = userProfileData.total_quiz_questions_answered;
-  const totalCorrect = userProfileData.total_quiz_questions_correct;
   
   const renderWordItem = (wordData: ExploredWordEntry) => {
     return (
@@ -83,6 +79,7 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
 
   return (
     <div className="w-full">
+      {/* --- UPDATED: Sticky Header --- */}
       <div className="sticky top-0 z-10 bg-[--background-default] py-4 -mt-8 pt-8 mb-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold text-[--text-primary]">Your Profile</h1>
@@ -94,7 +91,8 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
           </button>
         </div>
       </div>
-      
+      {/* --- END: Sticky Header --- */}
+
       <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-8">
         <div className="flex items-center mb-4">
           <User size={40} className="text-[--accent-primary] mr-4" />
@@ -107,13 +105,12 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
         <div className="mt-4 pt-4 border-t border-[--border-color]">
           <h3 className="text-lg font-semibold text-[--text-primary] mb-2">Quiz Stats</h3>
           <p className="text-[--text-secondary]">Quiz Points: <span className="font-bold text-emerald-400">{userProfileData.quiz_points || 0}</span></p>
-          <p className="text-[--text-secondary]">Total Questions Answered: <span className="font-bold text-sky-300">{totalAnswered || 0}</span></p>
-          <p className="text-[--text-secondary]">Correct Answers: <span className="font-bold text-green-400">{totalCorrect || 0}</span></p>
-          {/* --- UPDATED: Safe calculation --- */}
-          {totalAnswered && totalAnswered > 0 ? (
+          <p className="text-[--text-secondary]">Total Questions Answered: <span className="font-bold text-sky-300">{userProfileData.total_quiz_questions_answered || 0}</span></p>
+          <p className="text-[--text-secondary]">Correct Answers: <span className="font-bold text-green-400">{userProfileData.total_quiz_questions_correct || 0}</span></p>
+          {userProfileData.total_quiz_questions_answered && userProfileData.total_quiz_questions_answered > 0 ? (
             <p className="text-[--text-secondary]">
               Accuracy: <span className="font-bold text-amber-400">
-                {(((totalCorrect || 0) / totalAnswered) * 100).toFixed(1)}%
+                {(((userProfileData.total_quiz_questions_correct || 0) / userProfileData.total_quiz_questions_answered) * 100).toFixed(1)}%
               </span>
             </p>
           ) : (
@@ -140,25 +137,37 @@ const ProfilePageComponent: React.FC<ProfilePageProps> = ({
         {activeTab === 'explored' && (
           <div>
             <h3 className="text-xl font-semibold mb-4 text-[--text-primary]">All Explored Words</h3>
-            <ul className="max-h-[500px] overflow-y-auto pr-2">
-              {userProfileData.exploredWords.map(word => renderWordItem(word))}
-            </ul>
+            {(userProfileData.exploredWords && userProfileData.exploredWords.length > 0) ? (
+              <ul className="max-h-[500px] overflow-y-auto pr-2">
+                {userProfileData.exploredWords.map(word => renderWordItem(word))}
+              </ul>
+            ) : (
+              <p className="text-[--text-tertiary]">No words explored yet. Start learning!</p>
+            )}
           </div>
         )}
         {activeTab === 'favorites' && (
           <div>
             <h3 className="text-xl font-semibold mb-4 text-pink-400">Favorite Words</h3>
-             <ul className="max-h-[500px] overflow-y-auto pr-2">
+            {(userProfileData.favoriteWords && userProfileData.favoriteWords.length > 0) ? (
+              <ul className="max-h-[500px] overflow-y-auto pr-2">
                 {userProfileData.favoriteWords.map(word => renderWordItem(word))}
               </ul>
+            ) : (
+              <p className="text-[--text-tertiary]">You haven't favorited any words yet.</p>
+            )}
           </div>
         )}
         {activeTab === 'streaks' && (
           <div>
             <h3 className="text-xl font-semibold mb-4 text-emerald-400">Streak History</h3>
-             <ul className="max-h-[500px] overflow-y-auto pr-2">
+            {(userProfileData.streakHistory && userProfileData.streakHistory.length > 0) ? (
+              <ul className="max-h-[500px] overflow-y-auto pr-2">
                 {userProfileData.streakHistory.map(renderStreakItem)}
               </ul>
+            ) : (
+              <p className="text-[--text-tertiary]">No completed streaks yet. Keep learning to build them!</p>
+            )}
           </div>
         )}
       </div>

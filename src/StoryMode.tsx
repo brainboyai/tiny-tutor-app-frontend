@@ -1,11 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader, AlertTriangle } from 'lucide-react';
+import { Loader, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 
-// --- Types ---
+// --- Types for the new, richer data structure ---
+interface StoryOption {
+  text: string;
+  leads_to: string;
+}
+
+interface StoryInteraction {
+  type: string;
+  options: StoryOption[];
+}
+
 interface StoryNode {
-  ai_dialogue: string;
-  user_option_1: string;
-  user_option_2: string;
+  dialogue: string;
+  image_prompts: string[];
+  interaction: StoryInteraction;
 }
 
 interface StoryHistoryItem {
@@ -27,20 +37,19 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchNextNode = useCallback(async (selectedOption: string | null = null) => {
+  const fetchNextNode = useCallback(async (selectedOption: StoryOption | null = null) => {
     setIsLoading(true);
     setError(null);
 
     if (!authToken) {
-      setError("Authentication is required to start a story.");
+      setError("Authentication is required for Story Mode.");
       setIsLoading(false);
       return;
     }
 
-    // Add the user's choice to the history before the next AI response
     const newHistory = [...history];
     if (selectedOption) {
-      newHistory.push({ type: 'USER', text: selectedOption });
+      newHistory.push({ type: 'USER', text: selectedOption.text });
     }
 
     try {
@@ -52,7 +61,8 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
         },
         body: JSON.stringify({
           topic: topic,
-          history: newHistory, // Send the updated history
+          history: newHistory,
+          leads_to: selectedOption ? selectedOption.leads_to : null,
         }),
       });
 
@@ -63,8 +73,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       const data: StoryNode = await response.json();
       
-      // Add the new AI dialogue to history and set the current node for display
-      setHistory([...newHistory, { type: 'AI', text: data.ai_dialogue }]);
+      setHistory([...newHistory, { type: 'AI', text: data.dialogue }]);
       setCurrentNode(data);
 
     } catch (err) {
@@ -78,73 +87,94 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
   }, [topic, authToken, history]);
 
-  // Initial fetch when the component mounts
   useEffect(() => {
     fetchNextNode();
-  }, [topic, authToken]); // Dependency array simplified, fetchNextNode is stable
+  }, [topic, authToken]);
 
-  const handleOptionClick = (optionText: string) => {
-    // If the user clicks a "Thanks" button, end the story.
-    if (optionText.toLowerCase().includes('thanks') || optionText.toLowerCase().includes('i get it')) {
+  const handleOptionClick = (option: StoryOption) => {
+    // --- FIX: Add a check to prevent crash if leads_to is missing ---
+    if (!option || !option.leads_to) {
+        console.error("Invalid option clicked, ending story.", option);
+        onStoryEnd();
+        return;
+    }
+
+    if (option.leads_to.toLowerCase().includes('end')) {
       onStoryEnd();
       return;
     }
-    fetchNextNode(optionText);
+    fetchNextNode(option);
   };
 
-  if (isLoading && !currentNode) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn">
-        <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
-        <p className="text-lg text-[--text-secondary]">Crafting the beginning of your story about "{topic}"...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn">
-        <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
-        <h3 className="text-xl font-semibold text-red-300">Error</h3>
-        <p className="text-red-300/80">{error}</p>
-      </div>
-    );
-  }
-
-  if (!currentNode) {
-    return null; // Should not happen if error/loading states are handled
-  }
-
-  return (
-    <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
-      <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl">
-        <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg mb-8">
-          <p>{currentNode.ai_dialogue}</p>
+  const renderContent = () => {
+    if (isLoading && !currentNode) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn">
+          <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
+          <p className="text-lg text-[--text-secondary]">Crafting your interactive story about "{topic}"...</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button
-            onClick={() => handleOptionClick(currentNode.user_option_1)}
-            disabled={isLoading}
-            className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50"
-          >
-            {currentNode.user_option_1}
-          </button>
-          <button
-            onClick={() => handleOptionClick(currentNode.user_option_2)}
-            disabled={isLoading}
-            className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50"
-          >
-            {currentNode.user_option_2}
-          </button>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn">
+          <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
+          <h3 className="text-xl font-semibold text-red-300">Error</h3>
+          <p className="text-red-300/80">{error}</p>
         </div>
+      );
+    }
+
+    if (!currentNode) return null;
+
+    return (
+      <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
+        <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-6">
+          <p className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
+            {currentNode.dialogue}
+          </p>
+        </div>
+        
+        {currentNode.image_prompts && currentNode.image_prompts.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {currentNode.image_prompts.map((prompt, index) => (
+                <div key={index} className="bg-[--hover-bg-color] p-4 rounded-lg border border-[--border-color] text-sm text-[--text-tertiary]">
+                <div className="flex items-center text-xs text-[--text-tertiary] mb-2">
+                    <ImageIcon size={14} className="mr-2"/>
+                    <span>IMAGE PROMPT (FOR TESTING)</span>
+                </div>
+                <p className="text-[--text-secondary]">{prompt}</p>
+                </div>
+            ))}
+            </div>
+        )}
+
+        {currentNode.interaction && currentNode.interaction.options && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {currentNode.interaction.options.map((option, index) => (
+                <button
+                key={index}
+                onClick={() => handleOptionClick(option)}
+                disabled={isLoading}
+                className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50"
+                >
+                {option.text}
+                </button>
+            ))}
+            </div>
+        )}
+        
         {isLoading && (
           <div className="flex justify-center mt-6">
             <Loader className="animate-spin h-8 w-8 text-[--accent-primary]" />
           </div>
         )}
       </div>
-    </div>
-  );
+    );
+  };
+  
+  return renderContent();
 };
 
 export default StoryModeComponent;

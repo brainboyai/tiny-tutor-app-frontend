@@ -29,7 +29,7 @@ cd tiny-tutor-frontend-local\
 git add src/App.tsx\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
-"feat: Implement contextual prompts and Caching Option A for explanations"
+"feat: Implement StoryMode"
 \f0 \kerning1\expnd0\expndtw0 \
 git push origin main\
 \
@@ -111,10 +111,12 @@ Prompt- ok it logged in.word generation is working . but the features i gave you
 \
 Prompt - give me a explaination in simple 2 sentences for a photosynthesis, with 2 to 3 subtopics from within the photosynthesis explaination ,that the user can select. the subtoics are topics that are anyway related to the photosynthesis domain of learning. The subtopics need to take the user down the rabbit hole of learning everything related to photosynthesis.\
 \
+Prompt - ok now i want to get deeper and more intelligent with story mode. look at my prompt and the output for it and then plan. Here i have a corresponding image prompt with each dialogue, that will be sent to respective image generating api(future.. for now just display the prompt along with dialogue for testing). Now modify the existing prompts in app.py in such a way that the intelligence, depth, rules and conditions are retained by looking at the the following prompt and output. Simply put this output has (narrative dialogues with explainations, questioning and testing user, feed back, it also has tap on the right image in some places where 2 image prompts come.) also the image or images(for now prompts) have to load on clickable boxes/sections, so user has option to choose the correct image, where required...\
 \pard\pardeftab720\sa240\partightenfactor0
 \cf0 \strokec2 \
 \pard\pardeftab720\partightenfactor0
 \cf0 \strokec2 Prompt - I want these modified such that - 1. there should more intelligence in the context between the primary word and subtopic. 2. there should more intelligence in the contexts between every subtopic 3. the user dives down a rabithole from the primary word down the subtopics in the streak, so make the prompts more intelligent and aware, they have to think like a human, how a human explores anything in real life, for example" we first learn one concept and then learn all the things associated with the primary thing, we become more intelligent as we explore the different aspects of the primary concept and the sub topic and sub\'a0 topic with in subtopic. 4. we are passing the information of all the words the user explored in a streak for the generation of contextually aware explainations for the current word in the streak.5. do not disturb the existing rules and functionality and rules of current prompts. You need to make the prompts aware that they are doing a teacher's job of taking the student down a rabbithole and thereby giving knowledge and IQ. I m also giving the backend file(app.py for logic reference, if you might have anything to say.\
 \
 \pard\pardeftab720\partightenfactor0
-\cf0 \strokec2 Prompt - Now i have word game functionality running. I want to expand upon the story mode feature. Story mode feature will be taking a word, topic or a concept and make an narrative based conversation with user interaction through buttons as they parse through the narration. I have already engineered a Prompt for generating the desired output of narrative dialogues with numbers and their corresponding interactive options(buttons). Also each dialogue also has the information about it connection to other dialogues and the respective option of user navigation...But out put is to large for a normal gemini api to handle. so can we engineer a way to reduce the stress on the total output tokens in one go and make it gradual outputs with blocks of dialogues generated one by one based on user se;ected option and path. }
+\cf0 \strokec2 Prompt - Now i have word game functionality running. I want to expand upon the story mode feature. Story mode feature will be taking a word, topic or a concept and make an narrative based conversation with user interaction through buttons as they parse through the narration. I have already engineered a Prompt for generating the desired output of narrative dialogues with numbers and their corresponding interactive options(buttons). Also each dialogue also has the information about it connection to other dialogues and the respective option of user navigation...But out put is to large for a normal gemini api to handle. so can we engineer a way to reduce the stress on the total output tokens in one go and make it gradual outputs with blocks of dialogues generated one by one based on user se;ected option and path. \
+}

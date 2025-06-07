@@ -228,52 +228,60 @@ const renderQuizPopup = () => {
                 </div>
                 {renderQuizPopup()}
             </main>
-            
+
 {activeView === 'main' && (
   <div className={`absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[--background-default] to-transparent ${isInitialView ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
     <div className="max-w-4xl mx-auto">
       <form
-        onSubmit={(e) => { e.preventDefault(); if (startMode === 'word_game') { handleGenerateExplanation(inputValue, true); } else { setError("Story Mode is coming soon!"); } }}
-        className="bg-[--background-input] rounded-3xl p-4 flex flex-col shadow-lg border border-transparent focus-within:border-[--accent-primary] transition-colors"
-      >
-        {/* Top row: Input and Submit/Mic button */}
-        <div className="flex items-center w-full">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Enter a word or concept..."
-            className="w-full bg-transparent px-2 focus:outline-none text-lg"
-          />
-          {inputValue.trim() ? (
-            <button type="submit" disabled={isLoading} className="p-2 rounded-full bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed">
-              <SendHorizontal size={22} />
-            </button>
-          ) : (
-            <div className="p-2 text-[--text-tertiary]">
-              <Mic size={22} />
-            </div>
-          )}
-        </div>
+  onSubmit={(e) => { e.preventDefault(); if (startMode === 'word_game') { handleGenerateExplanation(inputValue, true); } else { setError("Story Mode is coming soon!"); } }}
+  className="bg-[--background-input] rounded-3xl p-4 flex flex-col shadow-lg border border-transparent focus-within:border-[--accent-primary] transition-colors"
+>
+  {/* Top row: Input and Submit/Mic button (No changes here) */}
+  <div className="flex items-center w-full">
+    <input
+      type="text"
+      value={inputValue}
+      onChange={(e) => setInputValue(e.target.value)}
+      placeholder="Enter a word or concept..."
+      className="w-full bg-transparent px-2 focus:outline-none text-lg"
+    />
+    {inputValue.trim() ? (
+      <button type="submit" disabled={isLoading} className="p-2 rounded-full bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed">
+        <SendHorizontal size={22} />
+      </button>
+    ) : (
+      <div className="p-2 text-[--text-tertiary]">
+        <Mic size={22} />
+      </div>
+    )}
+  </div>
 
-        {/* Bottom row: Mode selectors */}
-        <div className="flex items-center gap-4 mt-3">
-           <button
-             type="button"
-             onClick={() => setStartMode('word_game')}
-             className={`flex items-center gap-2 py-1 px-3 rounded-lg text-sm font-medium transition-colors ${startMode === 'word_game' ? 'bg-[--hover-bg-color] text-[--text-primary]' : 'text-[--text-secondary] hover:bg-[--hover-bg-color]'}`}
-           >
-             <BookText size={16} /> Word Game
-           </button>
-           <button
-             type="button"
-             onClick={() => setStartMode('story_mode')}
-             className={`flex items-center gap-2 py-1 px-3 rounded-lg text-sm font-medium transition-colors ${startMode === 'story_mode' ? 'bg-[--hover-bg-color] text-[--text-primary]' : 'text-[--text-secondary] hover:bg-[--hover-bg-color]'}`}
-           >
-             <FileText size={16} /> Story Mode
-           </button>
-        </div>
-      </form>
+  {/* --- MODIFIED: Bottom row with updated button styling --- */}
+  <div className="flex items-center gap-4 mt-3">
+     <button
+       type="button"
+       onClick={() => setStartMode('word_game')}
+       className={`flex items-center gap-2 py-1 px-3 rounded-lg text-sm font-medium transition-colors ${
+         startMode === 'word_game'
+           ? 'bg-[--accent-primary] text-black' // Prominent style for selected
+           : 'text-[--text-secondary] hover:bg-[--hover-bg-color] hover:text-[--text-primary]' // Subtle style for unselected
+       }`}
+     >
+       <BookText size={16} /> Explore Mode
+     </button>
+     <button
+       type="button"
+       onClick={() => setStartMode('story_mode')}
+       className={`flex items-center gap-2 py-1 px-3 rounded-lg text-sm font-medium transition-colors ${
+         startMode === 'story_mode'
+          ? 'bg-[--accent-primary] text-black' // Prominent style for selected
+          : 'text-[--text-secondary] hover:bg-[--hover-bg-color] hover:text-[--text-primary]' // Subtle style for unselected
+       }`}
+     >
+       <FileText size={16} /> Interactive Mode
+     </button>
+  </div>
+</form>
     </div>
   </div>
 )}

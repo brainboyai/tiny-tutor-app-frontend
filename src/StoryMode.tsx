@@ -13,7 +13,6 @@ interface StoryInteraction {
 }
 
 interface StoryNode {
-  feedback_on_previous_answer: string;
   dialogue: string;
   image_prompts: string[];
   interaction: StoryInteraction;
@@ -34,7 +33,6 @@ const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
 const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd }) => {
   const [currentNode, setCurrentNode] = useState<StoryNode | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
   const [history, setHistory] = useState<StoryHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +40,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   const fetchNextNode = useCallback(async (selectedOption: StoryOption | null = null) => {
     setIsLoading(true);
     setError(null);
-    setFeedback(null); // Clear old feedback
 
     if (!authToken) {
       setError("Authentication is required for Story Mode.");
@@ -76,10 +73,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       const data: StoryNode = await response.json();
       
-      // Set new feedback and dialogue
-      if (data.feedback_on_previous_answer) {
-        setFeedback(data.feedback_on_previous_answer);
-      }
       setHistory([...newHistory, { type: 'AI', text: data.dialogue }]);
       setCurrentNode(data);
 
@@ -95,7 +88,9 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   }, [topic, authToken, history]);
 
   useEffect(() => {
-    fetchNextNode();
+    if (topic && authToken) {
+        fetchNextNode();
+    }
   }, [topic, authToken]);
 
   const handleOptionClick = (option: StoryOption) => {
@@ -122,38 +117,34 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
     if (!currentNode) return null;
 
+    const isImageSelection = currentNode.interaction.type === "Image Selection";
+
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
-        {feedback && (
-            <div className="bg-sky-900/30 p-4 rounded-lg shadow-inner mb-4">
-                <p className="text-sky-300 italic text-center">{feedback}</p>
-            </div>
-        )}
         <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-6">
           <p className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
             {currentNode.dialogue}
           </p>
         </div>
         
-        {currentNode.image_prompts && currentNode.image_prompts.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {currentNode.image_prompts.map((prompt, index) => (
-                <div key={index} className="bg-[--hover-bg-color] p-4 rounded-lg border border-[--border-color] text-sm text-[--text-tertiary]">
-                <div className="flex items-center text-xs text-[--text-tertiary] mb-2"> <ImageIcon size={14} className="mr-2"/> <span>IMAGE PROMPT (FOR TESTING)</span> </div>
-                <p className="text-[--text-secondary]">{prompt}</p>
-                </div>
-            ))}
+        {isImageSelection ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                {currentNode.image_prompts.map((prompt, index) => (
+                    <button key={index} onClick={() => handleOptionClick(currentNode.interaction.options[index])} disabled={isLoading}
+                        className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 border border-transparent hover:border-[--accent-primary]">
+                        <div className="flex items-center text-xs text-[--text-tertiary] mb-2"> <ImageIcon size={14} className="mr-2"/> <span>IMAGE PROMPT (FOR TESTING)</span> </div>
+                        <p className="text-[--text-secondary]">{prompt}</p>
+                    </button>
+                ))}
             </div>
-        )}
-
-        {currentNode.interaction && currentNode.interaction.options && (
+        ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currentNode.interaction.options.map((option, index) => (
-                <button key={index} onClick={() => handleOptionClick(option)} disabled={isLoading}
-                className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50">
-                {option.text}
-                </button>
-            ))}
+                {currentNode.interaction.options.map((option, index) => (
+                    <button key={index} onClick={() => handleOptionClick(option)} disabled={isLoading}
+                    className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50">
+                    {option.text}
+                    </button>
+                ))}
             </div>
         )}
         

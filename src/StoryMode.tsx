@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 
-// --- UPDATED Types ---
+// --- Types ---
 interface StoryOption {
   text: string;
   leads_to: string;
@@ -13,7 +13,6 @@ interface StoryInteraction {
 }
 
 interface StoryNode {
-  // feedback_on_previous_answer has been removed
   dialogue: string;
   image_prompts: string[];
   interaction: StoryInteraction;
@@ -38,10 +37,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper to generate a placeholder image URL
   const generatePlaceholderUrl = (prompt: string, size: string = "800x450") => {
-    const text = encodeURIComponent(prompt);
-    // Using placehold.co for dynamic placeholder images with text
+    // Truncate the prompt for the URL to avoid overly long URLs and messy placeholders
+    const shortPrompt = prompt.length > 150 ? prompt.slice(0, 150) + '...' : prompt;
+    const text = encodeURIComponent(shortPrompt);
     return `https://placehold.co/${size}/1e293b/ffffff/png?text=${text}&font=lato`;
   };
 
@@ -57,7 +56,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
     const newHistory = [...history];
     if (selectedOption) {
-      // For image selections, the text might be empty, so use leads_to for history
       const historyText = selectedOption.text || `Selected Image: ${selectedOption.leads_to}`;
       newHistory.push({ type: 'USER', text: historyText });
     }
@@ -102,11 +100,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
         fetchNextNode();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topic, authToken]); // fetchNextNode is memoized, so we only need to run this on initial load
+  }, [topic, authToken]);
 
   const handleOptionClick = (option: StoryOption) => {
     if (!option || !option.leads_to) {
-        console.error("Invalid option clicked, ending story.", option);
         onStoryEnd();
         return;
     }
@@ -132,11 +129,14 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
-        {/* --- IMAGE DISPLAY AREA --- */}
-        {/* Show a single image for non-image-selection turns */}
+        {/* --- IMAGE DISPLAY AREA (MODIFIED) --- */}
         {!isImageSelection && currentNode.image_prompts.length > 0 && (
-            <div className="mb-6 rounded-lg overflow-hidden shadow-xl">
-                <img src={generatePlaceholderUrl(currentNode.image_prompts[0])} alt={currentNode.image_prompts[0]} className="w-full h-auto object-cover"/>
+            <div className="mb-6 w-full max-h-[45vh] flex justify-center items-center bg-black/20 rounded-lg overflow-hidden shadow-xl">
+                <img 
+                    src={generatePlaceholderUrl(currentNode.image_prompts[0])} 
+                    alt={currentNode.image_prompts[0]} 
+                    className="max-w-full max-h-full h-auto object-contain"
+                />
             </div>
         )}
 
@@ -147,16 +147,22 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
           </p>
         </div>
         
-        {/* --- INTERACTION AREA --- */}
+        {/* --- INTERACTION AREA (MODIFIED) --- */}
         {isImageSelection ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 {currentNode.image_prompts.map((prompt, index) => (
                     <button key={index} onClick={() => handleOptionClick(currentNode.interaction.options[index])} disabled={isLoading}
                         className="group text-left rounded-lg bg-[--background-secondary] hover:bg-[--hover-bg-color] transition-all duration-300 disabled:opacity-50 border border-[--border-color] hover:border-[--accent-primary] overflow-hidden shadow-lg hover:shadow-2xl transform hover:-translate-y-1">
-                        <img src={generatePlaceholderUrl(prompt, "600x400")} alt={prompt} className="w-full h-auto object-cover transition-transform duration-300 group-hover:scale-105"/>
+                        <img 
+                            src={generatePlaceholderUrl(prompt, "600x400")} 
+                            alt={prompt} 
+                            className="w-full h-48 object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
                         <div className="p-3">
-                            <div className="flex items-center text-xs text-[--text-tertiary] mb-1"> <ImageIcon size={14} className="mr-2 flex-shrink-0"/> <span>IMAGE PROMPT (FOR VISUALIZATION)</span> </div>
-                            <p className="text-sm text-[--text-secondary] truncate">{prompt}</p>
+                            <div className="flex items-center text-xs text-[--text-tertiary] mb-1"> <ImageIcon size={14} className="mr-2 flex-shrink-0"/> <span>IMAGE PROMPT</span> </div>
+                            <p className="text-sm text-[--text-secondary] break-words"> {/* <-- Replaced 'truncate' with 'break-words' */}
+                                {prompt}
+                            </p>
                         </div>
                     </button>
                 ))}

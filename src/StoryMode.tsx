@@ -13,6 +13,7 @@ interface StoryInteraction {
 }
 
 interface StoryNode {
+  feedback_on_previous_answer: string;
   dialogue: string;
   image_prompts: string[];
   interaction: StoryInteraction;
@@ -118,9 +119,26 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     if (!currentNode) return null;
 
     const isImageSelection = currentNode.interaction.type === "Image Selection";
+    
+    // Determine feedback style
+    let feedbackClasses = "bg-sky-900/30 text-sky-300"; // Default/neutral
+    if (currentNode.feedback_on_previous_answer) {
+        const feedbackLower = currentNode.feedback_on_previous_answer.toLowerCase();
+        if (feedbackLower.includes('correct') || feedbackLower.includes('exactly') || feedbackLower.includes('that\'s right')) {
+            feedbackClasses = "bg-green-900/40 text-green-300";
+        } else if (feedbackLower.includes('incorrect') || feedbackLower.includes('not quite') || feedbackLower.includes('wrong')) {
+            feedbackClasses = "bg-red-900/40 text-red-300";
+        }
+    }
 
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
+        {currentNode.feedback_on_previous_answer && (
+            <div className={`p-4 rounded-lg shadow-inner mb-4 ${feedbackClasses}`}>
+                <p className="italic text-center font-semibold">{currentNode.feedback_on_previous_answer}</p>
+            </div>
+        )}
+
         <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-6">
           <p className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
             {currentNode.dialogue}

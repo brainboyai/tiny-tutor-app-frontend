@@ -13,7 +13,6 @@ interface StoryInteraction {
 }
 
 interface StoryNode {
-  feedback_on_previous_answer: string;
   dialogue: string;
   image_prompts: string[];
   interaction: StoryInteraction;
@@ -89,17 +88,17 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   }, [topic, authToken, history]);
 
   useEffect(() => {
-    if (topic && authToken) {
-        fetchNextNode();
-    }
+    fetchNextNode();
   }, [topic, authToken]);
 
   const handleOptionClick = (option: StoryOption) => {
+    // --- FIX: Add a check to prevent crash if leads_to is missing ---
     if (!option || !option.leads_to) {
         console.error("Invalid option clicked, ending story.", option);
         onStoryEnd();
         return;
     }
+
     if (option.leads_to.toLowerCase().includes('end')) {
       onStoryEnd();
       return;
@@ -109,64 +108,68 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
   const renderContent = () => {
     if (isLoading && !currentNode) {
-      return ( <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn"> <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" /> <p className="text-lg text-[--text-secondary]">Crafting your interactive story about "{topic}"...</p> </div> );
+      return (
+        <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn">
+          <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
+          <p className="text-lg text-[--text-secondary]">Crafting your interactive story about "{topic}"...</p>
+        </div>
+      );
     }
 
     if (error) {
-      return ( <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn"> <AlertTriangle className="h-12 w-12 text-red-400 mb-4" /> <h3 className="text-xl font-semibold text-red-300">Error</h3> <p className="text-red-300/80">{error}</p> </div> );
+      return (
+        <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn">
+          <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
+          <h3 className="text-xl font-semibold text-red-300">Error</h3>
+          <p className="text-red-300/80">{error}</p>
+        </div>
+      );
     }
 
     if (!currentNode) return null;
 
-    const isImageSelection = currentNode.interaction.type === "Image Selection";
-    
-    // Determine feedback style
-    let feedbackClasses = "bg-sky-900/30 text-sky-300"; // Default/neutral
-    if (currentNode.feedback_on_previous_answer) {
-        const feedbackLower = currentNode.feedback_on_previous_answer.toLowerCase();
-        if (feedbackLower.includes('correct') || feedbackLower.includes('exactly') || feedbackLower.includes('that\'s right')) {
-            feedbackClasses = "bg-green-900/40 text-green-300";
-        } else if (feedbackLower.includes('incorrect') || feedbackLower.includes('not quite') || feedbackLower.includes('wrong')) {
-            feedbackClasses = "bg-red-900/40 text-red-300";
-        }
-    }
-
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
-        {currentNode.feedback_on_previous_answer && (
-            <div className={`p-4 rounded-lg shadow-inner mb-4 ${feedbackClasses}`}>
-                <p className="italic text-center font-semibold">{currentNode.feedback_on_previous_answer}</p>
-            </div>
-        )}
-
         <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-6">
           <p className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
             {currentNode.dialogue}
           </p>
         </div>
         
-        {isImageSelection ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                {currentNode.image_prompts.map((prompt, index) => (
-                    <button key={index} onClick={() => handleOptionClick(currentNode.interaction.options[index])} disabled={isLoading}
-                        className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 border border-transparent hover:border-[--accent-primary]">
-                        <div className="flex items-center text-xs text-[--text-tertiary] mb-2"> <ImageIcon size={14} className="mr-2"/> <span>IMAGE PROMPT (FOR TESTING)</span> </div>
-                        <p className="text-[--text-secondary]">{prompt}</p>
-                    </button>
-                ))}
+        {currentNode.image_prompts && currentNode.image_prompts.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {currentNode.image_prompts.map((prompt, index) => (
+                <div key={index} className="bg-[--hover-bg-color] p-4 rounded-lg border border-[--border-color] text-sm text-[--text-tertiary]">
+                <div className="flex items-center text-xs text-[--text-tertiary] mb-2">
+                    <ImageIcon size={14} className="mr-2"/>
+                    <span>IMAGE PROMPT (FOR TESTING)</span>
+                </div>
+                <p className="text-[--text-secondary]">{prompt}</p>
+                </div>
+            ))}
             </div>
-        ) : (
+        )}
+
+        {currentNode.interaction && currentNode.interaction.options && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {currentNode.interaction.options.map((option, index) => (
-                    <button key={index} onClick={() => handleOptionClick(option)} disabled={isLoading}
-                    className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50">
-                    {option.text}
-                    </button>
-                ))}
+            {currentNode.interaction.options.map((option, index) => (
+                <button
+                key={index}
+                onClick={() => handleOptionClick(option)}
+                disabled={isLoading}
+                className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50"
+                >
+                {option.text}
+                </button>
+            ))}
             </div>
         )}
         
-        {isLoading && ( <div className="flex justify-center mt-6"> <Loader className="animate-spin h-8 w-8 text-[--accent-primary]" /> </div> )}
+        {isLoading && (
+          <div className="flex justify-center mt-6">
+            <Loader className="animate-spin h-8 w-8 text-[--accent-primary]" />
+          </div>
+        )}
       </div>
     );
   };

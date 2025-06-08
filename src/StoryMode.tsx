@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 
-// --- Types for the new, richer data structure ---
+// --- UPDATED Types ---
 interface StoryOption {
   text: string;
   leads_to: string;
@@ -13,6 +13,7 @@ interface StoryInteraction {
 }
 
 interface StoryNode {
+  // feedback_on_previous_answer has been removed
   dialogue: string;
   image_prompts: string[];
   interaction: StoryInteraction;
@@ -37,6 +38,13 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper to generate a placeholder image URL
+  const generatePlaceholderUrl = (prompt: string, size: string = "800x450") => {
+    const text = encodeURIComponent(prompt);
+    // Using placehold.co for dynamic placeholder images with text
+    return `https://placehold.co/${size}/1e293b/ffffff/png?text=${text}&font=lato`;
+  };
+
   const fetchNextNode = useCallback(async (selectedOption: StoryOption | null = null) => {
     setIsLoading(true);
     setError(null);
@@ -49,7 +57,9 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
     const newHistory = [...history];
     if (selectedOption) {
-      newHistory.push({ type: 'USER', text: selectedOption.text });
+      // For image selections, the text might be empty, so use leads_to for history
+      const historyText = selectedOption.text || `Selected Image: ${selectedOption.leads_to}`;
+      newHistory.push({ type: 'USER', text: historyText });
     }
 
     try {
@@ -91,7 +101,8 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     if (topic && authToken) {
         fetchNextNode();
     }
-  }, [topic, authToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topic, authToken]); // fetchNextNode is memoized, so we only need to run this on initial load
 
   const handleOptionClick = (option: StoryOption) => {
     if (!option || !option.leads_to) {
@@ -99,7 +110,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
         onStoryEnd();
         return;
     }
-    if (option.leads_to.toLowerCase().includes('end')) {
+    if (option.leads_to.toLowerCase().includes('end') || option.leads_to.toLowerCase().includes('conclusion')) {
       onStoryEnd();
       return;
     }
@@ -118,22 +129,35 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     if (!currentNode) return null;
 
     const isImageSelection = currentNode.interaction.type === "Image Selection";
-
+    
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
+        {/* --- IMAGE DISPLAY AREA --- */}
+        {/* Show a single image for non-image-selection turns */}
+        {!isImageSelection && currentNode.image_prompts.length > 0 && (
+            <div className="mb-6 rounded-lg overflow-hidden shadow-xl">
+                <img src={generatePlaceholderUrl(currentNode.image_prompts[0])} alt={currentNode.image_prompts[0]} className="w-full h-auto object-cover"/>
+            </div>
+        )}
+
+        {/* --- DIALOGUE AREA --- */}
         <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-6">
-          <p className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
+          <p className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg whitespace-pre-wrap">
             {currentNode.dialogue}
           </p>
         </div>
         
+        {/* --- INTERACTION AREA --- */}
         {isImageSelection ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 {currentNode.image_prompts.map((prompt, index) => (
                     <button key={index} onClick={() => handleOptionClick(currentNode.interaction.options[index])} disabled={isLoading}
-                        className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 border border-transparent hover:border-[--accent-primary]">
-                        <div className="flex items-center text-xs text-[--text-tertiary] mb-2"> <ImageIcon size={14} className="mr-2"/> <span>IMAGE PROMPT (FOR TESTING)</span> </div>
-                        <p className="text-[--text-secondary]">{prompt}</p>
+                        className="group text-left rounded-lg bg-[--background-secondary] hover:bg-[--hover-bg-color] transition-all duration-300 disabled:opacity-50 border border-[--border-color] hover:border-[--accent-primary] overflow-hidden shadow-lg hover:shadow-2xl transform hover:-translate-y-1">
+                        <img src={generatePlaceholderUrl(prompt, "600x400")} alt={prompt} className="w-full h-auto object-cover transition-transform duration-300 group-hover:scale-105"/>
+                        <div className="p-3">
+                            <div className="flex items-center text-xs text-[--text-tertiary] mb-1"> <ImageIcon size={14} className="mr-2 flex-shrink-0"/> <span>IMAGE PROMPT (FOR VISUALIZATION)</span> </div>
+                            <p className="text-sm text-[--text-secondary] truncate">{prompt}</p>
+                        </div>
                     </button>
                 ))}
             </div>
@@ -141,7 +165,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {currentNode.interaction.options.map((option, index) => (
                     <button key={index} onClick={() => handleOptionClick(option)} disabled={isLoading}
-                    className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50">
+                    className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 text-lg text-[--text-primary] text-center">
                     {option.text}
                     </button>
                 ))}

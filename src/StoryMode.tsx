@@ -48,7 +48,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       return;
     }
 
-    // A fresh history for the API call
     const newHistory = [...history];
     if (selectedOption) {
       newHistory.push({ type: 'USER', text: selectedOption.text });
@@ -75,7 +74,16 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       const data: StoryNode = await response.json();
       
-      // Update history for the next turn
+      // --- NEW: Detailed logging for debugging ---
+      console.groupCollapsed(`%c🤖 AI RESPONSE RECEIVED`, 'color: #88c0d0; font-weight: bold;');
+      console.log('Dialogue:', data.dialogue);
+      console.log('Feedback:', data.feedback_on_previous_answer);
+      console.log('Image Prompts:', data.image_prompts);
+      console.log('Interaction Type:', data.interaction.type);
+      console.log('Options:', data.interaction.options);
+      console.groupEnd();
+      // --- END NEW LOGGING ---
+
       const updatedHistory = [...newHistory];
       if (data.dialogue) {
         updatedHistory.push({ type: 'AI', text: data.dialogue });
@@ -95,14 +103,17 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   }, [topic, authToken, history]);
 
   useEffect(() => {
-    // Only fetch if history is empty
     if (history.length === 0) {
       fetchNextNode();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topic, authToken]); // Runs only on initial load
+  }, [topic, authToken]); 
 
   const handleOptionClick = (option: StoryOption) => {
+    // --- NEW: Detailed logging for debugging ---
+    console.log(`%c👤 USER SELECTED:`, 'color: #a3be8c; font-weight: bold;', option);
+    // --- END NEW LOGGING ---
+
     if (!option || typeof option.leads_to === 'undefined') {
         console.error("Invalid option clicked, ending story.", option);
         setError("A navigation error occurred. Ending story.");
@@ -141,7 +152,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
-        {/* --- Block to display feedback --- */}
         {currentNode.feedback_on_previous_answer && (
           <div className="mb-4 p-4 bg-green-900/30 border border-green-500/50 rounded-lg animate-fadeIn">
             <p className="text-lg font-semibold text-green-300">{currentNode.feedback_on_previous_answer}</p>
@@ -154,7 +164,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
           </p>
         </div>
         
-        {/* --- Block to display image prompts for non-question turns --- */}
         {currentNode.image_prompts && currentNode.image_prompts.length > 0 && currentNode.interaction.type !== 'Image Selection' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {currentNode.image_prompts.map((prompt, index) => (
@@ -169,10 +178,8 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
             </div>
         )}
 
-        {/* --- Block with conditional rendering for interaction options --- */}
         {currentNode.interaction && currentNode.interaction.options && (
           <div>
-            {/* Renders standard text buttons */}
             {currentNode.interaction.type === 'Text-based Button Selection' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {currentNode.interaction.options.map((option, index) => (
@@ -188,7 +195,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
               </div>
             )}
 
-            {/* Renders clickable image prompts for image-based questions */}
             {currentNode.interaction.type === 'Image Selection' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {currentNode.interaction.options.map((option, index) => (

@@ -34,6 +34,7 @@ interface StoryModeProps {
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
 const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd }) => {
+     console.log("--- STORYMODE COMPONENT RENDERED - V2 ---");
   const [currentNode, setCurrentNode] = useState<StoryNode | null>(null);
   const [history, setHistory] = useState<StoryHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);

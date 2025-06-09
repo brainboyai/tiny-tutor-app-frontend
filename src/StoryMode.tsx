@@ -231,7 +231,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
                     )}
                     <div className="flex flex-col h-full">
                       <div className="flex-grow flex items-center justify-center text-center text-xs text-[--text-tertiary] bg-black/20 rounded-md p-1">
-                          <p className="text-[--text-secondary]">{currentNode.image__prompts[index] || 'Missing prompt'}</p>
+                          <p className="text-[--text-secondary]">{currentNode.image_prompts[index] || 'Missing prompt'}</p>
                       </div>
                       <p className="mt-2 text-sm text-center text-[--text-primary] truncate">{option.text}</p>
                     </div>

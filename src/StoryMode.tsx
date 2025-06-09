@@ -8,11 +8,12 @@ interface StoryOption {
 }
 
 interface StoryInteraction {
-  type: string;
+  type: 'Text-based Button Selection' | 'Image Selection';
   options: StoryOption[];
 }
 
 interface StoryNode {
+  feedback_on_previous_answer: string;
   dialogue: string;
   image_prompts: string[];
   interaction: StoryInteraction;
@@ -47,6 +48,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       return;
     }
 
+    // A fresh history for the API call
     const newHistory = [...history];
     if (selectedOption) {
       newHistory.push({ type: 'USER', text: selectedOption.text });
@@ -73,7 +75,12 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       const data: StoryNode = await response.json();
       
-      setHistory([...newHistory, { type: 'AI', text: data.dialogue }]);
+      // Update history for the next turn
+      const updatedHistory = [...newHistory];
+      if (data.dialogue) {
+        updatedHistory.push({ type: 'AI', text: data.dialogue });
+      }
+      setHistory(updatedHistory);
       setCurrentNode(data);
 
     } catch (err) {
@@ -88,18 +95,22 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   }, [topic, authToken, history]);
 
   useEffect(() => {
-    fetchNextNode();
-  }, [topic, authToken]);
+    // Only fetch if history is empty
+    if (history.length === 0) {
+      fetchNextNode();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topic, authToken]); // Runs only on initial load
 
   const handleOptionClick = (option: StoryOption) => {
-    // --- FIX: Add a check to prevent crash if leads_to is missing ---
-    if (!option || !option.leads_to) {
+    if (!option || typeof option.leads_to === 'undefined') {
         console.error("Invalid option clicked, ending story.", option);
-        onStoryEnd();
+        setError("A navigation error occurred. Ending story.");
+        setTimeout(onStoryEnd, 2000);
         return;
     }
 
-    if (option.leads_to.toLowerCase().includes('end')) {
+    if (option.leads_to.toLowerCase().includes('end_story')) {
       onStoryEnd();
       return;
     }
@@ -130,39 +141,76 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
+        {/* --- Block to display feedback --- */}
+        {currentNode.feedback_on_previous_answer && (
+          <div className="mb-4 p-4 bg-green-900/30 border border-green-500/50 rounded-lg animate-fadeIn">
+            <p className="text-lg font-semibold text-green-300">{currentNode.feedback_on_previous_answer}</p>
+          </div>
+        )}
+        
         <div className="bg-[--background-secondary] p-6 rounded-lg shadow-xl mb-6">
           <p className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
             {currentNode.dialogue}
           </p>
         </div>
         
-        {currentNode.image_prompts && currentNode.image_prompts.length > 0 && (
+        {/* --- Block to display image prompts for non-question turns --- */}
+        {currentNode.image_prompts && currentNode.image_prompts.length > 0 && currentNode.interaction.type !== 'Image Selection' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {currentNode.image_prompts.map((prompt, index) => (
-                <div key={index} className="bg-[--hover-bg-color] p-4 rounded-lg border border-[--border-color] text-sm text-[--text-tertiary]">
-                <div className="flex items-center text-xs text-[--text-tertiary] mb-2">
-                    <ImageIcon size={14} className="mr-2"/>
-                    <span>IMAGE PROMPT (FOR TESTING)</span>
-                </div>
-                <p className="text-[--text-secondary]">{prompt}</p>
+                <div key={index} className="bg-[--hover-bg-color] p-4 rounded-lg border border-[--border-color]">
+                  <div className="flex items-center text-xs text-[--text-tertiary] mb-2">
+                      <ImageIcon size={14} className="mr-2"/>
+                      <span>IMAGE PROMPT (FOR TESTING)</span>
+                  </div>
+                  <p className="text-[--text-secondary]">{prompt}</p>
                 </div>
             ))}
             </div>
         )}
 
+        {/* --- Block with conditional rendering for interaction options --- */}
         {currentNode.interaction && currentNode.interaction.options && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currentNode.interaction.options.map((option, index) => (
-                <button
-                key={index}
-                onClick={() => handleOptionClick(option)}
-                disabled={isLoading}
-                className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50"
-                >
-                {option.text}
-                </button>
-            ))}
-            </div>
+          <div>
+            {/* Renders standard text buttons */}
+            {currentNode.interaction.type === 'Text-based Button Selection' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {currentNode.interaction.options.map((option, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleOptionClick(option)}
+                    disabled={isLoading}
+                    className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 text-[--text-primary]"
+                  >
+                    {option.text}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Renders clickable image prompts for image-based questions */}
+            {currentNode.interaction.type === 'Image Selection' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {currentNode.interaction.options.map((option, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleOptionClick(option)}
+                    disabled={isLoading}
+                    className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 flex flex-col"
+                  >
+                    <span className="font-bold text-[--text-primary] mb-2">{option.text}</span>
+                    <div className="bg-black/20 p-2 rounded-md text-sm text-[--text-tertiary] border border-[--border-color]">
+                      <div className="flex items-center text-xs text-[--text-tertiary] mb-2">
+                        <ImageIcon size={14} className="mr-2"/>
+                        <span>IMAGE PROMPT (FOR TESTING)</span>
+                      </div>
+                      <p className="text-[--text-secondary]">{currentNode.image_prompts[index]}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         
         {isLoading && (

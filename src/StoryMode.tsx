@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, AlertTriangle, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 
-// --- Updated Types for new game feature ---
+// --- Types for the new game feature ---
 interface StoryOption {
   text: string;
   leads_to: string;
@@ -38,8 +38,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   const [history, setHistory] = useState<StoryHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-
-  // --- NEW STATE for the Multi-Select Game ---
   const [selectedGameAnswers, setSelectedGameAnswers] = useState<Set<string>>(new Set());
 
   const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null) => {
@@ -77,6 +75,17 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       }
 
       const data: StoryNode = await response.json();
+
+      // --- NEW: Detailed logging for debugging ---
+      console.groupCollapsed(`%c🤖 AI RESPONSE RECEIVED`, 'color: #88c0d0; font-weight: bold; font-size: 14px;');
+      console.log('Dialogue:', data.dialogue);
+      console.log('Feedback:', data.feedback_on_previous_answer);
+      // Log a clean copy of the arrays/objects for better inspection
+      console.log('Image Prompts:', JSON.parse(JSON.stringify(data.image_prompts)));
+      console.log('Interaction Type:', data.interaction.type);
+      console.log('Options:', JSON.parse(JSON.stringify(data.interaction.options)));
+      console.groupEnd();
+      // --- END NEW LOGGING ---
       
       const updatedHistory: StoryHistoryItem[] = [...newHistory];
       if (data.dialogue) {
@@ -85,7 +94,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       setHistory(updatedHistory);
       setCurrentNode(data);
-      // Reset game selections for the new node
       setSelectedGameAnswers(new Set()); 
 
     } catch (err) {
@@ -96,15 +104,12 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
   }, [topic, authToken, history]);
 
-  // --- THIS IS THE CORRECTED useEffect HOOK ---
   useEffect(() => {
-    // This check ensures we only fetch on the initial load for a given topic.
-    // The hook will now only re-run if the topic or authToken props change.
     if (history.length === 0 && authToken) {
       fetchNextNode(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topic, authToken]); // ONLY depend on topic and authToken to break the loop.
+  }, [topic, authToken]);
 
 
   // --- HANDLERS FOR NEW GAME TYPE ---
@@ -131,6 +136,14 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
     const isCorrect = correctAnswers.size === selectedGameAnswers.size &&
                       [...correctAnswers].every(answer => selectedGameAnswers.has(answer));
+    
+    // --- NEW: Detailed logging for game submission ---
+    console.groupCollapsed(`%c👤 USER ACTION (Game Submit):`, 'color: #a3be8c; font-weight: bold; font-size: 14px;');
+    console.log('Selected Answers:', Array.from(selectedGameAnswers));
+    console.log('Correct Answer Set:', Array.from(correctAnswers));
+    console.log('Was Correct:', isCorrect);
+    console.groupEnd();
+    // --- END NEW LOGGING ---
 
     fetchNextNode({
       leads_to: isCorrect ? 'Correct' : 'Incorrect',
@@ -140,6 +153,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
   // Standard handler for single-choice questions
   const handleOptionClick = (option: StoryOption) => {
+    // --- NEW: Detailed logging for single choice ---
+    console.log(`%c👤 USER ACTION (Single Choice):`, 'color: #a3be8c; font-weight: bold; font-size: 14px;', option);
+    // --- END NEW LOGGING ---
+
     if (option.leads_to.toLowerCase().includes('end_story')) {
       onStoryEnd();
       return;
@@ -231,6 +248,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
                     )}
                     <div className="flex flex-col h-full">
                       <div className="flex-grow flex items-center justify-center text-center text-xs text-[--text-tertiary] bg-black/20 rounded-md p-1">
+                          {/* FIX: Corrected typo from image__prompts to image_prompts */}
                           <p className="text-[--text-secondary]">{currentNode.image_prompts[index] || 'Missing prompt'}</p>
                       </div>
                       <p className="mt-2 text-sm text-center text-[--text-primary] truncate">{option.text}</p>

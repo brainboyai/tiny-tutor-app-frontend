@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, AlertTriangle, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 
 // --- Updated Types for new game feature ---
@@ -42,8 +42,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   // --- NEW STATE for the Multi-Select Game ---
   const [selectedGameAnswers, setSelectedGameAnswers] = useState<Set<string>>(new Set());
 
-// --- FUNCTION TO COPY AND PASTE INTO StoryMode.tsx ---
-
   const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null) => {
     setIsLoading(true);
     setError(null);
@@ -80,14 +78,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       const data: StoryNode = await response.json();
       
-      // --- THIS IS THE FIX ---
-      // We create the array first, then push the new item.
-      // This is more explicit and avoids the TypeScript inference error.
       const updatedHistory: StoryHistoryItem[] = [...newHistory];
       if (data.dialogue) {
         updatedHistory.push({ type: 'AI', text: data.dialogue });
       }
-      // --- END OF FIX ---
 
       setHistory(updatedHistory);
       setCurrentNode(data);
@@ -101,6 +95,17 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       setIsLoading(false);
     }
   }, [topic, authToken, history]);
+
+  // --- THIS IS THE CORRECTED useEffect HOOK ---
+  useEffect(() => {
+    // This check ensures we only fetch on the initial load for a given topic.
+    // The hook will now only re-run if the topic or authToken props change.
+    if (history.length === 0 && authToken) {
+      fetchNextNode(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topic, authToken]); // ONLY depend on topic and authToken to break the loop.
+
 
   // --- HANDLERS FOR NEW GAME TYPE ---
   const handleGameItemClick = (optionText: string) => {
@@ -226,7 +231,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
                     )}
                     <div className="flex flex-col h-full">
                       <div className="flex-grow flex items-center justify-center text-center text-xs text-[--text-tertiary] bg-black/20 rounded-md p-1">
-                          <p className="text-[--text-secondary]">{currentNode.image_prompts[index] || 'Missing prompt'}</p>
+                          <p className="text-[--text-secondary]">{currentNode.image__prompts[index] || 'Missing prompt'}</p>
                       </div>
                       <p className="mt-2 text-sm text-center text-[--text-primary] truncate">{option.text}</p>
                     </div>

@@ -6,7 +6,6 @@ interface GameModeProps {
   authToken: string | null;
 }
 
-// CORRECTED: The URL is now a proper string
 const API_BASE_URL = 'https://tiny-tutor-app-backend.onrender.com';
 
 const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
@@ -18,17 +17,19 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
 
+  // Step 2: Polling function
   const pollGameStatus = useCallback(async (currentJobId: string) => {
     if (!authToken) return;
 
     try {
       const response = await fetch(`${API_BASE_URL}/get_game_status/${currentJobId}`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${authToken}` },
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
       });
 
       if (!response.ok) {
-        throw new Error(`Polling failed with status ${response.status}`);
+        throw new Error("Failed to get game status.");
       }
 
       const data = await response.json();
@@ -38,18 +39,25 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
         setIsLoading(false);
         setJobId(null); // Stop polling
       } else if (data.status === 'failed') {
-        setError(data.error || 'An unknown error caused the game generation to fail.');
+        setError(data.error || 'The game generation failed.');
         setIsLoading(false);
         setJobId(null); // Stop polling
       }
+      // If status is 'pending', the polling will continue in the useEffect hook.
+
     } catch (err) {
-      if (err instanceof Error) { setError(err.message); } 
-      else { setError('An unknown error occurred while polling for the game.'); }
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unknown error occurred while polling for the game.');
+      }
       setIsLoading(false);
-      setJobId(null);
+      setJobId(null); // Stop polling on error
     }
   }, [authToken]);
 
+
+  // Step 1: Initial request to start generation
   const requestGame = useCallback(async () => {
     if (!topic || !authToken) {
       setError("Topic or authentication token is missing.");
@@ -71,37 +79,48 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({ error: `Request to start game generation failed with status ${response.status}` }));
-        throw new Error(errData.error);
+        const errData = await response.json();
+        throw new Error(errData.error || `Request failed with status ${response.status}`);
       }
 
       const data = await response.json();
-      setJobId(data.job_id);
+      setJobId(data.job_id); // Start polling
 
     } catch (err) {
-      if (err instanceof Error) { setError(err.message); } 
-      else { setError('An unknown error occurred while requesting the game.'); }
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unknown error occurred while requesting the game.');
+      }
       setIsLoading(false);
     }
   }, [topic, authToken]);
 
+
+  // Effect to start the process
   useEffect(() => {
     requestGame();
   }, [requestGame]);
 
+  // Effect for polling
   useEffect(() => {
     if (!jobId) return;
-    const intervalId = setInterval(() => { pollGameStatus(jobId); }, 5000);
+
+    const intervalId = setInterval(() => {
+      pollGameStatus(jobId);
+    }, 5000); // Poll every 5 seconds
+
     return () => clearInterval(intervalId);
   }, [jobId, pollGameStatus]);
+
 
   const renderContent = () => {
     if (isLoading) {
       return (
         <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn">
-          <Loader className="animate-spin h-12 w-12 text-purple-400 mb-4" />
+          <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
           <p className="text-lg text-[--text-secondary]">Building your custom game for "{topic}"...</p>
-          <p className="text-sm text-[--text-tertiary]">This might take up to a minute! 🕹️</p>
+          <p className="text-sm text-[--text-tertiary]">This might take up to a minute!</p>
         </div>
       );
     }
@@ -112,7 +131,10 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
           <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
           <h3 className="text-xl font-semibold text-red-300">Error Generating Game</h3>
           <p className="text-red-300/80 mb-6">{error}</p>
-          <button onClick={() => navigate('/')} className="flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors font-semibold">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center px-4 py-2 bg-[--accent-primary] hover:bg-[--accent-secondary] text-black rounded-lg transition-colors font-semibold"
+          >
             <ArrowLeft size={20} className="mr-2" /> Back to Home
           </button>
         </div>
@@ -121,7 +143,7 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
 
     if (gameHtml) {
         return (
-            <div className="w-full h-full flex flex-col bg-black rounded-lg overflow-hidden border border-gray-700">
+            <div className="w-full h-full flex flex-col bg-black rounded-lg overflow-hidden border border-[--border-color]">
                 <iframe
                     srcDoc={gameHtml}
                     title={`Tiny Tutor Mini-Game: ${topic}`}
@@ -145,7 +167,10 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
                     Game Mode: <span className="text-purple-400">{topic}</span>
                 </h1>
             </div>
-            <button onClick={() => navigate('/')} className="flex items-center px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors font-semibold">
+            <button
+                onClick={() => navigate('/')}
+                className="flex items-center px-4 py-2 bg-[--hover-bg-color] hover:bg-[--border-color] text-[--text-secondary] rounded-lg transition-colors font-semibold"
+            >
                 <ArrowLeft size={20} className="mr-2" /> End Game
             </button>
         </div>

@@ -6,8 +6,7 @@ interface GameModeProps {
   authToken: string | null;
 }
 
-const API_BASE_URL = '[https://tiny-tutor-app-backend.onrender.com](https://tiny-tutor-app-backend.onrender.com)';
-
+const API_BASE_URL = 'https://tiny-tutor-app-backend.onrender.com';
 const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
   const { topic } = useParams<{ topic: string }>();
   const navigate = useNavigate();

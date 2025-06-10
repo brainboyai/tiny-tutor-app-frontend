@@ -11,7 +11,7 @@ export default defineConfig({
     // This 'base' option is crucial for deployments to static hosts
     // It ensures that all asset paths (like your JavaScript bundles)
     // are generated relative to the index.html file itself.
-    base: './',
+    base: '/',
     build: {
         // Output directory for the build.
         // Since 'root' is 'public', 'outDir: '../dist'' means the 'dist' folder

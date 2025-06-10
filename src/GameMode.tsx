@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader, AlertTriangle, Gamepad2 } from 'lucide-react';
+import { Loader, AlertTriangle } from 'lucide-react';
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 

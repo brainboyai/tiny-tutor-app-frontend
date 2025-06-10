@@ -6,7 +6,7 @@ interface GameModeProps {
   authToken: string | null;
 }
 
-const API_BASE_URL = '[https://tiny-tutor-app.onrender.com](https://tiny-tutor-app.onrender.com)';
+const API_BASE_URL = '[https://tiny-tutor-app-backend.onrender.com](https://tiny-tutor-app-backend.onrender.com)';
 
 const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
   const { topic } = useParams<{ topic: string }>();
@@ -15,8 +15,50 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
   const [gameHtml, setGameHtml] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
 
-  const fetchGame = useCallback(async () => {
+  // Step 2: Polling function
+  const pollGameStatus = useCallback(async (currentJobId: string) => {
+    if (!authToken) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/get_game_status/${currentJobId}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to get game status.");
+      }
+
+      const data = await response.json();
+
+      if (data.status === 'completed') {
+        setGameHtml(data.game_html);
+        setIsLoading(false);
+        setJobId(null); // Stop polling
+      } else if (data.status === 'failed') {
+        setError(data.error || 'The game generation failed.');
+        setIsLoading(false);
+        setJobId(null); // Stop polling
+      }
+      // If status is 'pending', the polling will continue in the useEffect hook.
+
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unknown error occurred while polling for the game.');
+      }
+      setIsLoading(false);
+      setJobId(null); // Stop polling on error
+    }
+  }, [authToken]);
+
+
+  // Step 1: Initial request to start generation
+  const requestGame = useCallback(async () => {
     if (!topic || !authToken) {
       setError("Topic or authentication token is missing.");
       setIsLoading(false);
@@ -27,7 +69,7 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/generate_game`, {
+      const response = await fetch(`${API_BASE_URL}/request_game_generation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,22 +84,35 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
       }
 
       const data = await response.json();
-      setGameHtml(data.game_html);
+      setJobId(data.job_id); // Start polling
 
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('An unknown error occurred while generating the game.');
+        setError('An unknown error occurred while requesting the game.');
       }
-    } finally {
       setIsLoading(false);
     }
   }, [topic, authToken]);
 
+
+  // Effect to start the process
   useEffect(() => {
-    fetchGame();
-  }, [fetchGame]);
+    requestGame();
+  }, [requestGame]);
+
+  // Effect for polling
+  useEffect(() => {
+    if (!jobId) return;
+
+    const intervalId = setInterval(() => {
+      pollGameStatus(jobId);
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(intervalId);
+  }, [jobId, pollGameStatus]);
+
 
   const renderContent = () => {
     if (isLoading) {
@@ -65,7 +120,7 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
         <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn">
           <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
           <p className="text-lg text-[--text-secondary]">Building your custom game for "{topic}"...</p>
-          <p className="text-sm text-[--text-tertiary]">This might take a moment!</p>
+          <p className="text-sm text-[--text-tertiary]">This might take up to a minute!</p>
         </div>
       );
     }
@@ -92,7 +147,7 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
                 <iframe
                     srcDoc={gameHtml}
                     title={`Tiny Tutor Mini-Game: ${topic}`}
-                    sandbox="allow-scripts" // Security: allows scripts to run inside the iframe but isolates them
+                    sandbox="allow-scripts"
                     className="w-full h-full flex-grow"
                     style={{ border: 'none' }}
                 />
@@ -100,7 +155,7 @@ const GameModeComponent: React.FC<GameModeProps> = ({ authToken }) => {
         );
     }
     
-    return null; // Should not be reached if logic is correct
+    return null;
   };
 
   return (

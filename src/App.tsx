@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
-// --- NEW: Import React Router components ---
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+// The new, corrected line without 'Link'
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import {
   Heart, LogOut, RefreshCw, Sparkles, SendHorizontal, User, X,
   Menu, Plus, Flame, HelpCircle, Mic, BookText, FileText, Swords

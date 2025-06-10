@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
 import {
   Heart, LogOut, RefreshCw, Sparkles, SendHorizontal, User, X,
-  Settings, Menu, Plus, Flame, HelpCircle, Mic, BookText, FileText
+  Settings, Menu, Plus, Flame, HelpCircle, Mic, BookText, FileText, Gamepad2
 } from 'lucide-react';
 import './App.css';
 import './index.css';
 import ProfilePageComponent from './ProfilePage';
 import StoryModeComponent from './StoryMode'; // Import the new component
+import GameModeComponent from './GameMode'; // Import the new component
 
 // --- Types ---
 interface CurrentUser { username: string; email: string; id: string; }
@@ -32,8 +33,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   
   // --- UPDATED: State for Mode Selection ---
-  const [startMode, setStartMode] = useState<'explore_mode' | 'story_mode'>('explore_mode');
-  const [activeGameMode, setActiveGameMode] = useState<'explore_mode' | 'story_mode' | null>(null);
+  const [startMode, setStartMode] = useState<'explore_mode' | 'story_mode' | 'game_mode'>('explore_mode');
+  const [activeGameMode, setActiveGameMode] = useState<'explore_mode' | 'story_mode' | 'game_mode' | null>(null);
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -119,6 +120,11 @@ function App() {
       setActiveGameMode('story_mode');
       setActiveTopic(inputValue);
       setInputValue('');
+      } else if (startMode === 'game_mode') {
+        setIsInitialView(false);
+        setActiveGameMode('game_mode');
+        setActiveTopic(inputValue);
+        setInputValue('');
     }
   };
 
@@ -139,6 +145,10 @@ function App() {
       return <StoryModeComponent topic={activeTopic} authToken={authToken} onStoryEnd={resetChat} />;
     }
     
+    if (activeGameMode === 'game_mode' && activeTopic) {
+      return <GameModeComponent topic={activeTopic} authToken={authToken} onGameEnd={resetChat} />;
+    } 
+
     // Default to explore mode content
     return (
       <div className="space-y-6">
@@ -236,7 +246,7 @@ function App() {
                         type="text"
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
-                        placeholder={startMode === 'explore_mode' ? "Enter a word to explore..." : "Enter a topic for a story..."}
+                        placeholder={startMode === 'explore_mode' ? "Enter a word to explore..." : startMode === 'story_mode' ? "Enter a topic for a story..." : "Enter a topic for a game..."}
                         className="w-full bg-transparent px-2 focus:outline-none text-lg"
                         disabled={activeGameMode !== null}
                       />
@@ -276,6 +286,18 @@ function App() {
                       >
                         <FileText size={16} /> Story Mode
                       </button>
+                      <button
+                      type="button"
+                      onClick={() => setStartMode('game_mode')}
+                      disabled={activeGameMode !== null}
+                      className={`flex items-center gap-2 py-1 px-3 rounded-lg text-sm font-medium transition-colors ${
+                      startMode === 'game_mode'
+                      ? 'bg-[--accent-primary] text-black'
+                      : 'text-[--text-secondary] hover:bg-[--hover-bg-color] hover:text-[--text-primary]'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                      <Gamepad2 size={16} /> Game Mode
+                      </button>   
                     </div>
                   </form>
                 </div>

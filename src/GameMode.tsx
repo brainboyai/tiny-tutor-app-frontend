@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader, AlertTriangle} from 'lucide-react';
+import { Loader, AlertTriangle, X } from 'lucide-react';
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
@@ -62,7 +62,7 @@ const GameModeComponent: React.FC<GameModeProps> = ({ topic, authToken, onGameEn
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn">
+      <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn h-full">
         <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
         <p className="text-lg text-[--text-secondary]">Your game about "{topic}" is being built by the AI...</p>
         <p className="text-sm text-[--text-tertiary] mt-2">This may take a moment.</p>
@@ -72,7 +72,7 @@ const GameModeComponent: React.FC<GameModeProps> = ({ topic, authToken, onGameEn
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn">
+      <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn h-full">
         <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
         <h3 className="text-xl font-semibold text-red-300">Error Generating Game</h3>
         <p className="text-red-300/80 mb-6">{error}</p>
@@ -88,11 +88,21 @@ const GameModeComponent: React.FC<GameModeProps> = ({ topic, authToken, onGameEn
 
   if (gameHtml) {
     return (
-      <div className="w-full h-[calc(100vh-150px)] animate-fadeIn flex flex-col">
-          <div className="flex-shrink-0 p-2 text-center">
-              <h2 className="text-xl font-bold">Game Mode: <span className="text-[--accent-primary]">{topic}</span></h2>
+      <div className="w-full h-full animate-fadeIn flex flex-col bg-black/50 rounded-lg">
+          {/* --- NEW: Header with Exit Button --- */}
+          <div className="flex-shrink-0 p-2 text-center bg-[--background-secondary] rounded-t-lg flex justify-between items-center">
+              <h2 className="text-xl font-bold ml-4">Game Mode: <span className="text-[--accent-primary]">{topic}</span></h2>
+              <button 
+                onClick={onGameEnd}
+                className="p-2 rounded-full hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors"
+                title="Exit Game"
+              >
+                  <X size={24} />
+              </button>
           </div>
-          <div className="flex-grow w-full h-full p-1 bg-black/20 rounded-lg">
+          {/* --- END NEW --- */}
+
+          <div className="flex-grow w-full h-full p-1 bg-black/20 rounded-b-lg">
             <iframe
                 srcDoc={gameHtml}
                 title={`Tiny Tutor Game - ${topic}`}

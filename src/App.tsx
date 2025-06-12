@@ -6,8 +6,8 @@ import {
 import './App.css';
 import './index.css';
 import ProfilePageComponent from './ProfilePage';
-import StoryModeComponent from './StoryMode'; // Import the new component
-import GameModeComponent from './GameMode'; // Import the new component
+import StoryModeComponent from './StoryMode';
+import GameModeComponent from './GameMode';
 
 // --- Types ---
 interface CurrentUser { username: string; email: string; id: string; }
@@ -32,7 +32,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // --- UPDATED: State for Mode Selection ---
   const [startMode, setStartMode] = useState<'explore_mode' | 'story_mode' | 'game_mode'>('explore_mode');
   const [activeGameMode, setActiveGameMode] = useState<'explore_mode' | 'story_mode' | 'game_mode' | null>(null);
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
@@ -95,8 +94,8 @@ function App() {
       setIsReviewingStreakWord(false);
       setIsQuizVisible(false);
       setIsInitialView(true);
-      setActiveGameMode(null); // Reset game mode
-      setActiveTopic(null); // Reset topic
+      setActiveGameMode(null);
+      setActiveTopic(null);
     };
 
     if (liveStreak && liveStreak.score >= 2 && activeGameMode === 'explore_mode') {
@@ -120,22 +119,21 @@ function App() {
       setActiveGameMode('story_mode');
       setActiveTopic(inputValue);
       setInputValue('');
-      } else if (startMode === 'game_mode') {
-        setIsInitialView(false);
-        setActiveGameMode('game_mode');
-        setActiveTopic(inputValue);
-        setInputValue('');
+    } else if (startMode === 'game_mode') {
+      setIsInitialView(false);
+      setActiveGameMode('game_mode');
+      setActiveTopic(inputValue);
+      setInputValue('');
     }
   };
 
   useEffect(() => { const handleBeforeUnload = (e: BeforeUnloadEvent) => { if (liveStreak && liveStreak.score >= 2 && authToken) {e.preventDefault(); e.returnValue = "Your live streak will end if the page is refreshed."; const data = JSON.stringify({ words: liveStreak.words, score: liveStreak.score }); const blob = new Blob([data], { type: 'application/json; charset=UTF-8' }); navigator.sendBeacon(`${API_BASE_URL}/save_streak`, blob); } }; window.addEventListener('beforeunload', handleBeforeUnload); return () => { window.removeEventListener('beforeunload', handleBeforeUnload); }; }, [liveStreak, authToken, saveStreakToServer]);
 
-  // --- RENDER FUNCTIONS ---
-  
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
   const renderExploreModeContent = () => { const wordToUse = getDisplayWord(); if (isInitialView) { return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16 animate-fadeIn"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>Enter a Concept or a Word you want to learn about</span></div>); } if (isLoading && !generatedContent[sanitizeWordForId(wordToUse!)]) { return <div className="text-center p-10 text-slate-400">Generating...</div>; } if (error) return <div className="text-center p-10 text-red-400">Error: {error}</div>; if (!wordToUse) return null; const wordId = sanitizeWordForId(wordToUse); const contentItem = generatedContent[wordId]; if (!contentItem?.explanation) return null; const currentIsFavorite = contentItem?.is_favorite || false; const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-[--accent-primary] hover:text-[--accent-secondary] underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; return ( <div className="bg-transparent p-1 animate-fadeIn"> <div className="flex justify-between items-start mb-4"> <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2> <div className="flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> <button onClick={handleRefreshContent} className="p-1.5 rounded-full text-[--text-tertiary] hover:text-[--text-primary] hover:bg-[--hover-bg-color] transition-colors" title="Regenerate Explanation"><RefreshCw size={18}/></button> </div> </div> <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg"> {renderClickableText(contentItem.explanation)} </div> </div> ); };
   const renderQuizPopup = () => { if (!isQuizVisible) return null; const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem) return null; const { quizQuestion, attempted, selectedOptionKey } = currentItem; const isLastQuestion = currentStreakQuizItemIndex >= liveStreakQuizQueue.length - 1; return ( <div className="absolute top-4 right-4 w-full max-w-md bg-[--background-secondary] rounded-lg shadow-2xl p-6 z-20 border border-[--border-color] animate-fadeIn"> <div className="flex justify-between items-center mb-4"> <h3 className="font-semibold text-lg text-[--text-primary]">Quiz Time!</h3> <button onClick={() => setIsQuizVisible(false)} className="text-[--text-tertiary] hover:text-[--text-primary]"><X size={20}/></button> </div> <p className="text-[--text-secondary] mb-1 text-sm">Question {currentStreakQuizItemIndex + 1} of {liveStreakQuizQueue.length} (for "{currentItem.word}")</p> <p className="text-[--text-primary] mb-4">{quizQuestion.question}</p> <div className="space-y-2"> {Object.entries(quizQuestion.options).map(([key, text]) => { let buttonColor = "bg-[--hover-bg-color] hover:bg-[--border-color]"; if (attempted) { if (key === quizQuestion.correctOptionKey) { buttonColor = "bg-green-800/80"; } else if (key === selectedOptionKey) { buttonColor = "bg-red-800/80"; } else { buttonColor = "bg-[--hover-bg-color] opacity-60"; } } return (<button key={key} onClick={() => handlePopupQuizAnswer(key)} disabled={attempted} className={`w-full text-left p-3 rounded-md transition-colors ${buttonColor}`}> {text} </button>); })} </div> {attempted && ( <div className="flex justify-end mt-4"> {isLastQuestion ? ( <button onClick={() => setIsQuizVisible(false)} className="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-4 rounded-md"> Finish </button> ) : ( <button onClick={() => setCurrentStreakQuizItemIndex(i => i + 1)} className="bg-[--accent-primary] text-black font-semibold py-2 px-4 rounded-md"> Next </button> )} </div> )} </div> ); };
   const renderWarningModal = () => { if (!showWarningModal) return null; return ( <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-sm"> <h3 className="font-bold text-lg text-amber-400 mb-2">End Streak?</h3> <p className="text-[--text-secondary] mb-6">Your current streak progress will be lost. Are you sure you want to continue?</p> <div className="flex justify-end gap-4"> <button onClick={() => setShowWarningModal(false)} className="py-2 px-4 rounded-md text-sm hover:bg-[--hover-bg-color]">No, continue streak</button> <button onClick={confirmWarning} className="py-2 px-4 rounded-md text-sm bg-amber-600 hover:bg-amber-500 text-white font-semibold">Yes, end streak</button> </div> </div> </div> ); };
+  
   const renderMainContent = () => {
     if (activeView === 'profile') {
       return <ProfilePageComponent currentUser={currentUser!} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onNavigateBack={() => setActiveView('main')} onToggleFavorite={handleToggleFavorite} />;
@@ -145,11 +143,12 @@ function App() {
       return <StoryModeComponent topic={activeTopic} authToken={authToken} onStoryEnd={resetChat} />;
     }
     
+    // --- FIX: Fullscreen Game Mode ---
     if (activeGameMode === 'game_mode' && activeTopic) {
-      return <GameModeComponent topic={activeTopic} authToken={authToken} onGameEnd={resetChat} />;
-    } 
+        return <div className="h-[calc(100vh-80px)] w-full"><GameModeComponent topic={activeTopic} authToken={authToken} onGameEnd={resetChat} /></div>;
+    }
+    // --- END FIX ---
 
-    // Default to explore mode content
     return (
       <div className="space-y-6">
         {liveStreak && liveStreak.score > 0 && (
@@ -233,8 +232,9 @@ function App() {
                 </div>
                 {renderQuizPopup()}
             </main>
-
-            {activeView === 'main' && (
+            
+            {/* --- FIX: Hide input form when a game or story is active --- */}
+            {activeView === 'main' && activeGameMode === null && (
               <div className={`absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[--background-default] to-transparent`}>
                 <div className="max-w-4xl mx-auto">
                   <form
@@ -303,6 +303,8 @@ function App() {
                 </div>
               </div>
             )}
+            {/* --- END FIX --- */}
+
           </div>
         </div>
 

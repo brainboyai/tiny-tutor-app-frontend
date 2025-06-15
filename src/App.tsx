@@ -235,6 +235,9 @@ function App() {
                 <option value="en">English</option>
                 <option value="es">Español</option>
                 <option value="fr">Français</option>
+                <option value="zh">中文</option>
+                <option value="hi">हिन्दी</option>
+                <option value="te">తెలుగు</option>
                 {/* Add other languages as needed */}
               </select>
             </div>

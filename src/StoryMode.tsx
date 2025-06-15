@@ -29,11 +29,12 @@ interface StoryModeProps {
   topic: string;
   authToken: string | null;
   onStoryEnd: () => void;
+  language: string; 
 }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd }) => {
+const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language }) => {
      console.log("--- STORYMODE COMPONENT RENDERED - V2 ---");
   const [currentNode, setCurrentNode] = useState<StoryNode | null>(null);
   const [history, setHistory] = useState<StoryHistoryItem[]>([]);
@@ -67,6 +68,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
           topic: topic,
           history: newHistory,
           leads_to: selectedOption ? selectedOption.leads_to : null,
+          language: language,
         }),
       });
 
@@ -103,7 +105,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     } finally {
       setIsLoading(false);
     }
-  }, [topic, authToken, history]);
+  }, [topic, authToken, history,language]);
 
   useEffect(() => {
     if (history.length === 0 && authToken) {

@@ -1,11 +1,13 @@
 {\rtf1\ansi\ansicpg1252\cocoartf2820
-\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\froman\fcharset0 Times-Roman;\f2\froman\fcharset0 Times-Bold;
-\f3\froman\fcharset0 Times-Italic;\f4\fnil\fcharset0 Menlo-Regular;}
-{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red194\green126\blue101;\red24\green24\blue24;
-\red70\green137\blue204;\red140\green211\blue254;\red193\green193\blue193;\red202\green202\blue202;}
-{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\cssrgb\c80784\c56863\c47059;\cssrgb\c12157\c12157\c12157;
-\cssrgb\c33725\c61176\c83922;\cssrgb\c61176\c86275\c99608;\cssrgb\c80000\c80000\c80000;\cssrgb\c83137\c83137\c83137;}
-\paperw11900\paperh16840\margl1440\margr1440\vieww11900\viewh8400\viewkind0
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\froman\fcharset0 Times-Roman;\f2\fnil\fcharset0 Menlo-Regular;
+\f3\froman\fcharset0 Times-Bold;\f4\froman\fcharset0 Times-Italic;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red0\green0\blue0;\red255\green255\blue255;
+\red194\green126\blue101;\red24\green24\blue24;\red70\green137\blue204;\red140\green211\blue254;\red193\green193\blue193;
+\red202\green202\blue202;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\csgray\c0;\csgray\c100000;
+\cssrgb\c80784\c56863\c47059;\cssrgb\c12157\c12157\c12157;\cssrgb\c33725\c61176\c83922;\cssrgb\c61176\c86275\c99608;\cssrgb\c80000\c80000\c80000;
+\cssrgb\c83137\c83137\c83137;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11700\viewh8400\viewkind0
 \pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
 
 \f0\fs24 \cf0 Modifications of 1st stable to 2nd build \'97\'97 app.tsx, profile page.tsx(added and split from first stable) and app.py\
@@ -16,17 +18,19 @@ Stable 6 - new contextual quiz, cache front end, all stable.\
 Stable 7- new ui, all adapted.. interactive mode pending.\
 Stable 8 -refactored. Explore, story, game\
 Modification stable 2-3 : changes in app.tsx and app.py (additional context functionality in streak)\
+Stable 9 \'97 refactored backend.. 1 mode game, tap on correct pattern game.\
+Stable 10\'97 all working, image retrieval based on ai generated names.\
 \
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
-\cf0 cd desktop\
+cd desktop\
 cd tiny-tutor-frontend-local\
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
-\cf0 git add .\
-git commit -m 
-\f1 \expnd0\expndtw0\kerning0
-\outl0\strokewidth0 \strokec2 "\outl0\strokewidth0 feat: Implement StoryMode\outl0\strokewidth0 \strokec2 "
+git add .\
+\pard\pardeftab720\partightenfactor0
+
+\f1 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 git commit -m "feat: Implement multilingual support for Explore and Story modes"
 \f0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
-git push origin main\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 git push origin main\
 \
 \
 cd desktop\
@@ -57,56 +61,68 @@ cd tiny-tutor-backend-local\
 git add app.py\
 git commit -m 
 \f1 \expnd0\expndtw0\kerning0
-"\outl0\strokewidth0 \strokec2 feat: Update GameMode  in app.py\outl0\strokewidth0 "
-\f0 \kerning1\expnd0\expndtw0 \
-git push origin main\
-\
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
-\cf0 cd desktop\
-cd tiny-tutor-backend-local\
-git add .\
-git commit -m 
-\f1 \expnd0\expndtw0\kerning0
 "feat: Update GameMode  in app.py"
 \f0 \kerning1\expnd0\expndtw0 \
 git push origin main\
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
-\cf0 \
 \
+cd desktop\
+cd tiny-tutor-backend-local\
+git add .\
+\pard\pardeftab720\partightenfactor0
+
+\f1 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 git commit -m "feat: Add language support to explanation and story generation APIs"
+\f0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 git push origin main\
+\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f2\fs22 \cf3 \CocoaLigature0 cd desktop\
+cd \cf4 \cb3 tiny-tutor-game-objects-local\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 \cb1 \CocoaLigature1 git add .\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f2\fs22 \cf3 \CocoaLigature0 git commit -m "commit"\cf4 \cb3 \
+\cf3 \cb1 git push -u origin main\
+\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 \CocoaLigature1 \
 \pard\pardeftab720\partightenfactor0
 
 \f1 \cf0 \expnd0\expndtw0\kerning0
 A 
-\f2\b Global Knowledge Graph
+\f3\b Global Knowledge Graph
 \f1\b0  (Idea 2) is a powerful, more advanced feature for showing the bigger picture of how all learned concepts connect.\
 \
 \pard\pardeftab720\partightenfactor0
 
-\f2\b \cf0 "Concept Connections" (Button next to current explanation):
+\f3\b \cf0 "Concept Connections" (Button next to current explanation):
 \f1\b0  When viewing an explanation for "Word X", this button shows a simple map of Word X with its 1-3 AI-highlighted sub-topics from 
-\f3\i that specific explanation
+\f4\i that specific explanation
 \f1\i0 . This map would be dynamic, changing with each new word explained.\
 \
 Prompt - I am attaching a detailed project report of the app we have been building together. It also has frontend and backend folders. right now I am attaching frontend git repository along with it. I am also giving the folder structure on git hub and my local computer. I also included main files in backend. remember this.\'a0I. You are an expert in building this app. I will run every update for you and give you feedback and then you should take steps to make it better or correct or modify based on the feedback. Do not go out of context and help me build this for us.\
 \
 Prompt - now write me a a-z project report about this app in terms of features, user flows, structure, folder structure, files, so that I can use this report as a complete project context handoff/ transfer to give you the complete context\
 \
-Prompt - \outl0\strokewidth0 \strokec2 Think correctly. do not loose any of the existing functionality and logic. what ever you want build on top of it\outl0\strokewidth0 \
+Prompt - Think correctly. do not loose any of the existing functionality and logic. what ever you want build on top of it\
+\
+I want you to think like a professional learning based game designer. i am giving you the deailed project report. Go through it, understand it thoroughly and come up with a detailed strategy for features and their implementation for the unique and complete gamification of this app, to become one of the top addictive entertaining learning app.\
 \
 \pard\pardeftab720\partightenfactor0
-\cf0 \outl0\strokewidth0 \strokec2 I want you to think like a professional learning based game designer. i am giving you the deailed project report. Go through it, understand it thoroughly and come up with a detailed strategy for features and their implementation for the unique and complete gamification of this app, to become one of the top addictive entertaining learning app.\outl0\strokewidth0 \
-\pard\pardeftab720\partightenfactor0
-\cf0 \outl0\strokewidth0 \strokec2 \
-\pard\pardeftab720\partightenfactor0
 
-\f4 \cf3 \cb4 \outl0\strokewidth0 \
-"Explain the concept of '\cf5 \{\cf6 concept\cf5 \}\cf3 ' in 2 concise sentences with words or sub-topics that could extend the learning. If relevant, identify up to 2 key words or sub-topics within your explanation that deepen the understanding and wrap them in <click>tags</click> like this: <click>sub-topic</click>."\cf7 \cb1 \
+\f2 \cf5 \cb6 \
+"Explain the concept of '\cf7 \{\cf8 concept\cf7 \}\cf5 ' in 2 concise sentences with words or sub-topics that could extend the learning. If relevant, identify up to 2 key words or sub-topics within your explanation that deepen the understanding and wrap them in <click>tags</click> like this: <click>sub-topic</click>."\cf9 \cb1 \
 \pard\pardeftab720\partightenfactor0
 
 \f1 \cf0 \
 \pard\pardeftab720\partightenfactor0
 
-\f4 \cf3 \cb4 "\cf6 \cb4 prompt\cf7 \cb4  \cf8 =\cf7  \cf5 \cb4 f\cf3 "Explain the concept of '\cf5 \{\cf6 word\cf5 \}\cf3 ' in 2 simple sentences with words or sub-topics that could extend the learning. If relevant, identify up to 2 key words or sub-topics within your explanation that can progress the concept along the learning curve to deepen the understanding and wrap them in <click>tags</click> like this: <click>sub-topic</click>."
+\f2 \cf5 \cb6 "\cf8 prompt\cf9  \cf10 =\cf9  \cf7 f\cf5 "Explain the concept of '\cf7 \{\cf8 word\cf7 \}\cf5 ' in 2 simple sentences with words or sub-topics that could extend the learning. If relevant, identify up to 2 key words or sub-topics within your explanation that can progress the concept along the learning curve to deepen the understanding and wrap them in <click>tags</click> like this: <click>sub-topic</click>."
 \f1 \cf0 \cb1 \
 \
 git add requirements.txt\
@@ -116,25 +132,22 @@ git push origin main\
 Prompt - the user should have a soothing experience when he is using the app. his eyes should not be strained. the UI has to be addictive. also I this the User Profile Modal is not properly fitting the contents and not giving a desired UI experience to me. do you think the profile section should be a modal or a page like main page the the user can wish to view at any time. I want to make this into a gamified learning experience to user. Think like an expert designer and suggest\
 \
 Prompt- ok it logged in.word generation is working . but the features i gave you with are missing like 1.profile page missing with clickable words under(words explored, favourites and streak history) 2.there are no clickable words in the explaination to click through. the toggle button for favouriting a word is missing.... I am giving the images of previous functionality. correct it perfectly this time without glitches
-\f4 \cf7 \
+\f2 \cf9 \
 \
-\pard\pardeftab720\partightenfactor0
-\cf3 \cb4 Prompt - 
+\cf5 \cb6 Prompt - 
 \f1 \cf0 \cb1 I want to make the profile modal into a page just like the main app, which the user can click and toggle to. The modal is unable to fit all the details completely. Think correctly. do not loose any of the existing functionality and logic. what ever you want build on top of it. i also gave the screenshoots of my firestone dashboard\
 \
-\pard\pardeftab720\partightenfactor0
-\cf0 \outl0\strokewidth0 \strokec2 task - i want to modify the prompt sent to gemini in the backend app.py, to give a desired result. i want to generate an explaination in simple 2 sentences for a word, with clickable subtopics that the user can explore furthe. The prompt should be intelligent enough and well structured that it should select the clickable subtopics from the root word's explaination so that the user is taken into most important concepts, topics that are anyway related to the root word's domain of learning. Plus when the user clicks the subtopic, it should give a simple 2 sentence explaination of the subtopic with clickable words, but in the context of the root word or root word's explaination.\
+task - i want to modify the prompt sent to gemini in the backend app.py, to give a desired result. i want to generate an explaination in simple 2 sentences for a word, with clickable subtopics that the user can explore furthe. The prompt should be intelligent enough and well structured that it should select the clickable subtopics from the root word's explaination so that the user is taken into most important concepts, topics that are anyway related to the root word's domain of learning. Plus when the user clicks the subtopic, it should give a simple 2 sentence explaination of the subtopic with clickable words, but in the context of the root word or root word's explaination.\
 \
 Prompt - give me a explaination in simple 2 sentences for a photosynthesis, with 2 to 3 subtopics from within the photosynthesis explaination ,that the user can select. the subtoics are topics that are anyway related to the photosynthesis domain of learning. The subtopics need to take the user down the rabbit hole of learning everything related to photosynthesis.\
 \
 Prompt - ok now i want to get deeper and more intelligent with story mode. look at my prompt and the output for it and then plan. Here i have a corresponding image prompt with each dialogue, that will be sent to respective image generating api(future.. for now just display the prompt along with dialogue for testing). Now modify the existing prompts in app.py in such a way that the intelligence, depth, rules and conditions are retained by looking at the the following prompt and output. Simply put this output has (narrative dialogues with explainations, questioning and testing user, feed back, it also has tap on the right image in some places where 2 image prompts come.) also the image or images(for now prompts) have to load on clickable boxes/sections, so user has option to choose the correct image, where required...\
 \pard\pardeftab720\sa240\partightenfactor0
-\cf0 \strokec2 \
+\cf0 \
 \pard\pardeftab720\partightenfactor0
-\cf0 \strokec2 Prompt - I want these modified such that - 1. there should more intelligence in the context between the primary word and subtopic. 2. there should more intelligence in the contexts between every subtopic 3. the user dives down a rabithole from the primary word down the subtopics in the streak, so make the prompts more intelligent and aware, they have to think like a human, how a human explores anything in real life, for example" we first learn one concept and then learn all the things associated with the primary thing, we become more intelligent as we explore the different aspects of the primary concept and the sub topic and sub\'a0 topic with in subtopic. 4. we are passing the information of all the words the user explored in a streak for the generation of contextually aware explainations for the current word in the streak.5. do not disturb the existing rules and functionality and rules of current prompts. You need to make the prompts aware that they are doing a teacher's job of taking the student down a rabbithole and thereby giving knowledge and IQ. I m also giving the backend file(app.py for logic reference, if you might have anything to say.\
+\cf0 Prompt - I want these modified such that - 1. there should more intelligence in the context between the primary word and subtopic. 2. there should more intelligence in the contexts between every subtopic 3. the user dives down a rabithole from the primary word down the subtopics in the streak, so make the prompts more intelligent and aware, they have to think like a human, how a human explores anything in real life, for example" we first learn one concept and then learn all the things associated with the primary thing, we become more intelligent as we explore the different aspects of the primary concept and the sub topic and sub\'a0 topic with in subtopic. 4. we are passing the information of all the words the user explored in a streak for the generation of contextually aware explainations for the current word in the streak.5. do not disturb the existing rules and functionality and rules of current prompts. You need to make the prompts aware that they are doing a teacher's job of taking the student down a rabbithole and thereby giving knowledge and IQ. I m also giving the backend file(app.py for logic reference, if you might have anything to say.\
 \
-\pard\pardeftab720\partightenfactor0
-\cf0 \strokec2 Prompt - Now i have word game functionality running. I want to expand upon the story mode feature. Story mode feature will be taking a word, topic or a concept and make an narrative based conversation with user interaction through buttons as they parse through the narration. I have already engineered a Prompt for generating the desired output of narrative dialogues with numbers and their corresponding interactive options(buttons). Also each dialogue also has the information about it connection to other dialogues and the respective option of user navigation...But out put is to large for a normal gemini api to handle. so can we engineer a way to reduce the stress on the total output tokens in one go and make it gradual outputs with blocks of dialogues generated one by one based on user se;ected option and path. \
+Prompt - Now i have word game functionality running. I want to expand upon the story mode feature. Story mode feature will be taking a word, topic or a concept and make an narrative based conversation with user interaction through buttons as they parse through the narration. I have already engineered a Prompt for generating the desired output of narrative dialogues with numbers and their corresponding interactive options(buttons). Also each dialogue also has the information about it connection to other dialogues and the respective option of user navigation...But out put is to large for a normal gemini api to handle. so can we engineer a way to reduce the stress on the total output tokens in one go and make it gradual outputs with blocks of dialogues generated one by one based on user se;ected option and path. \
 \
 Prompt - i want to increase the intelligence and human teacher like natural conversational language in the prompt of generatestorymode, by making both the base and history prompts. I has to explain any topic or concept to any beginner. give more examples in the prompt for it to understand. But the connection between the dialogues needs to be flawless. Suppose you ask a question in a dialogue expecting the user to answer based on prior dialogues in the history or commonsense. one button or user option will be leading to a correct answer, 1 or 2 options lead to wrong answer. when the next dialogue comes, the ai has to say either(correct answer or thats not right, etc expressions) kind of feed bak to user in the dialogue, before explaining the right answer and why. we can also ask user to select between images... minimum 2, max 3 to 4 but in an example like select the transparent objects out of this "apple", "beaker", "rock", "tree", "fish bowl", etc. some time we question the user through the options and sometimes through interactive images(for now just place holder prompts) giving out respective feedback as discussed above. do not merge explaination and question in the same dialogue, explain either feed back or concept the take a "continue" transition button into a question (button or image) we present the user. think of more generic examples to put in the prompt. also this should cater to dumb and intelligent people equally, and a wide array of topics.\
 \

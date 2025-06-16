@@ -91,8 +91,13 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       // --- END NEW LOGGING ---
       
       const updatedHistory: StoryHistoryItem[] = [...newHistory];
-      if (data.dialogue) {
+      if (data.dialogue && data.dialogue.trim().length > 2) {
         updatedHistory.push({ type: 'AI', text: data.dialogue });
+      } else {
+        // If the dialogue is blank, we should not proceed with this turn.
+        // We throw an error to be caught below, preventing a state update with bad data.
+        console.error("Received blank or invalid dialogue from AI:", data.dialogue);
+        throw new Error("The AI narrator is currently unavailable. Please try again.");
       }
 
       setHistory(updatedHistory);

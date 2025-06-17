@@ -84,7 +84,6 @@ function App() {
         setIsInitialView(false);
         setActiveGameMode('explore_mode');
         setActiveTopic(wordToFetch);
-        // MODIFIED: Streak now starts for guests too
         setLiveStreak({ score: 1, words: [wordToFetch] });
         setCurrentFocusWord(wordToFetch);
         setIsReviewingStreakWord(false);
@@ -103,12 +102,11 @@ function App() {
     }
     const isActuallyContextualExplain = streakContextForAPI.length > 0;
     
-    // Client-side cache check remains for logged-in users only
     if (!isUserRefreshClick && authToken && generatedContent[wordId]?.explanation && !isActuallyContextualExplain) {
         if(isNewPrimaryWordSearch && (!liveStreak || !liveStreak.words.includes(wordToFetch))) {
             setLiveStreak({ score: 1, words: [wordToFetch] });
         } else if (isSubTopicClick && liveStreak) {
-            setLiveStreak(prev => ({ score: prev.score + 1, words: [...prev.words, wordToFetch] }));
+            setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] });
         }
         setIsLoading(false);
         return;
@@ -143,7 +141,6 @@ function App() {
 
         const apiData = await response.json();
         const explanationJustFetched = apiData.explain;
-
         const isNewWordBeingAddedToStreak = isNewPrimaryWordSearch || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch)));
 
         if (isNewWordBeingAddedToStreak && !isNewPrimaryWordSearch) {
@@ -160,13 +157,20 @@ function App() {
             const newWordEntry: ExploredWordEntry = { word: wordToFetch, last_explored_at: new Date().toISOString(), is_favorite: apiData.is_favorite, first_explored_at: new Date().toISOString() };
             const wordExists = userProfileData.exploredWords.some(w => w.word === wordToFetch);
             if (!wordExists) {
-                setUserProfileData(prev => ({ ...prev!, exploredWords: [newWordEntry, ...prev!.exploredWords], totalWordsExplored: prev!.totalWordsExplored + 1, }));
+                // FIXED: Added a null check for 'prev'
+                setUserProfileData(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        exploredWords: [newWordEntry, ...prev.exploredWords],
+                        totalWordsExplored: prev.totalWordsExplored + 1,
+                    };
+                });
             }
         }
         
         if (explanationJustFetched && isNewWordBeingAddedToStreak) {
             if (authToken) {
-                // Logged-in users get a real quiz
                 try {
                     const quizResp = await fetch(`${API_BASE_URL}/generate_explanation`, {
                         method: 'POST',
@@ -182,7 +186,6 @@ function App() {
                     }
                 } catch (qErr) { console.error("Error fetching streak quiz item:", qErr); }
             } else {
-                // Guests get a "locked" placeholder quiz item
                 const placeholderQuiz: StreakQuizItem = {
                     word: wordToFetch,
                     originalExplanation: explanationJustFetched,
@@ -199,13 +202,36 @@ function App() {
         setIsLoading(false);
         if (isNewPrimaryWordSearch) setInputValue('');
     }
-  }, [authToken, generatedContent, liveStreak, userProfileData, language]);
+}, [authToken, generatedContent, liveStreak, userProfileData, language]);
 
   const handleStreakWordClick = useCallback((clickedWord: string) => { setIsQuizVisible(false); setCurrentFocusWord(clickedWord); setIsReviewingStreakWord(true); setWordForReview(clickedWord); }, []);
   const handleSubTopicClick = useCallback((subTopic: string) => { setIsQuizVisible(false); if (liveStreak && liveStreak.words.includes(subTopic)) { handleStreakWordClick(subTopic); } else { handleGenerateExplanation(subTopic, false, false, true); } }, [liveStreak, handleGenerateExplanation, handleStreakWordClick]);
   const handleRefreshContent = useCallback(() => { const wordToUse = getDisplayWord(); if (!wordToUse) return; handleGenerateExplanation(wordToUse, false, true);}, [getDisplayWord, handleGenerateExplanation]);
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => { if (!authToken || !userProfileData) return; const wordId = sanitizeWordForId(word); setGeneratedContent(prev => ({...prev, [wordId]: { ...(prev[wordId] || {}), is_favorite: !currentStatus }})); setUserProfileData(prev => { if (!prev) return null; const updatedExplored = prev.exploredWords.map(w => w.word === word ? { ...w, is_favorite: !currentStatus } : w); const wordEntry = updatedExplored.find(w => w.word === word); let updatedFavorites = prev.favoriteWords.filter(fw => fw.word !== word); if (!currentStatus && wordEntry) { updatedFavorites = [wordEntry, ...updatedFavorites]; } return { ...prev, exploredWords: updatedExplored, favoriteWords: updatedFavorites, }; }); try { await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word }) }); } catch (err: any) { console.error("Error toggling favorite:", err); if (authToken) await fetchUserProfile(authToken); } }, [authToken, userProfileData, fetchUserProfile]);
-  const handleWordSelectionFromProfile = useCallback((word: string) => { const action = async () => { if (liveStreak && authToken) { const newHistory = await saveStreakToServer(liveStreak, authToken); if (newHistory && userProfileData) { setUserProfileData(prev => ({...prev!, streakHistory: newHistory})); } } setActiveView('main'); handleGenerateExplanation(word, true); }; if (liveStreak && liveStreak.score >= 2) { setWarningAction({ action }); setShowWarningModal(true); } else { action(); } }, [liveStreak, handleGenerateExplanation, saveStreakToServer, authToken, userProfileData]);
+  const handleWordSelectionFromProfile = useCallback((word: string) => {
+    const action = async () => {
+      if (liveStreak && authToken) {
+        const newHistory = await saveStreakToServer(liveStreak, authToken);
+        if (newHistory && userProfileData) {
+          // FIXED: Added a null check for 'prev'
+          setUserProfileData(prev => {
+            if (!prev) return null;
+            return { ...prev, streakHistory: newHistory };
+          });
+        }
+      }
+      setActiveView('main');
+      handleGenerateExplanation(word, true);
+    };
+
+    if (liveStreak && liveStreak.score >= 2) {
+      setWarningAction({ action });
+      setShowWarningModal(true);
+    } else {
+      action();
+    }
+}, [liveStreak, authToken, userProfileData, saveStreakToServer, handleGenerateExplanation]);
+
   const handlePopupQuizAnswer = (optionKey: string) => { const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem || currentItem.attempted) return; const isCorrect = currentItem.quizQuestion.correctOptionKey === optionKey; handleSaveQuizAttempt(currentItem.word, isCorrect); setLiveStreakQuizQueue(prev => prev.map((item, index) => index === currentStreakQuizItemIndex ? { ...item, attempted: true, selectedOptionKey: optionKey, isCorrect } : item )); };
   
    useEffect(() => {

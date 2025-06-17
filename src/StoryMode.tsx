@@ -72,8 +72,14 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
         }),
       });
 
+      // MODIFIED: Robust error handling
       if (!response.ok) {
-        const errData = await response.json();
+        if (response.status === 429) {
+            // Use the specific rate-limit message for logged-in users
+            throw new Error("Free daily limit reached. Please upgrade to Pro or provide your own API key in Settings for unlimited generations.");
+        }
+        // Handle other errors that might not be JSON
+        const errData = await response.json().catch(() => ({ error: "An unexpected server error occurred." }));
         throw new Error(errData.error || `Request failed with status ${response.status}`);
       }
 

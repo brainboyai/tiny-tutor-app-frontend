@@ -71,7 +71,131 @@ function App() {
   useEffect(() => { const storedToken = localStorage.getItem('authToken'); if (storedToken) { if (!authToken) setAuthToken(storedToken); if (!currentUser && !isFetchingProfile && !profileFetchFailed) { fetchUserProfile(storedToken); } } else { setCurrentUser(null); setUserProfileData(null); setAuthToken(null); }}, [authToken, currentUser, isFetchingProfile, fetchUserProfile, profileFetchFailed]);
   const handleAuthAction = async (e: FormEvent) => { e.preventDefault(); setAuthError(null); setAuthSuccessMessage(null); setIsLoading(true); const url = authMode === 'signup' ? `${API_BASE_URL}/signup` : `${API_BASE_URL}/login`; let payload = {}; if (authMode === 'signup') { payload = { username: authUsername, email: authEmail, password: authPassword }; } else { payload = { email_or_username: authUsername, password: authPassword };} try { const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json(); if (!response.ok) { throw new Error(data.error || 'Request failed');} if (authMode === 'signup') { setAuthSuccessMessage('Signup successful! Please login.'); setAuthMode('login'); setAuthEmail(''); setAuthPassword(''); } else { localStorage.setItem('authToken', data.access_token); setAuthToken(data.access_token); setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id }); setShowAuthModal(false); setAuthSuccessMessage('Login successful!'); await fetchUserProfile(data.access_token); setAuthEmail(''); setAuthPassword(''); setAuthUsername(''); } } catch (err) { if (err instanceof Error) setAuthError(err.message); } finally { setIsLoading(false); if (authMode === 'signup') setAuthPassword(''); }};
   const handleSaveQuizAttempt = useCallback(async (word: string, isCorrect: boolean) => { if (!authToken) return; try { await fetch(`${API_BASE_URL}/save_quiz_attempt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word, is_correct: isCorrect, question_index: 0, selected_option_key: '' }), }); if (authToken) await fetchUserProfile(authToken); } catch (err: any) { console.error("Error saving quiz attempt stats:", err); }}, [authToken, fetchUserProfile]);
-  const handleGenerateExplanation = useCallback(async (wordToFetch: string, isNewPrimaryWordSearch: boolean = false, isUserRefreshClick: boolean = false, isSubTopicClick: boolean = false) => { if (!wordToFetch.trim()) return; if (!authToken) { setShowAuthModal(true); setAuthError("Please login to generate content."); return; } const wordId = sanitizeWordForId(wordToFetch); setError(null); if (isNewPrimaryWordSearch) { setIsInitialView(false); setActiveGameMode('explore_mode'); setActiveTopic(wordToFetch); setLiveStreak(null); setCurrentFocusWord(wordToFetch); setIsReviewingStreakWord(false); setLiveStreakQuizQueue([]); setCurrentStreakQuizItemIndex(0); setIsQuizVisible(false); } else if (isSubTopicClick) { setCurrentFocusWord(wordToFetch); setIsReviewingStreakWord(false); } setIsLoading(true); let streakContextForAPI: string[] = []; if (isSubTopicClick && liveStreak) { streakContextForAPI = [...liveStreak.words]; } const isActuallyContextualExplain = streakContextForAPI.length > 0; if (!isUserRefreshClick && generatedContent[wordId]?.explanation && !isActuallyContextualExplain) { if(isNewPrimaryWordSearch && (!liveStreak || !liveStreak.words.includes(wordToFetch))) { setLiveStreak({ score: 1, words: [wordToFetch] }); } setIsLoading(false); return; } try { const requestBody = { word: wordToFetch, mode: 'explain', refresh_cache: isUserRefreshClick || isActuallyContextualExplain, streakContext: streakContextForAPI, language: language }; const response = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}`}, body: JSON.stringify(requestBody) }); if (!response.ok) throw new Error((await response.json()).error || 'Failed to generate content'); const apiData = await response.json(); const explanationJustFetched = apiData.explain; const isNewWordBeingAddedToStreak = isNewPrimaryWordSearch || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch))); if (isNewWordBeingAddedToStreak) { if (isNewPrimaryWordSearch) { setLiveStreak({ score: 1, words: [wordToFetch] }); } else if (isSubTopicClick) { setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] }); } } setGeneratedContent(prev => { const existing = prev[wordId] || {}; const newGC: GeneratedContentItem = {...existing, explanation: explanationJustFetched, is_favorite: apiData.is_favorite, first_explored_at: (prev[wordId]?.first_explored_at || new Date().toISOString()), last_explored_at: new Date().toISOString() }; return {...prev, [wordId]: newGC }; }); if ((isNewPrimaryWordSearch || isSubTopicClick) && userProfileData) { const newWordEntry: ExploredWordEntry = { word: wordToFetch, last_explored_at: new Date().toISOString(), is_favorite: apiData.is_favorite, first_explored_at: new Date().toISOString() }; const wordExists = userProfileData.exploredWords.some(w => w.word === wordToFetch); if (!wordExists) { setUserProfileData(prev => ({ ...prev!, exploredWords: [newWordEntry, ...prev!.exploredWords], totalWordsExplored: prev!.totalWordsExplored + 1, })); } } if (explanationJustFetched && authToken && isNewWordBeingAddedToStreak) { try { const quizResp = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word: wordToFetch, mode: 'quiz', explanation_text: explanationJustFetched, language: language, }) }); if (quizResp.ok) { const streakQuizData = await quizResp.json(); const parsedQs = parseQuizStringToArray(streakQuizData.quiz); if (parsedQs.length > 0) { setLiveStreakQuizQueue(prevQ => [...prevQ, { word: wordToFetch, originalExplanation: explanationJustFetched, quizQuestion: parsedQs[0], attempted: false }]); } } } catch (qErr) { console.error("Error fetching streak quiz item:", qErr); } } } catch (err) { if(err instanceof Error) setError(err.message); } finally { setIsLoading(false); if (isNewPrimaryWordSearch) setInputValue(''); } }, [authToken, generatedContent, liveStreak, userProfileData, language]);
+  // In App.tsx, replace the existing function with this one:
+
+const handleGenerateExplanation = useCallback(async (wordToFetch: string, isNewPrimaryWordSearch: boolean = false, isUserRefreshClick: boolean = false, isSubTopicClick: boolean = false) => {
+    if (!wordToFetch.trim()) return;
+
+    // REMOVED: The check that required an authToken, so guests can proceed.
+    // if (!authToken) { ... }
+
+    const wordId = sanitizeWordForId(wordToFetch);
+    setError(null);
+
+    if (isNewPrimaryWordSearch) {
+        setIsInitialView(false);
+        setActiveGameMode('explore_mode');
+        setActiveTopic(wordToFetch);
+        setLiveStreak(null);
+        setCurrentFocusWord(wordToFetch);
+        setIsReviewingStreakWord(false);
+        setLiveStreakQuizQueue([]);
+        setCurrentStreakQuizItemIndex(0);
+        setIsQuizVisible(false);
+    } else if (isSubTopicClick) {
+        setCurrentFocusWord(wordToFetch);
+        setIsReviewingStreakWord(false);
+    }
+    setIsLoading(true);
+
+    let streakContextForAPI: string[] = [];
+    if (isSubTopicClick && liveStreak) {
+        streakContextForAPI = [...liveStreak.words];
+    }
+    const isActuallyContextualExplain = streakContextForAPI.length > 0;
+
+    // This client-side cache check is now only for logged-in users to avoid conflicts.
+    if (!isUserRefreshClick && authToken && generatedContent[wordId]?.explanation && !isActuallyContextualExplain) {
+        if(isNewPrimaryWordSearch && (!liveStreak || !liveStreak.words.includes(wordToFetch))) {
+            setLiveStreak({ score: 1, words: [wordToFetch] });
+        }
+        setIsLoading(false);
+        return;
+    }
+
+    try {
+        // NEW: Conditionally set headers based on whether the user is a guest or logged in.
+        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        const requestBody = {
+            word: wordToFetch,
+            mode: 'explain',
+            refresh_cache: isUserRefreshClick || isActuallyContextualExplain,
+            streakContext: streakContextForAPI,
+            language: language
+        };
+
+        const response = await fetch(`${API_BASE_URL}/generate_explanation`, {
+            method: 'POST',
+            headers: headers, // Use the new conditional headers
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            // Handle rate-limit error for guests
+            if (response.status === 429) {
+                 throw new Error("You've reached your daily limit for free tries. Please sign in to continue.");
+            }
+            throw new Error((await response.json()).error || 'Failed to generate content');
+        }
+
+        const apiData = await response.json();
+        const explanationJustFetched = apiData.explain;
+
+        // Streaks and quizzes are still for logged-in users only.
+        const isNewWordBeingAddedToStreak = authToken && (isNewPrimaryWordSearch || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch))));
+
+        if (isNewWordBeingAddedToStreak) {
+            if (isNewPrimaryWordSearch) {
+                setLiveStreak({ score: 1, words: [wordToFetch] });
+            } else if (isSubTopicClick) {
+                setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] });
+            }
+        }
+
+        setGeneratedContent(prev => {
+            const existing = prev[wordId] || {};
+            const newGC: GeneratedContentItem = {...existing, explanation: explanationJustFetched, is_favorite: apiData.is_favorite, first_explored_at: (prev[wordId]?.first_explored_at || new Date().toISOString()), last_explored_at: new Date().toISOString() };
+            return {...prev, [wordId]: newGC };
+        });
+
+        if (authToken && isNewPrimaryWordSearch && userProfileData) {
+            const newWordEntry: ExploredWordEntry = { word: wordToFetch, last_explored_at: new Date().toISOString(), is_favorite: apiData.is_favorite, first_explored_at: new Date().toISOString() };
+            const wordExists = userProfileData.exploredWords.some(w => w.word === wordToFetch);
+            if (!wordExists) {
+                setUserProfileData(prev => ({ ...prev!, exploredWords: [newWordEntry, ...prev!.exploredWords], totalWordsExplored: prev!.totalWordsExplored + 1, }));
+            }
+        }
+        
+        // Quiz generation logic remains gated by authToken
+        if (explanationJustFetched && authToken && isNewWordBeingAddedToStreak) {
+            try {
+                const quizResp = await fetch(`${API_BASE_URL}/generate_explanation`, {
+                    method: 'POST',
+                    headers: headers, // reuse headers
+                    body: JSON.stringify({ word: wordToFetch, mode: 'quiz', explanation_text: explanationJustFetched, language: language, })
+                });
+                if (quizResp.ok) {
+                    const streakQuizData = await quizResp.json();
+                    const parsedQs = parseQuizStringToArray(streakQuizData.quiz);
+                    if (parsedQs.length > 0) {
+                        setLiveStreakQuizQueue(prevQ => [...prevQ, { word: wordToFetch, originalExplanation: explanationJustFetched, quizQuestion: parsedQs[0], attempted: false }]);
+                    }
+                }
+            } catch (qErr) {
+                console.error("Error fetching streak quiz item:", qErr);
+            }
+        }
+    } catch (err) {
+        if(err instanceof Error) setError(err.message);
+    } finally {
+        setIsLoading(false);
+        if (isNewPrimaryWordSearch) setInputValue('');
+    }
+}, [authToken, generatedContent, liveStreak, userProfileData, language]);
   const handleStreakWordClick = useCallback((clickedWord: string) => { setIsQuizVisible(false); setCurrentFocusWord(clickedWord); setIsReviewingStreakWord(true); setWordForReview(clickedWord); }, []);
   const handleSubTopicClick = useCallback((subTopic: string) => { setIsQuizVisible(false); if (liveStreak && liveStreak.words.includes(subTopic)) { handleStreakWordClick(subTopic); } else { handleGenerateExplanation(subTopic, false, false, true); } }, [liveStreak, handleGenerateExplanation, handleStreakWordClick]);
   const handleRefreshContent = useCallback(() => { const wordToUse = getDisplayWord(); if (!wordToUse) return; handleGenerateExplanation(wordToUse, false, true);}, [getDisplayWord, handleGenerateExplanation]);

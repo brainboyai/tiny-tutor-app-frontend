@@ -17,7 +17,7 @@ interface GeneratedContent { [wordId: string]: GeneratedContentItem; }
 interface LiveStreak { score: number; words: string[]; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
 interface ExploredWordEntry { word: string; last_explored_at: string; is_favorite: boolean; first_explored_at?: string; }
-interface UserProfileData { username: string; email: string; totalWordsExplored: number; exploredWords: ExploredWordEntry[]; favoriteWords: ExploredWordEntry[]; streakHistory: StreakRecord[]; quiz_points?: number; total_quiz_questions_answered?: number; total_quiz_questions_correct?: number; }
+interface UserProfileData { username: string; email: string;  tier?: string; totalWordsExplored: number; exploredWords: ExploredWordEntry[]; favoriteWords: ExploredWordEntry[]; streakHistory: StreakRecord[]; quiz_points?: number; total_quiz_questions_answered?: number; total_quiz_questions_correct?: number; }
 interface StreakQuizItem { word: string; originalExplanation: string; quizQuestion: ParsedQuizQuestion; attempted: boolean; selectedOptionKey?: string; isCorrect?: boolean; }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';

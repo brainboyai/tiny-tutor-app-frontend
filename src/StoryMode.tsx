@@ -65,9 +65,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
 
     try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-      };
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
       if (customApiKey) {
         headers['X-User-API-Key'] = customApiKey;
       } else if (authToken) {
@@ -118,18 +116,11 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
   }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded]);
 
-  // --- *** THIS IS THE FIX *** ---
-  // The logic inside this useEffect has been corrected to prevent the deadlock.
   useEffect(() => {
-    // This effect should only run once when the component mounts for a new story.
-    // The history.length check ensures this. We removed the faulty !isLoading and !isHalted checks.
-    if (history.length === 0 && authToken) {
+    if (history.length === 0 && authToken && !isLoading && !isHalted) {
       fetchNextNode(null);
-    } else if (!authToken) {
-        // If there's no auth token on mount, stop the loader.
-        setIsLoading(false);
     }
-  }, []); // Run only once on mount. Subsequent fetches are triggered by user clicks.
+  }, [authToken, fetchNextNode, history.length, isLoading, isHalted]);
 
   const handleGameItemClick = (optionText: string) => {
     setSelectedGameAnswers(prev => {
@@ -161,9 +152,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     fetchNextNode(option);
   };
 
+  // --- MODIFIED: The render logic is now more robust ---
   const renderContent = () => {
-    // Show the loader if we are loading AND the first node hasn't been created yet.
-    if (isLoading && !currentNode) {
+    // Show the loader if we are actively loading OR if we are halted before the first node is loaded.
+    if ((isLoading || isHalted) && !currentNode) {
       return (
         <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn h-full">
           <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
@@ -182,7 +174,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       );
     }
 
-    // If not loading and no node, it means auth failed or another setup issue.
     if (!currentNode) {
         return (
              <div className="flex flex-col items-center justify-center text-center p-10 h-full">
@@ -193,6 +184,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
         )
     }
 
+    // This is the main render block for when a story node is present.
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
         {currentNode.feedback_on_previous_answer && (

@@ -9,6 +9,7 @@ import ProfilePageComponent from './ProfilePage';
 import StoryModeComponent from './StoryMode';
 import GameModeComponent from './GameMode';
 
+
 // --- Types and Helpers (No changes) ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; }

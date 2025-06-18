@@ -24,8 +24,10 @@ const sanitizeWordForId = (word: string): string => { if (typeof word !== 'strin
 const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion[] => { if (!Array.isArray(quizStringsFromBackend)) { return []; } return quizStringsFromBackend.map((quizStr: string) => { if (typeof quizStr !== 'string') { return null; } const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line); if (lines.length < 3) return null; let question = ""; const options: { [key: string]: string } = {}; let correctOptionKey = ""; let explanationForAnswer = ""; let parsingState: 'question' | 'options' | 'answer' | 'explanation' = 'question'; let questionLines: string[] = []; for (const line of lines) { const questionMatch = line.match(/^\*\*Question \d*:\*\*(.*)/i); if (questionMatch) { if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); questionLines = []; question = questionMatch[1].trim(); parsingState = 'options'; continue; } const optionMatch = line.match(/^([A-D])\)\s*(.*)/i); if (optionMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } options[optionMatch[1].toUpperCase()] = optionMatch[2].trim(); continue; } const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i); if (correctMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } correctOptionKey = correctMatch[1].toUpperCase(); parsingState = 'explanation'; explanationForAnswer = ""; continue; } const explanationKeywordMatch = line.match(/^Explanation:\s*(.*)/i); if (explanationKeywordMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } explanationForAnswer = explanationKeywordMatch[1].trim(); parsingState = 'explanation'; continue; } if (parsingState === 'question') { questionLines.push(line); } else if (parsingState === 'explanation') { explanationForAnswer += " " + line.trim(); } } if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); explanationForAnswer = explanationForAnswer.trim(); if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) { return null; } return { question, options, correctOptionKey, explanation: explanationForAnswer || undefined }; }).filter(q => q !== null) as ParsedQuizQuestion[]; };
 
 function App() {
-  // --- State Definitions (Simplified) ---
+  // --- State Definitions ---
   const [isResumingFromRateLimit, setIsResumingFromRateLimit] = useState(false);
+  
+  // (All other state definitions are unchanged)
   const [inputValue, setInputValue] = useState('');
   const [currentFocusWord, setCurrentFocusWord] = useState<string | null>(null);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent>({});
@@ -166,9 +168,6 @@ function App() {
                 }
             } catch (qErr) { console.error("Error fetching streak quiz item:", qErr); }
         }
-        if (isNewPrimaryWordSearch) {
-            setInputValue('');
-        }
     } catch (err) {
         if (err instanceof Error && err.message !== RATE_LIMIT_ERROR_MESSAGE) {
             setError(err.message);
@@ -177,6 +176,7 @@ function App() {
         }
     } finally {
         setIsLoading(false);
+        if (isNewPrimaryWordSearch) setInputValue('');
     }
   }, [authToken, customApiKey, generatedContent, liveStreak, userProfileData, language]);
   
@@ -251,6 +251,7 @@ function App() {
             localStorage.setItem('customApiKey', customApiKey);
             setApiKeyValidationStatus({ message: data.message, type: 'success' });
             
+            // Signal to child components that they can resume
             setIsResumingFromRateLimit(true);
 
             setTimeout(() => {
@@ -320,7 +321,7 @@ function App() {
         language={language} 
         onRateLimitExceeded={handleRateLimit}
         isResuming={isResumingFromRateLimit}
-        customApiKey={customApiKey}
+        customApiKey={customApiKey} // <-- ADD THIS PROP
       />;
     }
     if (activeGameMode === 'game_mode' && activeTopic) {

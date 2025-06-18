@@ -22,33 +22,29 @@ interface StoryHistoryItem {
   text: string;
 }
 
-// --- MODIFIED: Added isResuming prop ---
+// --- MODIFIED: Added customApiKey to props ---
 interface StoryModeProps {
   topic: string;
   authToken: string | null;
   onStoryEnd: () => void;
   language: string; 
   onRateLimitExceeded: () => void;
-  isResuming: boolean; // Signal from parent to release the halted state
+  isResuming: boolean;
+  customApiKey: string | null; // <-- ACCEPT THE NEW PROP
 }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language, onRateLimitExceeded, isResuming }) => {
+const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language, onRateLimitExceeded, isResuming, customApiKey }) => {
   const [currentNode, setCurrentNode] = useState<StoryNode | null>(null);
   const [history, setHistory] = useState<StoryHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGameAnswers, setSelectedGameAnswers] = useState<Set<string>>(new Set());
-  
-  // --- NEW: State to halt UI on rate limit ---
   const [isHalted, setIsHalted] = useState(false);
-  
   const RATE_LIMIT_ERROR_MESSAGE = "RATE_LIMIT_EXCEEDED";
 
-  // --- NEW: Effect to un-halt the component when resuming ---
   useEffect(() => {
-    // If the parent component signals it's time to resume and we are halted, release the halt.
     if (isResuming && isHalted) {
       setIsHalted(false);
     }
@@ -70,15 +66,31 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
 
     try {
+      // --- MODIFIED: Headers now include the custom API key ---
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      // Important: The backend prioritizes the X-User-API-Key over the Authorization token for rate-limiting
+      if (customApiKey) {
+        headers['X-User-API-Key'] = customApiKey;
+      } else if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+      
       const response = await fetch(`${API_BASE_URL}/generate_story_node`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify({ topic, history: newHistory, leads_to: selectedOption ? selectedOption.leads_to : null, language }),
+        headers: headers, // Use the newly constructed headers object
+        body: JSON.stringify({
+          topic: topic,
+          history: newHistory,
+          leads_to: selectedOption ? selectedOption.leads_to : null,
+          language: language,
+        }),
       });
 
       if (!response.ok) {
         if (response.status === 429) {
-            setIsHalted(true); // --- HALT the UI controls
+            setIsHalted(true);
             onRateLimitExceeded();
             throw new Error(RATE_LIMIT_ERROR_MESSAGE);
         }
@@ -107,7 +119,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     } finally {
       setIsLoading(false);
     }
-  }, [topic, authToken, history, language, onRateLimitExceeded]);
+  }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded]); // Added customApiKey to dependency array
 
   useEffect(() => {
     if (history.length === 0 && authToken) {
@@ -115,6 +127,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
   }, [authToken, fetchNextNode]);
 
+  // (The rest of the file remains unchanged)
   const handleGameItemClick = (optionText: string) => {
     setSelectedGameAnswers(prev => {
       const newSelection = new Set(prev);

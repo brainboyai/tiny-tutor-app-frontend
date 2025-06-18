@@ -37,7 +37,7 @@ const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language, onRateLimitExceeded, isResuming, customApiKey }) => {
   const [currentNode, setCurrentNode] = useState<StoryNode | null>(null);
   const [history, setHistory] = useState<StoryHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGameAnswers, setSelectedGameAnswers] = useState<Set<string>>(new Set());
   const [isHalted, setIsHalted] = useState(false);
@@ -50,10 +50,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   }, [isResuming, isHalted]);
 
   const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null) => {
+    // Set loading to true only when a fetch is actively initiated
     setIsLoading(true);
     setError(null);
 
-    // This check is now redundant because of the smarter useEffect, but kept for safety.
     if (!authToken) {
       setError("Authentication is required for Story Mode.");
       setIsLoading(false);
@@ -119,19 +119,18 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
   }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded]);
 
-  // --- MODIFIED: useEffect logic is now smarter ---
+  // --- *** THIS IS THE FIX *** ---
+  // The logic inside this useEffect has been corrected to prevent the deadlock.
   useEffect(() => {
-    // Only attempt to fetch the initial node if:
-    // 1. It's a new story (history is empty).
-    // 2. The user is logged in.
-    // 3. We are not already loading something.
-    // 4. We are not in a halted state from a previous rate limit error.
-    if (history.length === 0 && authToken && !isLoading && !isHalted) {
+    // This effect should only run once when the component mounts for a new story.
+    // The history.length check ensures this. We removed the faulty !isLoading check.
+    if (history.length === 0 && authToken) {
       fetchNextNode(null);
     }
-  }, [authToken, fetchNextNode, history.length, isLoading, isHalted]); // Added dependencies to be exhaustive
+  }, []); // Run only once on mount. Subsequent fetches are triggered by user clicks.
 
-  // (The rest of the file is unchanged)
+
+  // --- No changes to handlers or render logic below this line ---
   const handleGameItemClick = (optionText: string) => {
     setSelectedGameAnswers(prev => {
       const newSelection = new Set(prev);
@@ -180,7 +179,17 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
         </div>
       );
     }
-    if (!currentNode) return null;
+    if (!currentNode) {
+        // If not loading and no node, it means auth failed before fetch was attempted.
+        // Show a message prompting login, as this is the only case this should happen.
+        return (
+             <div className="flex flex-col items-center justify-center text-center p-10">
+                 <AlertTriangle className="h-12 w-12 text-amber-400 mb-4" />
+                 <h3 className="text-xl font-semibold text-amber-300">Authentication Required</h3>
+                 <p className="text-amber-300/80">Please sign in to start a story.</p>
+            </div>
+        )
+    }
 
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">

@@ -22,7 +22,6 @@ interface StoryHistoryItem {
   text: string;
 }
 
-// --- MODIFIED: Added customApiKey to props ---
 interface StoryModeProps {
   topic: string;
   authToken: string | null;
@@ -30,7 +29,7 @@ interface StoryModeProps {
   language: string; 
   onRateLimitExceeded: () => void;
   isResuming: boolean;
-  customApiKey: string | null; // <-- ACCEPT THE NEW PROP
+  customApiKey: string | null;
 }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
@@ -54,6 +53,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     setIsLoading(true);
     setError(null);
 
+    // This check is now redundant because of the smarter useEffect, but kept for safety.
     if (!authToken) {
       setError("Authentication is required for Story Mode.");
       setIsLoading(false);
@@ -66,11 +66,9 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
 
     try {
-      // --- MODIFIED: Headers now include the custom API key ---
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
       };
-      // Important: The backend prioritizes the X-User-API-Key over the Authorization token for rate-limiting
       if (customApiKey) {
         headers['X-User-API-Key'] = customApiKey;
       } else if (authToken) {
@@ -79,7 +77,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       
       const response = await fetch(`${API_BASE_URL}/generate_story_node`, {
         method: 'POST',
-        headers: headers, // Use the newly constructed headers object
+        headers: headers,
         body: JSON.stringify({
           topic: topic,
           history: newHistory,
@@ -119,15 +117,21 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     } finally {
       setIsLoading(false);
     }
-  }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded]); // Added customApiKey to dependency array
+  }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded]);
 
+  // --- MODIFIED: useEffect logic is now smarter ---
   useEffect(() => {
-    if (history.length === 0 && authToken) {
+    // Only attempt to fetch the initial node if:
+    // 1. It's a new story (history is empty).
+    // 2. The user is logged in.
+    // 3. We are not already loading something.
+    // 4. We are not in a halted state from a previous rate limit error.
+    if (history.length === 0 && authToken && !isLoading && !isHalted) {
       fetchNextNode(null);
     }
-  }, [authToken, fetchNextNode]);
+  }, [authToken, fetchNextNode, history.length, isLoading, isHalted]); // Added dependencies to be exhaustive
 
-  // (The rest of the file remains unchanged)
+  // (The rest of the file is unchanged)
   const handleGameItemClick = (optionText: string) => {
     setSelectedGameAnswers(prev => {
       const newSelection = new Set(prev);

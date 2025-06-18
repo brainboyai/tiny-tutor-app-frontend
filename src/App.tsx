@@ -69,7 +69,7 @@ function App() {
 
   // --- Core Logic Functions ---
   const handleRateLimit = () => {
-    setIsResumingFromRateLimit(false);
+    // This now just opens the modal. The action that failed is saved before this is called.
     setShowRateLimitModal(true);
   };
     
@@ -123,9 +123,20 @@ function App() {
         const requestBody = { word: wordToFetch, mode: 'explain', refresh_cache: isUserRefreshClick || isActuallyContextualExplain, streakContext: streakContextForAPI, language: language };
         const response = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: headers, body: JSON.stringify(requestBody) });
         if (!response.ok) {
-            if (response.status === 429) { handleRateLimit(); throw new Error(RATE_LIMIT_ERROR_MESSAGE); }
+            // --- CHANGE #1: Save the pending action on rate limit ---
+            if (response.status === 429) {
+                console.log("Rate limit hit in Explore Mode. Saving pending action.");
+                const pendingAction = { wordToFetch, isNewPrimaryWordSearch, isUserRefreshClick, isSubTopicClick };
+                sessionStorage.setItem('explorePendingAction', JSON.stringify(pendingAction));
+                handleRateLimit(); 
+                throw new Error(RATE_LIMIT_ERROR_MESSAGE);
+            }
             throw new Error((await response.json()).error || 'Failed to generate content');
         }
+        
+        // If we get a successful response, clear any pending action
+        sessionStorage.removeItem('explorePendingAction');
+
         const apiData = await response.json();
         const explanationJustFetched = apiData.explain;
         const isNewWordBeingAddedToStreak = isNewPrimaryWordSearch || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch)));
@@ -151,6 +162,32 @@ function App() {
     }
   }, [authToken, customApiKey, generatedContent, liveStreak, userProfileData, language]);
   
+  // --- CHANGE #2: New useEffect to handle retrying the action ---
+  useEffect(() => {
+    // Check if we are returning from fixing a rate limit
+    if (isResumingFromRateLimit) {
+        // Specifically handle the case for Explore Mode
+        if (activeGameMode === 'explore_mode' || (isInitialView && startMode === 'explore_mode')) {
+            const pendingActionJSON = sessionStorage.getItem('explorePendingAction');
+            if (pendingActionJSON) {
+                console.log("Retrying pending explore action...");
+                const pendingAction = JSON.parse(pendingActionJSON);
+                
+                // Call the generation function with the saved parameters
+                handleGenerateExplanation(
+                    pendingAction.wordToFetch,
+                    pendingAction.isNewPrimaryWordSearch,
+                    pendingAction.isUserRefreshClick,
+                    pendingAction.isSubTopicClick
+                );
+                sessionStorage.removeItem('explorePendingAction');
+            }
+        }
+        // Reset the flag regardless of which mode we're in, as the action is now handled.
+        setIsResumingFromRateLimit(false);
+    }
+  }, [isResumingFromRateLimit, activeGameMode, isInitialView, startMode, handleGenerateExplanation]);
+
   const handleStreakWordClick = useCallback((clickedWord: string) => { setIsQuizVisible(false); setCurrentFocusWord(clickedWord); setIsReviewingStreakWord(true); setWordForReview(clickedWord); }, []);
   const handleSubTopicClick = useCallback((subTopic: string) => { setIsQuizVisible(false); if (liveStreak && liveStreak.words.includes(subTopic)) { handleStreakWordClick(subTopic); } else { handleGenerateExplanation(subTopic, false, false, true); } }, [liveStreak, handleGenerateExplanation, handleStreakWordClick]);
   const handleRefreshContent = useCallback(() => { const wordToUse = getDisplayWord(); if (!wordToUse) return; handleGenerateExplanation(wordToUse, false, true);}, [getDisplayWord, handleGenerateExplanation]);
@@ -183,11 +220,16 @@ function App() {
         if (!response.ok) { throw new Error(data.message || 'Validation failed'); }
         localStorage.setItem('customApiKey', customApiKey);
         setApiKeyValidationStatus({ message: data.message, type: 'success' });
-        setIsResumingFromRateLimit(true);
+        
+        // This is the trigger that our new useEffect will listen for
+        setIsResumingFromRateLimit(true); 
+
         setTimeout(() => {
             setApiKeyValidationStatus({ message: '', type: 'idle' });
-            setShowRateLimitModal(false); // Close rate limit modal on success
-        }, 2000);
+            setShowRateLimitModal(false); 
+            // After successfully retrying, navigate back to the main view
+            setActiveView('main');
+        }, 1500); // A short delay to show the success message
     } catch (err) {
         if (err instanceof Error) { setApiKeyValidationStatus({ message: err.message, type: 'error' }); }
         else { setApiKeyValidationStatus({ message: 'An unknown error occurred.', type: 'error' }); }

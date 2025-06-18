@@ -22,24 +22,37 @@ interface StoryHistoryItem {
   text: string;
 }
 
-// --- MODIFIED: The props interface is simplified ---
+// --- MODIFIED: Added isResuming prop ---
 interface StoryModeProps {
   topic: string;
   authToken: string | null;
   onStoryEnd: () => void;
   language: string; 
-  onRateLimitExceeded: () => void; // Expects a simple function with no arguments
+  onRateLimitExceeded: () => void;
+  isResuming: boolean; // Signal from parent to release the halted state
 }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language, onRateLimitExceeded }) => {
+const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language, onRateLimitExceeded, isResuming }) => {
   const [currentNode, setCurrentNode] = useState<StoryNode | null>(null);
   const [history, setHistory] = useState<StoryHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGameAnswers, setSelectedGameAnswers] = useState<Set<string>>(new Set());
+  
+  // --- NEW: State to halt UI on rate limit ---
+  const [isHalted, setIsHalted] = useState(false);
+  
   const RATE_LIMIT_ERROR_MESSAGE = "RATE_LIMIT_EXCEEDED";
+
+  // --- NEW: Effect to un-halt the component when resuming ---
+  useEffect(() => {
+    // If the parent component signals it's time to resume and we are halted, release the halt.
+    if (isResuming && isHalted) {
+      setIsHalted(false);
+    }
+  }, [isResuming, isHalted]);
 
   const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null) => {
     setIsLoading(true);
@@ -65,7 +78,8 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       if (!response.ok) {
         if (response.status === 429) {
-            onRateLimitExceeded(); // Simply notify the parent component
+            setIsHalted(true); // --- HALT the UI controls
+            onRateLimitExceeded();
             throw new Error(RATE_LIMIT_ERROR_MESSAGE);
         }
         const errData = await response.json().catch(() => ({ error: "An unexpected server error occurred." }));
@@ -73,12 +87,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       }
 
       const data: StoryNode = await response.json();
-      
       const updatedHistory: StoryHistoryItem[] = [...newHistory];
       if (data.dialogue && data.dialogue.trim().length > 2) {
         updatedHistory.push({ type: 'AI', text: data.dialogue });
       } else {
-        console.error("Received blank or invalid dialogue from AI:", data.dialogue);
         throw new Error("The AI narrator is currently unavailable. Please try again.");
       }
 
@@ -103,8 +115,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
   }, [authToken, fetchNextNode]);
 
-
-  // --- No changes to handlers or render logic below this line ---
   const handleGameItemClick = (optionText: string) => {
     setSelectedGameAnswers(prev => {
       const newSelection = new Set(prev);
@@ -154,6 +164,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       );
     }
     if (!currentNode) return null;
+
     return (
       <div className="w-full max-w-4xl mx-auto p-4 animate-fadeIn">
         {currentNode.feedback_on_previous_answer && (
@@ -175,23 +186,35 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
             <p className="text-[--text-secondary]">{currentNode.image_prompts[0]}</p>
           </div>
         )}
+        
         {currentNode.interaction.type === 'Text-based Button Selection' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {currentNode.interaction.options.map((option, index) => (
-              <button key={index} onClick={() => handleOptionClick(option)} disabled={isLoading} className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 text-[--text-primary]">
+              <button
+                key={index}
+                onClick={() => handleOptionClick(option)}
+                disabled={isLoading || isHalted}
+                className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[--text-primary]"
+              >
                 {option.text}
               </button>
             ))}
           </div>
         )}
+
         {currentNode.interaction.type === 'Multi-Select Image Game' && (
           <div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
               {currentNode.interaction.options.map((option, index) => {
                 const isSelected = selectedGameAnswers.has(option.text);
                 return (
-                  <button key={index} onClick={() => handleGameItemClick(option.text)} disabled={isLoading} className={`relative w-full aspect-square text-left p-2 rounded-lg transition-all border-2 ${isSelected ? 'border-[--accent-primary] scale-105' : 'border-[--border-color] hover:border-gray-600'} bg-[--hover-bg-color]`}>
-                    {isSelected && (
+                  <button
+                    key={index}
+                    onClick={() => handleGameItemClick(option.text)}
+                    disabled={isLoading || isHalted}
+                    className={`relative w-full aspect-square text-left p-2 rounded-lg transition-all border-2 ${isSelected ? 'border-[--accent-primary] scale-105' : 'border-[--border-color] hover:border-gray-600'} bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                   {isSelected && (
                       <div className="absolute top-2 right-2 bg-[--accent-primary] rounded-full p-1">
                         <CheckCircle2 size={16} className="text-black" />
                       </div>
@@ -206,11 +229,16 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
                 );
               })}
             </div>
-            <button onClick={handleSubmitGameAnswer} disabled={isLoading || selectedGameAnswers.size === 0} className="w-full p-4 rounded-lg bg-[--accent-primary] text-black font-bold hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <button
+              onClick={handleSubmitGameAnswer}
+              disabled={isLoading || isHalted || selectedGameAnswers.size === 0}
+              className="w-full p-4 rounded-lg bg-[--accent-primary] text-black font-bold hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               Submit Answer
             </button>
           </div>
         )}
+
         {isLoading && (
           <div className="flex justify-center mt-6">
             <Loader className="animate-spin h-8 w-8 text-[--accent-primary]" />

@@ -30,18 +30,29 @@ interface StoryModeProps {
   onRateLimitExceeded: () => void;
   isResuming: boolean;
   customApiKey: string | null;
+  guestGenerations?: number;
+  setGuestGenerations?: (countOrFn: number | ((prev: number) => number)) => void;
+  guestGenerationLimit?: number;
+  onGuestLimitExceeded?: (message: string) => void;
 }
 
-// --- NEW: Key for sessionStorage ---
 const STORY_STATE_SESSION_KEY = 'storyModeState';
-
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
-const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language, onRateLimitExceeded, isResuming, customApiKey }) => {
+const StoryModeComponent: React.FC<StoryModeProps> = ({ 
+  topic, 
+  authToken, 
+  onStoryEnd, 
+  language, 
+  onRateLimitExceeded, 
+  isResuming, 
+  customApiKey,
+  guestGenerations,
+  setGuestGenerations,
+  guestGenerationLimit,
+  onGuestLimitExceeded
+}) => {
   
-  // --- CHANGE #1: Initialize state from sessionStorage ---
-  // The component now tries to load its state from sessionStorage on first render.
-  // This allows it to "resume" exactly where the user left off in the same session.
   const [currentNode, setCurrentNode] = useState<StoryNode | null>(() => {
     const savedState = sessionStorage.getItem(STORY_STATE_SESSION_KEY);
     return savedState ? JSON.parse(savedState).currentNode : null;
@@ -56,21 +67,14 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   const [error, setError] = useState<string | null>(null);
   const [selectedGameAnswers, setSelectedGameAnswers] = useState<Set<string>>(new Set());
 
-  // isHalted is no longer needed as the UI state itself prevents interaction.
-  // The disabled={isLoading} on buttons handles this correctly.
-
   const RATE_LIMIT_ERROR_MESSAGE = "RATE_LIMIT_EXCEEDED";
 
-  // --- CHANGE #2: Save state to sessionStorage on every update ---
-  // This effect runs whenever the story state changes, saving it to sessionStorage.
-  // This ensures that if the user navigates away, their progress is not lost.
   useEffect(() => {
-    // We don't save the state if there's no history, to ensure a clean start for new stories.
     if (history.length > 0) {
       const stateToSave = {
         currentNode,
         history,
-        topic, // Also save the topic to prevent resuming the wrong story
+        topic,
         language,
       };
       sessionStorage.setItem(STORY_STATE_SESSION_KEY, JSON.stringify(stateToSave));
@@ -79,17 +83,18 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
 
   const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null, isRetry: boolean = false) => {
+    
+    if (!authToken && guestGenerations !== undefined && guestGenerationLimit !== undefined && guestGenerations >= guestGenerationLimit) {
+        if (onGuestLimitExceeded) {
+            onGuestLimitExceeded("Sign in to use your own API key and play for free");
+        }
+        setIsLoading(false);
+        return;
+    }
+
     setIsLoading(true);
     setError(null);
 
-    if (!authToken) {
-      setError("Authentication is required for Story Mode.");
-      setIsLoading(false);
-      return;
-    }
-
-    // --- CHANGE #3: Smart history handling for retries ---
-    // We only add the user's choice to the history if it's a new action, not a retry.
     const newHistory: StoryHistoryItem[] = [...history];
     if (selectedOption && !isRetry) {
       newHistory.push({ type: 'USER', text: selectedOption.text });
@@ -118,9 +123,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       if (!response.ok) {
         if (response.status === 429) {
-            // --- CHANGE #4: Handle Rate Limit without clearing screen ---
-            // Instead of halting, we save the failed action and trigger the parent component.
-            // The UI will remain as is, with buttons disabled by `isLoading`.
             const pendingAction = { selectedOption };
             sessionStorage.setItem('storyPendingAction', JSON.stringify(pendingAction));
             onRateLimitExceeded();
@@ -130,8 +132,15 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
         throw new Error(errData.error || `Request failed with status ${response.status}`);
       }
 
-      // If the API call was successful, clear any pending action.
       sessionStorage.removeItem('storyPendingAction');
+      
+      if (!authToken && setGuestGenerations) {
+        setGuestGenerations(prevCount => {
+            const newCount = (prevCount || 0) + 1;
+            sessionStorage.setItem('storyGuestGenerationCount', String(newCount));
+            return newCount;
+        });
+      }
 
       const data: StoryNode = await response.json();
       const updatedHistory: StoryHistoryItem[] = [...newHistory];
@@ -154,38 +163,38 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     } finally {
       setIsLoading(false);
     }
-  }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded]);
+  }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded, guestGenerations, guestGenerationLimit, setGuestGenerations, onGuestLimitExceeded]);
 
   
-  // --- CHANGE #5: Unified starting and resuming logic ---
   useEffect(() => {
-    // On mount, check if we should resume a story or start a new one.
     const savedState = JSON.parse(sessionStorage.getItem(STORY_STATE_SESSION_KEY) || 'null');
     const pendingAction = JSON.parse(sessionStorage.getItem('storyPendingAction') || 'null');
 
     if (isResuming && pendingAction) {
-        // --- This handles the API key update flow ---
-        console.log("Resuming and retrying pending action...");
-        // Retrieve the action that failed and retry it.
         fetchNextNode(pendingAction.selectedOption, true); 
         sessionStorage.removeItem('storyPendingAction');
     } else if (savedState && savedState.topic === topic && savedState.language === language) {
-        // If there's a saved state for the current topic/language, just show it.
-        console.log("Restoring story from session.");
         setIsLoading(false);
     } else if (!authToken) {
-        // No auth token, stop loading.
-        setIsLoading(false);
+        // This is a guest starting a new story
+        if ((guestGenerations || 0) < (guestGenerationLimit || 3)) {
+            sessionStorage.removeItem(STORY_STATE_SESSION_KEY);
+            sessionStorage.removeItem('storyPendingAction');
+            setHistory([]);
+            setCurrentNode(null);
+            fetchNextNode(null);
+        } else {
+            // Guest is already over their limit when component loads
+            if(onGuestLimitExceeded) onGuestLimitExceeded("Sign in to use your own API key and play for free");
+            setIsLoading(false);
+        }
     } else {
-        // If no saved state, or topic/language mismatch, start a new story.
-        console.log("Starting a new story.");
         sessionStorage.removeItem(STORY_STATE_SESSION_KEY);
         sessionStorage.removeItem('storyPendingAction');
         setHistory([]);
         setCurrentNode(null);
         fetchNextNode(null);
     }
-  // We've added `isResuming` to the dependency array to properly trigger the retry logic.
   }, [isResuming, topic, language, authToken]);
 
 
@@ -213,7 +222,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
   const handleOptionClick = (option: StoryOption) => {
     if (option.leads_to.toLowerCase().includes('end_story')) {
-      // Clear session storage on story end for a clean slate next time.
       sessionStorage.removeItem(STORY_STATE_SESSION_KEY);
       sessionStorage.removeItem('storyPendingAction');
       onStoryEnd();
@@ -222,11 +230,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     fetchNextNode(option);
   };
   
-  // --- RENDER LOGIC (Minor changes to disable buttons) ---
-  // The 'isHalted' state is no longer necessary. The 'isLoading' state now correctly
-  // manages disabling buttons during API calls or after a rate-limit error,
-  // preventing the user from making further actions until the situation is resolved.
-
   const renderContent = () => {
     if (isLoading && !currentNode) {
       return (

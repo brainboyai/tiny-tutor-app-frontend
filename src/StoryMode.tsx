@@ -32,24 +32,53 @@ interface StoryModeProps {
   customApiKey: string | null;
 }
 
+// --- NEW: Key for sessionStorage ---
+const STORY_STATE_SESSION_KEY = 'storyModeState';
+
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
 const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStoryEnd, language, onRateLimitExceeded, isResuming, customApiKey }) => {
-  const [currentNode, setCurrentNode] = useState<StoryNode | null>(null);
-  const [history, setHistory] = useState<StoryHistoryItem[]>([]);
+  
+  // --- CHANGE #1: Initialize state from sessionStorage ---
+  // The component now tries to load its state from sessionStorage on first render.
+  // This allows it to "resume" exactly where the user left off in the same session.
+  const [currentNode, setCurrentNode] = useState<StoryNode | null>(() => {
+    const savedState = sessionStorage.getItem(STORY_STATE_SESSION_KEY);
+    return savedState ? JSON.parse(savedState).currentNode : null;
+  });
+
+  const [history, setHistory] = useState<StoryHistoryItem[]>(() => {
+    const savedState = sessionStorage.getItem(STORY_STATE_SESSION_KEY);
+    return savedState ? JSON.parse(savedState).history : [];
+  });
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGameAnswers, setSelectedGameAnswers] = useState<Set<string>>(new Set());
-  const [isHalted, setIsHalted] = useState(false);
+
+  // isHalted is no longer needed as the UI state itself prevents interaction.
+  // The disabled={isLoading} on buttons handles this correctly.
+
   const RATE_LIMIT_ERROR_MESSAGE = "RATE_LIMIT_EXCEEDED";
 
+  // --- CHANGE #2: Save state to sessionStorage on every update ---
+  // This effect runs whenever the story state changes, saving it to sessionStorage.
+  // This ensures that if the user navigates away, their progress is not lost.
   useEffect(() => {
-    if (isResuming && isHalted) {
-      setIsHalted(false);
+    // We don't save the state if there's no history, to ensure a clean start for new stories.
+    if (history.length > 0) {
+      const stateToSave = {
+        currentNode,
+        history,
+        topic, // Also save the topic to prevent resuming the wrong story
+        language,
+      };
+      sessionStorage.setItem(STORY_STATE_SESSION_KEY, JSON.stringify(stateToSave));
     }
-  }, [isResuming, isHalted]);
+  }, [currentNode, history, topic, language]);
 
-  const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null) => {
+
+  const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null, isRetry: boolean = false) => {
     setIsLoading(true);
     setError(null);
 
@@ -59,8 +88,10 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       return;
     }
 
+    // --- CHANGE #3: Smart history handling for retries ---
+    // We only add the user's choice to the history if it's a new action, not a retry.
     const newHistory: StoryHistoryItem[] = [...history];
-    if (selectedOption) {
+    if (selectedOption && !isRetry) {
       newHistory.push({ type: 'USER', text: selectedOption.text });
     }
 
@@ -87,13 +118,20 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
       if (!response.ok) {
         if (response.status === 429) {
-            setIsHalted(true);
+            // --- CHANGE #4: Handle Rate Limit without clearing screen ---
+            // Instead of halting, we save the failed action and trigger the parent component.
+            // The UI will remain as is, with buttons disabled by `isLoading`.
+            const pendingAction = { selectedOption };
+            sessionStorage.setItem('storyPendingAction', JSON.stringify(pendingAction));
             onRateLimitExceeded();
             throw new Error(RATE_LIMIT_ERROR_MESSAGE);
         }
         const errData = await response.json().catch(() => ({ error: "An unexpected server error occurred." }));
         throw new Error(errData.error || `Request failed with status ${response.status}`);
       }
+
+      // If the API call was successful, clear any pending action.
+      sessionStorage.removeItem('storyPendingAction');
 
       const data: StoryNode = await response.json();
       const updatedHistory: StoryHistoryItem[] = [...newHistory];
@@ -118,18 +156,38 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     }
   }, [topic, authToken, customApiKey, history, language, onRateLimitExceeded]);
 
-  // --- *** THIS IS THE FIX *** ---
-  // The logic inside this useEffect has been corrected to prevent the deadlock.
+  
+  // --- CHANGE #5: Unified starting and resuming logic ---
   useEffect(() => {
-    // This effect should only run once when the component mounts for a new story.
-    // The history.length check ensures this. We removed the faulty !isLoading and !isHalted checks.
-    if (history.length === 0 && authToken) {
-      fetchNextNode(null);
-    } else if (!authToken) {
-        // If there's no auth token on mount, stop the loader.
+    // On mount, check if we should resume a story or start a new one.
+    const savedState = JSON.parse(sessionStorage.getItem(STORY_STATE_SESSION_KEY) || 'null');
+    const pendingAction = JSON.parse(sessionStorage.getItem('storyPendingAction') || 'null');
+
+    if (isResuming && pendingAction) {
+        // --- This handles the API key update flow ---
+        console.log("Resuming and retrying pending action...");
+        // Retrieve the action that failed and retry it.
+        fetchNextNode(pendingAction.selectedOption, true); 
+        sessionStorage.removeItem('storyPendingAction');
+    } else if (savedState && savedState.topic === topic && savedState.language === language) {
+        // If there's a saved state for the current topic/language, just show it.
+        console.log("Restoring story from session.");
         setIsLoading(false);
+    } else if (!authToken) {
+        // No auth token, stop loading.
+        setIsLoading(false);
+    } else {
+        // If no saved state, or topic/language mismatch, start a new story.
+        console.log("Starting a new story.");
+        sessionStorage.removeItem(STORY_STATE_SESSION_KEY);
+        sessionStorage.removeItem('storyPendingAction');
+        setHistory([]);
+        setCurrentNode(null);
+        fetchNextNode(null);
     }
-  }, []); // Run only once on mount. Subsequent fetches are triggered by user clicks.
+  // We've added `isResuming` to the dependency array to properly trigger the retry logic.
+  }, [isResuming, topic, language, authToken]);
+
 
   const handleGameItemClick = (optionText: string) => {
     setSelectedGameAnswers(prev => {
@@ -155,14 +213,21 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
 
   const handleOptionClick = (option: StoryOption) => {
     if (option.leads_to.toLowerCase().includes('end_story')) {
+      // Clear session storage on story end for a clean slate next time.
+      sessionStorage.removeItem(STORY_STATE_SESSION_KEY);
+      sessionStorage.removeItem('storyPendingAction');
       onStoryEnd();
       return;
     }
     fetchNextNode(option);
   };
+  
+  // --- RENDER LOGIC (Minor changes to disable buttons) ---
+  // The 'isHalted' state is no longer necessary. The 'isLoading' state now correctly
+  // manages disabling buttons during API calls or after a rate-limit error,
+  // preventing the user from making further actions until the situation is resolved.
 
   const renderContent = () => {
-    // Show the loader if we are loading AND the first node hasn't been created yet.
     if (isLoading && !currentNode) {
       return (
         <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn h-full">
@@ -182,7 +247,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       );
     }
 
-    // If not loading and no node, it means auth failed or another setup issue.
     if (!currentNode) {
         return (
              <div className="flex flex-col items-center justify-center text-center p-10 h-full">
@@ -221,7 +285,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
               <button
                 key={index}
                 onClick={() => handleOptionClick(option)}
-                disabled={isLoading || isHalted}
+                disabled={isLoading}
                 className="w-full text-left p-4 rounded-lg bg-[--hover-bg-color] hover:bg-[--border-color] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[--text-primary]"
               >
                 {option.text}
@@ -239,7 +303,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
                   <button
                     key={index}
                     onClick={() => handleGameItemClick(option.text)}
-                    disabled={isLoading || isHalted}
+                    disabled={isLoading}
                     className={`relative w-full aspect-square text-left p-2 rounded-lg transition-all border-2 ${isSelected ? 'border-[--accent-primary] scale-105' : 'border-[--border-color] hover:border-gray-600'} bg-[--hover-bg-color] disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
                    {isSelected && (
@@ -259,7 +323,7 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
             </div>
             <button
               onClick={handleSubmitGameAnswer}
-              disabled={isLoading || isHalted || selectedGameAnswers.size === 0}
+              disabled={isLoading || selectedGameAnswers.size === 0}
               className="w-full p-4 rounded-lg bg-[--accent-primary] text-black font-bold hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Submit Answer

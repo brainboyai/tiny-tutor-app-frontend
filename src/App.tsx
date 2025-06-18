@@ -321,6 +321,7 @@ function App() {
         language={language} 
         onRateLimitExceeded={handleRateLimit}
         isResuming={isResumingFromRateLimit}
+        customApiKey={customApiKey} // <-- ADD THIS PROP
       />;
     }
     if (activeGameMode === 'game_mode' && activeTopic) {

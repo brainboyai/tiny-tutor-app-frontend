@@ -9,7 +9,7 @@ import ProfilePageComponent from './ProfilePage';
 import StoryModeComponent from './StoryMode';
 import GameModeComponent from './GameMode';
 
-// --- Types and Helpers ---
+// --- Types and Helpers (No changes) ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; }
 interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; }
@@ -24,8 +24,7 @@ const sanitizeWordForId = (word: string): string => { if (typeof word !== 'strin
 const parseQuizStringToArray = (quizStringsFromBackend: any): ParsedQuizQuestion[] => { if (!Array.isArray(quizStringsFromBackend)) { return []; } return quizStringsFromBackend.map((quizStr: string) => { if (typeof quizStr !== 'string') { return null; } const lines = quizStr.trim().split('\n').map(line => line.trim()).filter(line => line); if (lines.length < 3) return null; let question = ""; const options: { [key: string]: string } = {}; let correctOptionKey = ""; let explanationForAnswer = ""; let parsingState: 'question' | 'options' | 'answer' | 'explanation' = 'question'; let questionLines: string[] = []; for (const line of lines) { const questionMatch = line.match(/^\*\*Question \d*:\*\*(.*)/i); if (questionMatch) { if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); questionLines = []; question = questionMatch[1].trim(); parsingState = 'options'; continue; } const optionMatch = line.match(/^([A-D])\)\s*(.*)/i); if (optionMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } options[optionMatch[1].toUpperCase()] = optionMatch[2].trim(); continue; } const correctMatch = line.match(/^Correct Answer:\s*([A-D])/i); if (correctMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } correctOptionKey = correctMatch[1].toUpperCase(); parsingState = 'explanation'; explanationForAnswer = ""; continue; } const explanationKeywordMatch = line.match(/^Explanation:\s*(.*)/i); if (explanationKeywordMatch) { if (parsingState === 'question') { question = questionLines.join(" ").trim(); questionLines = []; } explanationForAnswer = explanationKeywordMatch[1].trim(); parsingState = 'explanation'; continue; } if (parsingState === 'question') { questionLines.push(line); } else if (parsingState === 'explanation') { explanationForAnswer += " " + line.trim(); } } if (questionLines.length > 0 && !question) question = questionLines.join(" ").trim(); explanationForAnswer = explanationForAnswer.trim(); if (!question || Object.keys(options).length < 2 || !correctOptionKey || !options[correctOptionKey]) { return null; } return { question, options, correctOptionKey, explanation: explanationForAnswer || undefined }; }).filter(q => q !== null) as ParsedQuizQuestion[]; };
 
 function App() {
-  // --- State Definitions ---
-  const [interruptedAction, setInterruptedAction] = useState<(() => void) | null>(null);
+  // --- State Definitions (REMOVED interruptedAction state) ---
   const [inputValue, setInputValue] = useState('');
   const [currentFocusWord, setCurrentFocusWord] = useState<string | null>(null);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent>({});
@@ -123,7 +122,6 @@ function App() {
         const response = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: headers, body: JSON.stringify(requestBody) });
         if (!response.ok) {
             if (response.status === 429) {
-                setInterruptedAction(() => () => handleGenerateExplanation(wordToFetch, isNewPrimaryWordSearch, isUserRefreshClick, isSubTopicClick));
                 setShowRateLimitModal(true);
                 throw new Error(RATE_LIMIT_ERROR_MESSAGE); 
             }
@@ -222,6 +220,8 @@ function App() {
         </div>
     );
   };
+  
+  // --- MODIFIED: `renderSettingsModal` to close all modals on success ---
   const renderSettingsModal = () => {
     if (!showSettingsModal) return null;
     const handleValidateAndSave = async () => {
@@ -244,12 +244,11 @@ function App() {
             }
             localStorage.setItem('customApiKey', customApiKey);
             setApiKeyValidationStatus({ message: data.message, type: 'success' });
-            if (interruptedAction) {
-                interruptedAction();
-                setInterruptedAction(null);
-            }
+
             setTimeout(() => {
+                // Close all modals and reset state
                 setShowSettingsModal(false);
+                setShowRateLimitModal(false); // Explicitly close the rate limit modal too
                 setApiKeyValidationStatus({ message: '', type: 'idle' });
             }, 1500);
         } catch (err) {
@@ -302,23 +301,23 @@ function App() {
     );
   };
   
+  // --- MODIFIED: `renderMainContent` to use simplified prop ---
   const renderMainContent = () => {
     if (activeView === 'profile') {
       return <ProfilePageComponent currentUser={currentUser!} userProfileData={userProfileData} onWordSelect={handleWordSelectionFromProfile} onNavigateBack={() => setActiveView('main')} onToggleFavorite={handleToggleFavorite} />;
     }
     if (activeGameMode === 'story_mode' && activeTopic) {
+      // Prop is now simpler, just notifies the parent to show the modal
       return <StoryModeComponent 
         topic={activeTopic} 
         authToken={authToken} 
         onStoryEnd={resetChat} 
         language={language} 
-        onRateLimitExceeded={(retryAction: () => void) => {
-            setInterruptedAction(() => retryAction);
-            setShowRateLimitModal(true);
-        }}
+        onRateLimitExceeded={() => setShowRateLimitModal(true)}
       />;
     }
     if (activeGameMode === 'game_mode' && activeTopic) {
+        // NOTE: GameMode would need a similar onRateLimitExceeded prop for this to work there
         return <div className="h-[calc(100vh-80px)] w-full"><GameModeComponent topic={activeTopic} authToken={authToken} onGameEnd={resetChat} /></div>;
     }
     return ( <div className="space-y-6"> {liveStreak && liveStreak.score > 0 && ( <div className="flex items-center gap-2 flex-wrap p-3 bg-gradient-to-r from-slate-800/50 to-slate-900/20 rounded-xl border border-slate-700/50"> <Flame className="text-orange-500 flex-shrink-0 animate-pulse" /> {liveStreak.words.map((word, index) => ( <React.Fragment key={word + index}> <button className={`py-1 px-3 rounded-full text-sm font-medium transition-all duration-300 shadow-md animate-fadeIn ${getDisplayWord() === word ? 'bg-sky-600 text-white' : 'bg-[--background-secondary] hover:bg-[--hover-bg-color]'}`} onClick={() => handleStreakWordClick(word)}> {word} </button> {index < liveStreak.words.length - 1 && <span className="text-slate-500">→</span>} </React.Fragment> ))} </div> )} {renderExploreModeContent()} </div> );

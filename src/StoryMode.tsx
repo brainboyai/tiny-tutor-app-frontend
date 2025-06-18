@@ -1,38 +1,34 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, AlertTriangle, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 
-// --- Types for the new game feature ---
+// --- Types ---
 interface StoryOption {
   text: string;
   leads_to: string;
-  is_correct?: boolean; // Optional: Used for the new game type
+  is_correct?: boolean;
 }
-
 interface StoryInteraction {
   type: 'Text-based Button Selection' | 'Image Selection' | 'Multi-Select Image Game';
   options: StoryOption[];
 }
-
 interface StoryNode {
   feedback_on_previous_answer: string;
   dialogue: string;
   image_prompts: string[];
   interaction: StoryInteraction;
 }
-
 interface StoryHistoryItem {
   type: 'AI' | 'USER';
   text: string;
 }
 
-// --- MODIFIED: The props interface is updated here ---
+// --- MODIFIED: The props interface is simplified ---
 interface StoryModeProps {
   topic: string;
   authToken: string | null;
   onStoryEnd: () => void;
   language: string; 
-  // This now correctly expects a function that receives the retry action
-  onRateLimitExceeded: (retryAction: () => void) => void;
+  onRateLimitExceeded: () => void; // Expects a simple function with no arguments
 }
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
@@ -63,25 +59,13 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     try {
       const response = await fetch(`${API_BASE_URL}/generate_story_node`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          topic: topic,
-          history: newHistory,
-          leads_to: selectedOption ? selectedOption.leads_to : null,
-          language: language,
-        }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ topic, history: newHistory, leads_to: selectedOption ? selectedOption.leads_to : null, language }),
       });
 
-      // --- MODIFIED: Handle rate limit by passing the retry action to the parent ---
       if (!response.ok) {
         if (response.status === 429) {
-            // Create the function that will retry the failed operation
-            const retryAction = () => fetchNextNode(selectedOption);
-            // Pass this function up to App.tsx to be stored and called later
-            onRateLimitExceeded(retryAction);
+            onRateLimitExceeded(); // Simply notify the parent component
             throw new Error(RATE_LIMIT_ERROR_MESSAGE);
         }
         const errData = await response.json().catch(() => ({ error: "An unexpected server error occurred." }));
@@ -103,7 +87,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
       setSelectedGameAnswers(new Set()); 
 
     } catch (err) {
-      // --- MODIFIED: Prevent UI wipe on rate limit error ---
       if (err instanceof Error && err.message !== RATE_LIMIT_ERROR_MESSAGE) {
           setError(err.message);
       } else {
@@ -112,13 +95,13 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
     } finally {
       setIsLoading(false);
     }
-  }, [topic, authToken, history, language, onRateLimitExceeded]); // Added onRateLimitExceeded to dependency array
+  }, [topic, authToken, history, language, onRateLimitExceeded]);
 
   useEffect(() => {
     if (history.length === 0 && authToken) {
       fetchNextNode(null);
     }
-  }, [authToken, fetchNextNode]); // Simplified dependency array
+  }, [authToken, fetchNextNode]);
 
 
   // --- No changes to handlers or render logic below this line ---

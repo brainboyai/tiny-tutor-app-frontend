@@ -50,7 +50,6 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   }, [isResuming, isHalted]);
 
   const fetchNextNode = useCallback(async (selectedOption: { leads_to: string, text: string } | null = null) => {
-    // Set loading to true only when a fetch is actively initiated
     setIsLoading(true);
     setError(null);
 
@@ -123,14 +122,15 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   // The logic inside this useEffect has been corrected to prevent the deadlock.
   useEffect(() => {
     // This effect should only run once when the component mounts for a new story.
-    // The history.length check ensures this. We removed the faulty !isLoading check.
+    // The history.length check ensures this. We removed the faulty !isLoading and !isHalted checks.
     if (history.length === 0 && authToken) {
       fetchNextNode(null);
+    } else if (!authToken) {
+        // If there's no auth token on mount, stop the loader.
+        setIsLoading(false);
     }
   }, []); // Run only once on mount. Subsequent fetches are triggered by user clicks.
 
-
-  // --- No changes to handlers or render logic below this line ---
   const handleGameItemClick = (optionText: string) => {
     setSelectedGameAnswers(prev => {
       const newSelection = new Set(prev);
@@ -162,28 +162,30 @@ const StoryModeComponent: React.FC<StoryModeProps> = ({ topic, authToken, onStor
   };
 
   const renderContent = () => {
+    // Show the loader if we are loading AND the first node hasn't been created yet.
     if (isLoading && !currentNode) {
       return (
-        <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn">
+        <div className="flex flex-col items-center justify-center text-center p-10 animate-fadeIn h-full">
           <Loader className="animate-spin h-12 w-12 text-[--accent-primary] mb-4" />
           <p className="text-lg text-[--text-secondary]">Crafting your interactive story about "{topic}"...</p>
         </div>
       );
     }
+    
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn">
+        <div className="flex flex-col items-center justify-center text-center p-10 bg-red-900/20 rounded-lg animate-fadeIn h-full">
           <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
           <h3 className="text-xl font-semibold text-red-300">Error</h3>
           <p className="text-red-300/80">{error}</p>
         </div>
       );
     }
+
+    // If not loading and no node, it means auth failed or another setup issue.
     if (!currentNode) {
-        // If not loading and no node, it means auth failed before fetch was attempted.
-        // Show a message prompting login, as this is the only case this should happen.
         return (
-             <div className="flex flex-col items-center justify-center text-center p-10">
+             <div className="flex flex-col items-center justify-center text-center p-10 h-full">
                  <AlertTriangle className="h-12 w-12 text-amber-400 mb-4" />
                  <h3 className="text-xl font-semibold text-amber-300">Authentication Required</h3>
                  <p className="text-amber-300/80">Please sign in to start a story.</p>

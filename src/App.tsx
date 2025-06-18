@@ -8,7 +8,7 @@ import './index.css';
 import ProfilePageComponent from './ProfilePage';
 import StoryModeComponent from './StoryMode';
 import GameModeComponent from './GameMode';
-import SettingsPageComponent from './SettingsPage'; // Import the new Settings page component
+import SettingsPageComponent from './SettingsPage';
 
 // --- Types and Helpers (No changes) ---
 interface CurrentUser { username: string; email: string; id: string; }
@@ -66,24 +66,79 @@ function App() {
   const [showRateLimitModal, setShowRateLimitModal] = useState(false);
   const [isApiKeyValidating, setIsApiKeyValidating] = useState(false);
   const [apiKeyValidationStatus, setApiKeyValidationStatus] = useState<{ message: string, type: 'success' | 'error' | 'idle' }>({ message: '', type: 'idle' });
+  
+  // --- CHANGE #2.1: Add state for guest generation tracking ---
+  const [guestGenerations, setGuestGenerations] = useState<number>(() => {
+    // Initialize count from sessionStorage to persist through refreshes
+    return parseInt(sessionStorage.getItem('guestGenerationCount') || '0', 10);
+  });
+  const GUEST_GENERATION_LIMIT = 3;
+
 
   // --- Core Logic Functions ---
   const handleRateLimit = () => {
-    // This now just opens the modal. The action that failed is saved before this is called.
     setShowRateLimitModal(true);
   };
     
   const getDisplayWord = useCallback(() => isReviewingStreakWord && wordForReview ? wordForReview : currentFocusWord, [isReviewingStreakWord, wordForReview, currentFocusWord]);
   const saveStreakToServer = useCallback(async (streakToSave: LiveStreak, token: string | null): Promise<StreakRecord[] | null> => { if (!token || !streakToSave || streakToSave.score < 2) return null; try { const response = await fetch(`${API_BASE_URL}/save_streak`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ words: streakToSave.words, score: streakToSave.score }), }); if (!response.ok) { console.error("Failed to save streak. Status:", response.status); return null; } const data = await response.json(); return data.streakHistory; } catch (err: any) { console.error('Error saving streak:', err.message); return null; }}, []);
-  const handleLogout = useCallback(async () => { if (liveStreak && liveStreak.score >= 2 && authToken) { await saveStreakToServer(liveStreak, authToken); } localStorage.removeItem('authToken'); localStorage.removeItem('customApiKey'); setAuthToken(null); setCustomApiKey(''); setCurrentUser(null); setUserProfileData(null); setLiveStreak(null); setCurrentFocusWord(null); setGeneratedContent({}); setError(null); setAuthError(null); setAuthSuccessMessage(null); setShowAuthModal(false); setActiveView('main'); setLiveStreakQuizQueue([]); setActiveGameMode(null); setActiveTopic(null); setIsInitialView(true); }, [liveStreak, authToken, saveStreakToServer]);
+  
+  // --- CHANGE #1: Updated handleLogout to clear all session/local storage ---
+  const handleLogout = useCallback(async () => {
+    // Save final streak if applicable
+    if (liveStreak && liveStreak.score >= 2 && authToken) {
+      await saveStreakToServer(liveStreak, authToken);
+    }
+    
+    // Clear all persistent storage items
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('customApiKey');
+    localStorage.removeItem('tiny-tutor-language');
+
+    sessionStorage.removeItem('storyModeState');
+    sessionStorage.removeItem('storyPendingAction');
+    sessionStorage.removeItem('explorePendingAction');
+    sessionStorage.removeItem('tiny-tutor-guest-state');
+    sessionStorage.removeItem('guestGenerationCount'); // Clear guest count on logout
+    
+    // Reset all relevant state variables to their initial values
+    setAuthToken(null);
+    setCustomApiKey('');
+    setCurrentUser(null);
+    setUserProfileData(null);
+    setLiveStreak(null);
+    setCurrentFocusWord(null);
+    setGeneratedContent({});
+    setError(null);
+    setAuthError(null);
+    setAuthSuccessMessage(null);
+    setShowAuthModal(false);
+    setActiveView('main');
+    setLiveStreakQuizQueue([]);
+    setActiveGameMode(null);
+    setActiveTopic(null);
+    setIsInitialView(true);
+    setGuestGenerations(0); // Reset guest counter state
+    setLanguage('en'); // Reset language to default
+  }, [liveStreak, authToken, saveStreakToServer]);
+
   const fetchUserProfile = useCallback(async (token: string | null) => { if (!token || profileFetchFailed) { setUserProfileData(null); setCurrentUser(null); return; } setIsFetchingProfile(true); try { const response = await fetch(`${API_BASE_URL}/profile`, { headers: { 'Authorization': `Bearer ${token}` }}); if (!response.ok) { if (response.status === 401) { handleLogout(); } else if (response.status === 429) { setError("API limit reached. Please wait and try again later.");} else { setError(`Profile fetch failed with status: ${response.status}`);}  setProfileFetchFailed(true); return; } const data = await response.json(); const pE: ExploredWordEntry[]=(data.exploredWords||[]).map((w:any)=>(w&&typeof w.word==='string'?{...w}:null)).filter(Boolean); const pF:ExploredWordEntry[]=(data.favoriteWords||[]).map((w:any)=>(w&&typeof w.word==='string'?{...w}:null)).filter(Boolean); setUserProfileData({...data, exploredWords: pE, favoriteWords: pF, streakHistory: (data.streakHistory||[]).sort((a:any,b:any)=>new Date(b.completed_at).getTime()-new Date(a.completed_at).getTime())}); setCurrentUser({username:data.username, email:data.email, id:data.user_id||''}); setError(null); setProfileFetchFailed(false);} catch(e){console.error("Profile fetch error:", e); setError("Could not connect to the server. Please check your connection."); setProfileFetchFailed(true);if(typeof e === 'string') setError(e); else if (e instanceof Error) setError(e.message)}finally{setIsFetchingProfile(false);}}, [profileFetchFailed, handleLogout]);
   useEffect(() => { const storedToken = localStorage.getItem('authToken'); if (storedToken) { if (!authToken) setAuthToken(storedToken); if (!currentUser && !isFetchingProfile && !profileFetchFailed) { fetchUserProfile(storedToken); } } else { setCurrentUser(null); setUserProfileData(null); setAuthToken(null); }}, [authToken, currentUser, isFetchingProfile, fetchUserProfile, profileFetchFailed]);
   const saveGuestStateToSession = () => { if (!authToken && liveStreak && liveStreak.words.length > 0) { const guestState = { liveStreak, liveStreakQuizQueue, currentFocusWord, generatedContent, activeTopic, isInitialView: false, }; sessionStorage.setItem('tiny-tutor-guest-state', JSON.stringify(guestState)); } };
   const handleAuthAction = async (e: FormEvent) => { e.preventDefault(); setAuthError(null); setAuthSuccessMessage(null); setIsLoading(true); const url = authMode === 'signup' ? `${API_BASE_URL}/signup` : `${API_BASE_URL}/login`; let payload = {}; if (authMode === 'signup') { payload = { username: authUsername, email: authEmail, password: authPassword }; } else { payload = { email_or_username: authUsername, password: authPassword };} try { const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json(); if (!response.ok) { throw new Error(data.error || 'Request failed');} if (authMode === 'signup') { setAuthSuccessMessage('Signup successful! Please login.'); setAuthMode('login'); setAuthEmail(''); setAuthPassword(''); } else { localStorage.setItem('authToken', data.access_token); setAuthToken(data.access_token); setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id }); setShowAuthModal(false); setAuthSuccessMessage('Login successful!'); await fetchUserProfile(data.access_token); const savedStateJSON = sessionStorage.getItem('tiny-tutor-guest-state'); if (savedStateJSON) { const savedState = JSON.parse(savedStateJSON); setLiveStreak(savedState.liveStreak); setLiveStreakQuizQueue(savedState.liveStreakQuizQueue); setCurrentFocusWord(savedState.currentFocusWord); setGeneratedContent(savedState.generatedContent); setActiveTopic(savedState.activeTopic); setIsInitialView(savedState.isInitialView); sessionStorage.removeItem('tiny-tutor-guest-state'); } setAuthEmail(''); setAuthPassword(''); setAuthUsername(''); } } catch (err) { if (err instanceof Error) setAuthError(err.message); } finally { setIsLoading(false); if (authMode === 'signup') setAuthPassword(''); }};
   const handleSaveQuizAttempt = useCallback(async (word: string, isCorrect: boolean) => { if (!authToken) return; try { await fetch(`${API_BASE_URL}/save_quiz_attempt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word, is_correct: isCorrect, question_index: 0, selected_option_key: '' }), }); if (authToken) await fetchUserProfile(authToken); } catch (err: any) { console.error("Error saving quiz attempt stats:", err); }}, [authToken, fetchUserProfile]);
   
+  // --- CHANGE #2.2: Update generation function to check guest limits ---
   const handleGenerateExplanation = useCallback(async (wordToFetch: string, isNewPrimaryWordSearch: boolean = false, isUserRefreshClick: boolean = false, isSubTopicClick: boolean = false) => {
     if (!wordToFetch.trim()) return;
+
+    // Check guest limit BEFORE making any API call
+    if (!authToken && guestGenerations >= GUEST_GENERATION_LIMIT) {
+        setAuthError("You've reached the guest generation limit. Please sign in to continue.");
+        setShowAuthModal(true);
+        return; // Stop execution
+    }
+
     const wordId = sanitizeWordForId(wordToFetch);
     setError(null);
     if (isNewPrimaryWordSearch) {
@@ -123,9 +178,7 @@ function App() {
         const requestBody = { word: wordToFetch, mode: 'explain', refresh_cache: isUserRefreshClick || isActuallyContextualExplain, streakContext: streakContextForAPI, language: language };
         const response = await fetch(`${API_BASE_URL}/generate_explanation`, { method: 'POST', headers: headers, body: JSON.stringify(requestBody) });
         if (!response.ok) {
-            // --- CHANGE #1: Save the pending action on rate limit ---
             if (response.status === 429) {
-                console.log("Rate limit hit in Explore Mode. Saving pending action.");
                 const pendingAction = { wordToFetch, isNewPrimaryWordSearch, isUserRefreshClick, isSubTopicClick };
                 sessionStorage.setItem('explorePendingAction', JSON.stringify(pendingAction));
                 handleRateLimit(); 
@@ -134,8 +187,14 @@ function App() {
             throw new Error((await response.json()).error || 'Failed to generate content');
         }
         
-        // If we get a successful response, clear any pending action
         sessionStorage.removeItem('explorePendingAction');
+
+        // --- CHANGE #2.3: Increment guest counter on successful generation ---
+        if (!authToken) {
+            const newCount = guestGenerations + 1;
+            setGuestGenerations(newCount);
+            sessionStorage.setItem('guestGenerationCount', String(newCount));
+        }
 
         const apiData = await response.json();
         const explanationJustFetched = apiData.explain;
@@ -160,30 +219,18 @@ function App() {
         setIsLoading(false);
         if (isNewPrimaryWordSearch) setInputValue('');
     }
-  }, [authToken, customApiKey, generatedContent, liveStreak, userProfileData, language]);
+  }, [authToken, customApiKey, generatedContent, liveStreak, userProfileData, language, guestGenerations]);
   
-  // --- CHANGE #2: New useEffect to handle retrying the action ---
   useEffect(() => {
-    // Check if we are returning from fixing a rate limit
     if (isResumingFromRateLimit) {
-        // Specifically handle the case for Explore Mode
         if (activeGameMode === 'explore_mode' || (isInitialView && startMode === 'explore_mode')) {
             const pendingActionJSON = sessionStorage.getItem('explorePendingAction');
             if (pendingActionJSON) {
-                console.log("Retrying pending explore action...");
                 const pendingAction = JSON.parse(pendingActionJSON);
-                
-                // Call the generation function with the saved parameters
-                handleGenerateExplanation(
-                    pendingAction.wordToFetch,
-                    pendingAction.isNewPrimaryWordSearch,
-                    pendingAction.isUserRefreshClick,
-                    pendingAction.isSubTopicClick
-                );
+                handleGenerateExplanation( pendingAction.wordToFetch, pendingAction.isNewPrimaryWordSearch, pendingAction.isUserRefreshClick, pendingAction.isSubTopicClick );
                 sessionStorage.removeItem('explorePendingAction');
             }
         }
-        // Reset the flag regardless of which mode we're in, as the action is now handled.
         setIsResumingFromRateLimit(false);
     }
   }, [isResumingFromRateLimit, activeGameMode, isInitialView, startMode, handleGenerateExplanation]);
@@ -220,16 +267,12 @@ function App() {
         if (!response.ok) { throw new Error(data.message || 'Validation failed'); }
         localStorage.setItem('customApiKey', customApiKey);
         setApiKeyValidationStatus({ message: data.message, type: 'success' });
-        
-        // This is the trigger that our new useEffect will listen for
         setIsResumingFromRateLimit(true); 
-
         setTimeout(() => {
             setApiKeyValidationStatus({ message: '', type: 'idle' });
             setShowRateLimitModal(false); 
-            // After successfully retrying, navigate back to the main view
             setActiveView('main');
-        }, 1500); // A short delay to show the success message
+        }, 1500); 
     } catch (err) {
         if (err instanceof Error) { setApiKeyValidationStatus({ message: err.message, type: 'error' }); }
         else { setApiKeyValidationStatus({ message: 'An unknown error occurred.', type: 'error' }); }
@@ -252,7 +295,7 @@ function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to delete account.");
       alert("Account deleted successfully.");
-      handleLogout(); // Log out and clear all state
+      handleLogout();
     } catch (err) {
       if (err instanceof Error) alert(`Error: ${err.message}`);
       else alert("An unknown error occurred during account deletion.");

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Youtube } from 'lucide-react';
+import { Globe, Youtube, Image as ImageIcon } from 'lucide-react';
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
@@ -26,7 +26,7 @@ const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ title, snippet, url }
       return urlStr;
     }
   };
-
+  
   const domainName = getDomainName(url);
   const isYoutubeLink = domainName.includes('youtube.com');
 
@@ -50,33 +50,35 @@ const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ title, snippet, url }
   }, [url]);
 
   if (isLoading) {
-    return <div className="bg-slate-800/50 rounded-lg animate-pulse h-48"></div>;
+    return (
+        <div className="bg-slate-800/50 rounded-lg animate-pulse h-48"></div>
+    );
   }
   
-  const displayTitle = previewData?.title || title;
-  const displayDescription = previewData?.description || snippet;
+  // Use fetched metadata as primary, but fallback to original props from the web agent
+  const displayTitle = previewData?.title && previewData.title !== "No Title Found" ? previewData.title : title;
+  const displayDescription = previewData?.description && previewData.description !== "No description available." ? previewData.description : snippet;
   const displayImage = previewData?.image;
 
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-slate-800/50 rounded-lg group hover:ring-2 hover:ring-slate-600 transition-all h-48 flex flex-col justify-between">
-      {/* Image container */}
+    <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-slate-800/50 rounded-lg group hover:ring-2 hover:ring-slate-600 transition-all h-48 flex flex-col">
+      {/* --- IMAGE SECTION --- */}
       <div className="relative w-full h-24 bg-slate-900 flex-shrink-0 overflow-hidden">
         {displayImage ? (
           <img src={displayImage} alt={displayTitle} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
-            {isYoutubeLink ? <Youtube className="w-10 h-10 text-slate-600" /> : <Globe className="w-8 h-8 text-slate-600" />}
+            {isYoutubeLink ? <Youtube className="w-10 h-10 text-slate-600" /> : <ImageIcon className="w-8 h-8 text-slate-600" />}
           </div>
         )}
       </div>
       
-      {/* Text Content */}
+      {/* --- TEXT CONTENT SECTION --- */}
       <div className="p-3 flex-grow flex flex-col justify-between overflow-hidden">
         <div>
           <h4 className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 leading-tight text-sm">
             {displayTitle}
           </h4>
-          {/* FIXED: Render the description if it exists */}
           {displayDescription && (
              <p className="text-xs text-slate-400 line-clamp-2 mt-1">
                 {displayDescription}

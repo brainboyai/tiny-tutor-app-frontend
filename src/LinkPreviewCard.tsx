@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Image as ImageIcon, BookOpen, Youtube, ShoppingCart, Info } from 'lucide-react';
+import { Image as BookOpen, Youtube, ShoppingCart, Info } from 'lucide-react';
 
 const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
@@ -66,7 +66,9 @@ const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ type, title, url }) =
         {previewData?.image ? (
           <img src={previewData.image} alt={previewData.title || title} className="w-full h-full object-cover" />
         ) : (
-          <ImageIcon className="w-10 h-10 text-slate-600" />
+          // --- THIS IS THE FIX ---
+          // Use the dynamic Icon and color variables here instead of a static one.
+          <Icon className={`w-10 h-10 ${color}`} />
         )}
       </div>
       <div className="p-4">

@@ -76,8 +76,8 @@ function App() {
   });
   const GUEST_GENERATION_LIMIT = 3;
 
-  // New state for web context
-  const [webContext, setWebContext] = useState<WebContextItem[] | null>(null);
+  // Replace the single webContext state with a cache
+  const [webContextCache, setWebContextCache] = useState<{ [key: string]: WebContextItem[] }>({});
   const [isWebContextLoading, setIsWebContextLoading] = useState(false);
 
 
@@ -125,7 +125,7 @@ function App() {
     setGuestGenerations(0);
     setStoryGuestGenerations(0);
     setLanguage('en');
-    setWebContext(null);
+    setWebContextCache({});
   }, [liveStreak, authToken, saveStreakToServer]);
   const fetchUserProfile = useCallback(async (token: string | null) => { if (!token || profileFetchFailed) { setUserProfileData(null); setCurrentUser(null); return; } setIsFetchingProfile(true); try { const response = await fetch(`${API_BASE_URL}/profile`, { headers: { 'Authorization': `Bearer ${token}` }}); if (!response.ok) { if (response.status === 401) { handleLogout(); } else if (response.status === 429) { setError("API limit reached. Please wait and try again later.");} else { setError(`Profile fetch failed with status: ${response.status}`);}  setProfileFetchFailed(true); return; } const data = await response.json(); const pE: ExploredWordEntry[]=(data.exploredWords||[]).map((w:any)=>(w&&typeof w.word==='string'?{...w}:null)).filter(Boolean); const pF:ExploredWordEntry[]=(data.favoriteWords||[]).map((w:any)=>(w&&typeof w.word==='string'?{...w}:null)).filter(Boolean); setUserProfileData({...data, exploredWords: pE, favoriteWords: pF, streakHistory: (data.streakHistory||[]).sort((a:any,b:any)=>new Date(b.completed_at).getTime()-new Date(a.completed_at).getTime())}); setCurrentUser({username:data.username, email:data.email, id:data.user_id||''}); setError(null); setProfileFetchFailed(false);} catch(e){console.error("Profile fetch error:", e); setError("Could not connect to the server. Please check your connection."); setProfileFetchFailed(true);if(typeof e === 'string') setError(e); else if (e instanceof Error) setError(e.message)}finally{setIsFetchingProfile(false);}}, [profileFetchFailed, handleLogout]);
   useEffect(() => { const storedToken = localStorage.getItem('authToken'); if (storedToken) { if (!authToken) setAuthToken(storedToken); if (!currentUser && !isFetchingProfile && !profileFetchFailed) { fetchUserProfile(storedToken); } } else { setCurrentUser(null); setUserProfileData(null); setAuthToken(null); }}, [authToken, currentUser, isFetchingProfile, fetchUserProfile, profileFetchFailed]);
@@ -143,7 +143,7 @@ function App() {
 
     const wordId = sanitizeWordForId(wordToFetch);
     setError(null);
-    setWebContext(null); // Clear previous web context
+    setWebContextCache(prev => ({ ...prev, [wordId]: [] })); // Clear context for this word immediately
 
     if (isNewPrimaryWordSearch) {
         setIsInitialView(false);
@@ -214,7 +214,11 @@ function App() {
         .then(res => res.json())
         .then(data => {
             if (data.web_context) {
-                setWebContext(data.web_context);
+              // Add the result to the cache instead of a single state
+              setWebContextCache(prevCache => ({
+                ...prevCache,
+                [sanitizeWordForId(wordToFetch)]: data.web_context
+              }));
             }
         })
         .catch(err => console.error("Failed to fetch web context:", err))
@@ -254,7 +258,32 @@ function App() {
     }
   }, [isResumingFromRateLimit, activeGameMode, isInitialView, startMode, handleGenerateExplanation]);
 
-  const handleStreakWordClick = useCallback((clickedWord: string) => { setIsQuizVisible(false); setCurrentFocusWord(clickedWord); setIsReviewingStreakWord(true); setWordForReview(clickedWord); setWebContext(null); setIsWebContextLoading(true); fetch(`${API_BASE_URL}/fetch_web_context`,{method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({topic: clickedWord})}).then(res => res.json()).then(data => setWebContext(data.web_context || [])).catch(err => console.error("Web context fetch failed for streak word", err)).finally(() => setIsWebContextLoading(false)); }, []);
+  const handleStreakWordClick = useCallback((clickedWord: string) => {
+    setIsQuizVisible(false);
+    setCurrentFocusWord(clickedWord);
+    setIsReviewingStreakWord(true);
+    setWordForReview(clickedWord);
+
+    const wordId = sanitizeWordForId(clickedWord);
+    // Only fetch if not already in cache
+    if (!webContextCache[wordId] || webContextCache[wordId].length === 0) {
+      setIsWebContextLoading(true);
+      fetch(`${API_BASE_URL}/fetch_web_context`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: clickedWord })
+      })
+      .then(res => res.json())
+      .then(data => {
+        setWebContextCache(prevCache => ({
+          ...prevCache,
+          [wordId]: data.web_context || []
+        }));
+      })
+      .catch(err => console.error("Web context fetch failed for streak word", err))
+      .finally(() => setIsWebContextLoading(false));
+    }
+  }, [webContextCache]);
   const handleSubTopicClick = useCallback((subTopic: string) => { setIsQuizVisible(false); if (liveStreak && liveStreak.words.includes(subTopic)) { handleStreakWordClick(subTopic); } else { handleGenerateExplanation(subTopic, false, false, true); } }, [liveStreak, handleGenerateExplanation, handleStreakWordClick]);
   const handleRefreshContent = useCallback(() => { const wordToUse = getDisplayWord(); if (!wordToUse) return; handleGenerateExplanation(wordToUse, false, true);}, [getDisplayWord, handleGenerateExplanation]);
   const handleToggleFavorite = useCallback(async (word: string, currentStatus: boolean) => { if (!authToken || !userProfileData) return; const wordId = sanitizeWordForId(word); setGeneratedContent(prev => ({...prev, [wordId]: { ...(prev[wordId] || {}), is_favorite: !currentStatus }})); setUserProfileData(prev => { if (!prev) return null; const updatedExplored = prev.exploredWords.map(w => w.word === word ? { ...w, is_favorite: !currentStatus } : w); const wordEntry = updatedExplored.find(w => w.word === word); let updatedFavorites = prev.favoriteWords.filter(fw => fw.word !== word); if (!currentStatus && wordEntry) { updatedFavorites = [wordEntry, ...updatedFavorites]; } return { ...prev, exploredWords: updatedExplored, favoriteWords: updatedFavorites, }; }); try { await fetch(`${API_BASE_URL}/toggle_favorite`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word }) }); } catch (err: any) { console.error("Error toggling favorite:", err); if (authToken) await fetchUserProfile(authToken); } }, [authToken, userProfileData, fetchUserProfile]);
@@ -262,7 +291,7 @@ function App() {
   const handlePopupQuizAnswer = (optionKey: string) => { const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem || currentItem.attempted) return; const isCorrect = currentItem.quizQuestion.correctOptionKey === optionKey; handleSaveQuizAttempt(currentItem.word, isCorrect); setLiveStreakQuizQueue(prev => prev.map((item, index) => index === currentStreakQuizItemIndex ? { ...item, attempted: true, selectedOptionKey: optionKey, isCorrect } : item )); };
   useEffect(() => { const storedLang = localStorage.getItem('tiny-tutor-language'); if (storedLang) { setLanguage(storedLang); } }, []);
   const handleLanguageChange = (lang: string) => { setLanguage(lang); localStorage.setItem('tiny-tutor-language', lang); };
-  const resetChat = useCallback(() => { const action = async () => { if (liveStreak && authToken && activeGameMode === 'explore_mode') { const newHistory = await saveStreakToServer(liveStreak, authToken); if (newHistory && userProfileData) { setUserProfileData(prev => ({...prev!, streakHistory: newHistory})); } } setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); setIsInitialView(true); setActiveGameMode(null); setActiveTopic(null); }; if (liveStreak && liveStreak.score >= 2 && activeGameMode === 'explore_mode') { setWarningAction({ action }); setShowWarningModal(true); } else { action(); } }, [liveStreak, authToken, saveStreakToServer, userProfileData, activeGameMode]);
+  const resetChat = useCallback(() => { const action = async () => { if (liveStreak && authToken && activeGameMode === 'explore_mode') { const newHistory = await saveStreakToServer(liveStreak, authToken); if (newHistory && userProfileData) { setUserProfileData(prev => ({...prev!, streakHistory: newHistory})); } } setInputValue(''); setCurrentFocusWord(null); setLiveStreak(null); setLiveStreakQuizQueue([]); setError(null); setIsReviewingStreakWord(false); setIsQuizVisible(false); setIsInitialView(true); setActiveGameMode(null); setActiveTopic(null); setWebContextCache({}); }; if (liveStreak && liveStreak.score >= 2 && activeGameMode === 'explore_mode') { setWarningAction({ action }); setShowWarningModal(true); } else { action(); } }, [liveStreak, authToken, saveStreakToServer, userProfileData, activeGameMode]);
   const confirmWarning = () => { if (warningAction) { warningAction.action(); } setShowWarningModal(false); setWarningAction(null); };
   const handleFormSubmit = (e: FormEvent) => { e.preventDefault(); if (!inputValue.trim()) return; if (startMode === 'explore_mode') { handleGenerateExplanation(inputValue, true); } else if (startMode === 'story_mode') { setIsInitialView(false); setActiveGameMode('story_mode'); setActiveTopic(inputValue); setInputValue(''); } else if (startMode === 'game_mode') { setIsInitialView(false); setActiveGameMode('game_mode'); setActiveTopic(inputValue); setInputValue(''); } };
   useEffect(() => { const handleBeforeUnload = (e: BeforeUnloadEvent) => { if (liveStreak && liveStreak.score >= 2 && authToken) {e.preventDefault(); e.returnValue = "Your live streak will end if the page is refreshed."; const data = JSON.stringify({ words: liveStreak.words, score: liveStreak.score }); const blob = new Blob([data], { type: 'application/json; charset=UTF-8' }); navigator.sendBeacon(`${API_BASE_URL}/save_streak`, blob); } }; window.addEventListener('beforeunload', handleBeforeUnload); return () => { window.removeEventListener('beforeunload', handleBeforeUnload); }; }, [liveStreak, authToken]);
@@ -325,7 +354,56 @@ function App() {
 
   // --- RENDER FUNCTIONS ---
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
-  const renderExploreModeContent = () => { const wordToUse = getDisplayWord(); if (isInitialView) { return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16 animate-fadeIn"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>Enter a Concept or a Word you want to learn about</span></div>); } if (isLoading && !generatedContent[sanitizeWordForId(wordToUse!)]) { return <div className="text-center p-10 text-slate-400">Generating...</div>; } if (error) return <div className="text-center p-10 text-red-400">Error: {error}</div>; if (!wordToUse) return null; const wordId = sanitizeWordForId(wordToUse); const contentItem = generatedContent[wordId]; if (!contentItem?.explanation) return null; const currentIsFavorite = contentItem?.is_favorite || false; const renderClickableText = (text: string | undefined) => { if (!text) return null; const parts = text.split(/(<click>.*?<\/click>)/g); return parts.map((part, index) => { const clickMatch = part.match(/<click>(.*?)<\/click>/); if (clickMatch && clickMatch[1]) { const subTopic = clickMatch[1]; return ( <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-[--accent-primary] hover:text-[--accent-secondary] underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`} > {subTopic} </button> );} return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />; });}; return ( <div className="bg-transparent p-1 animate-fadeIn"> <div className="flex justify-between items-start mb-4"> <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2> {authToken && <div className="flex items-center space-x-2"> <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button> <button onClick={handleRefreshContent} className="p-1.5 rounded-full text-[--text-tertiary] hover:text-[--text-primary] hover:bg-[--hover-bg-color] transition-colors" title="Regenerate Explanation"><RefreshCw size={18}/></button> </div>} </div> <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg"> {renderClickableText(contentItem.explanation)} </div><WebContextDisplay webContext={webContext} isLoading={isWebContextLoading} /></div> ); };
+  const renderExploreModeContent = () => {
+    const wordToUse = getDisplayWord();
+    if (isInitialView) {
+      return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16 animate-fadeIn"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>Enter a Concept or a Word you want to learn about</span></div>);
+    }
+    if (isLoading && !generatedContent[sanitizeWordForId(wordToUse!)]) {
+      return <div className="text-center p-10 text-slate-400">Generating...</div>;
+    }
+    if (error) return <div className="text-center p-10 text-red-400">Error: {error}</div>;
+    if (!wordToUse) return null;
+    const wordId = sanitizeWordForId(wordToUse);
+    const contentItem = generatedContent[wordId];
+    if (!contentItem?.explanation) return null;
+    const currentIsFavorite = contentItem?.is_favorite || false;
+    const currentWebContext = webContextCache[wordId]; // Get context from cache
+    const renderClickableText = (text: string | undefined) => {
+      if (!text) return null;
+      const parts = text.split(/(<click>.*?<\/click>)/g);
+      return parts.map((part, index) => {
+        const clickMatch = part.match(/<click>(.*?)<\/click>/);
+        if (clickMatch && clickMatch[1]) {
+          const subTopic = clickMatch[1];
+          return (
+            <button key={`${subTopic}-${index}`} onClick={() => handleSubTopicClick(subTopic)} className="text-[--accent-primary] hover:text-[--accent-secondary] underline font-semibold transition-colors mx-1" title={`Explore: ${subTopic}`}>
+              {subTopic}
+            </button>
+          );
+        }
+        return <span key={`text-${index}`} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br />') }} />;
+      });
+    };
+    return (
+      <div className="bg-transparent p-1 animate-fadeIn">
+        <div className="flex justify-between items-start mb-4">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2>
+          {authToken && <div className="flex items-center space-x-2">
+            <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button>
+            <button onClick={handleRefreshContent} className="p-1.5 rounded-full text-[--text-tertiary] hover:text-[--text-primary] hover:bg-[--hover-bg-color] transition-colors" title="Regenerate Explanation"><RefreshCw size={18}/></button>
+          </div>}
+        </div>
+        <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
+          {renderClickableText(contentItem.explanation)}
+        </div>
+        <WebContextDisplay
+          webContext={currentWebContext}
+          isLoading={isWebContextLoading && (!currentWebContext || currentWebContext.length === 0)}
+        />
+      </div>
+    );
+  };
   const renderQuizPopup = () => { if (!isQuizVisible) return null; const currentItem = liveStreakQuizQueue[currentStreakQuizItemIndex]; if (!currentItem) return null; const { quizQuestion, attempted, selectedOptionKey } = currentItem; const isLastQuestion = currentStreakQuizItemIndex >= liveStreakQuizQueue.length - 1; const handleOptionClick = (key: string) => { if (!authToken) { showLoginModal(); return; } if (attempted) return; handlePopupQuizAnswer(key); }; return ( <div className="absolute top-4 right-4 w-full max-w-md bg-[--background-secondary] rounded-lg shadow-2xl p-6 z-20 border border-[--border-color] animate-fadeIn"> <div className="flex justify-between items-center mb-4"> <h3 className="font-semibold text-lg text-[--text-primary]"> {!authToken ? "Quiz Preview" : "Quiz Time!"} </h3> <button onClick={() => setIsQuizVisible(false)} className="text-[--text-tertiary] hover:text-[--text-primary]"><X size={20}/></button> </div> <p className="text-[--text-secondary] mb-1 text-sm">Question {currentStreakQuizItemIndex + 1} of {liveStreakQuizQueue.length} (for "{currentItem.word}")</p> <p className="text-[--text-primary] mb-4">{quizQuestion.question}</p> <div className="space-y-2"> {Object.entries(quizQuestion.options).map(([key, text]) => { let buttonColor = "bg-[--hover-bg-color] hover:bg-[--border-color]"; if (authToken && attempted) { if (key === quizQuestion.correctOptionKey) { buttonColor = "bg-green-800/80"; } else if (key === selectedOptionKey) { buttonColor = "bg-red-800/80"; } else { buttonColor = "bg-[--hover-bg-color] opacity-60"; } } return ( <button key={key} onClick={() => handleOptionClick(key)} disabled={!!(authToken && attempted)} className={`w-full text-left p-3 rounded-md transition-colors ${buttonColor} ${!authToken ? 'cursor-pointer hover:bg-[--border-color]' : 'disabled:cursor-not-allowed'}`} title={!authToken ? "Login to interact with the quiz" : ""}> {text} </button> ); })} </div> {(authToken && attempted) && ( <div className="flex justify-end mt-4"> {isLastQuestion ? ( <button onClick={() => setIsQuizVisible(false)} className="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-4 rounded-md"> Finish </button> ) : ( <button onClick={() => setCurrentStreakQuizItemIndex(i => i + 1)} className="bg-[--accent-primary] text-black font-semibold py-2 px-4 rounded-md"> Next </button> )} </div> )} {!authToken && ( <div className="text-center mt-4 p-3 bg-amber-900/30 rounded-md"> <p className="text-amber-300 font-semibold">Please log in to solve quizzes and track your progress!</p> </div> )} </div> ); };
   const renderWarningModal = () => { if (!showWarningModal) return null; return ( <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-sm"> <h3 className="font-bold text-lg text-amber-400 mb-2">End Streak?</h3> <p className="text-[--text-secondary] mb-6">Your current streak progress will be lost. Are you sure you want to continue?</p> <div className="flex justify-end gap-4"> <button onClick={() => setShowWarningModal(false)} className="py-2 px-4 rounded-md text-sm hover:bg-[--hover-bg-color]">No, continue streak</button> <button onClick={confirmWarning} className="py-2 px-4 rounded-md text-sm bg-amber-600 hover:bg-amber-500 text-white font-semibold">Yes, end streak</button> </div> </div> </div> ); };
   const renderRateLimitModal = () => {

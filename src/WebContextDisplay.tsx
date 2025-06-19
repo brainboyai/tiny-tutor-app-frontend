@@ -1,5 +1,5 @@
 import React from 'react';
-import LinkPreviewCard from './LinkPreviewCard.tsx'; // Import the new component
+import LinkPreviewCard from './LinkPreviewCard.tsx';
 
 interface WebContextItem {
   type: 'read' | 'watch' | 'service' | 'info';
@@ -16,12 +16,12 @@ interface WebContextDisplayProps {
 const WebContextDisplay: React.FC<WebContextDisplayProps> = ({ webContext, isLoading }) => {
   if (isLoading) {
     return (
-      <div className="mt-8 pt-6 border-t border-slate-700/50 animate-pulse">
-        <div className="h-4 bg-slate-700 rounded w-1/3 mb-4"></div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="h-40 bg-slate-800 rounded-lg"></div>
-          <div className="h-40 bg-slate-800 rounded-lg"></div>
-          <div className="h-40 bg-slate-800 rounded-lg"></div>
+      <div className="mt-8 pt-6 border-t border-slate-700/50">
+        <div className="h-4 bg-slate-700 rounded w-1/3 mb-4 animate-pulse"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="h-[10rem] bg-slate-800/50 rounded-lg animate-pulse"></div>
+          <div className="h-[10rem] bg-slate-800/50 rounded-lg animate-pulse"></div>
+          <div className="h-[10rem] bg-slate-800/50 rounded-lg animate-pulse"></div>
         </div>
       </div>
     );
@@ -34,12 +34,10 @@ const WebContextDisplay: React.FC<WebContextDisplayProps> = ({ webContext, isLoa
   return (
     <div className="mt-8 pt-6 border-t border-slate-700/50">
       <h3 className="text-lg font-semibold text-slate-200 mb-4">Web Agent Results</h3>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {webContext.map((item, index) => (
           <LinkPreviewCard
             key={index}
-            type={item.type}
-            title={item.title}
             url={item.url}
           />
         ))}

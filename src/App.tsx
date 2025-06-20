@@ -14,7 +14,7 @@ import WebContextDisplay from './WebContextDisplay.tsx'; // Import the new Web C
 // --- Types and Helpers ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; }
-interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; }
+interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; image_urls?: string[]; }
 interface GeneratedContent { [wordId: string]: GeneratedContentItem; }
 interface LiveStreak { score: number; words: string[]; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
@@ -133,6 +133,7 @@ function App() {
   const handleAuthAction = async (e: FormEvent) => { e.preventDefault(); setAuthError(null); setAuthSuccessMessage(null); setIsLoading(true); const url = authMode === 'signup' ? `${API_BASE_URL}/signup` : `${API_BASE_URL}/login`; let payload = {}; if (authMode === 'signup') { payload = { username: authUsername, email: authEmail, password: authPassword }; } else { payload = { email_or_username: authUsername, password: authPassword };} try { const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json(); if (!response.ok) { throw new Error(data.error || 'Request failed');} if (authMode === 'signup') { setAuthSuccessMessage('Signup successful! Please login.'); setAuthMode('login'); setAuthEmail(''); setAuthPassword(''); } else { localStorage.setItem('authToken', data.access_token); setAuthToken(data.access_token); setCurrentUser({ username: data.user.username, email: data.user.email, id: data.user.id }); setShowAuthModal(false); setAuthSuccessMessage('Login successful!'); await fetchUserProfile(data.access_token); const savedStateJSON = sessionStorage.getItem('tiny-tutor-guest-state'); if (savedStateJSON) { const savedState = JSON.parse(savedStateJSON); setLiveStreak(savedState.liveStreak); setLiveStreakQuizQueue(savedState.liveStreakQuizQueue); setCurrentFocusWord(savedState.currentFocusWord); setGeneratedContent(savedState.generatedContent); setActiveTopic(savedState.activeTopic); setIsInitialView(savedState.isInitialView); sessionStorage.removeItem('tiny-tutor-guest-state'); } setAuthEmail(''); setAuthPassword(''); setAuthUsername(''); } } catch (err) { if (err instanceof Error) setAuthError(err.message); } finally { setIsLoading(false); if (authMode === 'signup') setAuthPassword(''); }};
   const handleSaveQuizAttempt = useCallback(async (word: string, isCorrect: boolean) => { if (!authToken) return; try { await fetch(`${API_BASE_URL}/save_quiz_attempt`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify({ word, is_correct: isCorrect, question_index: 0, selected_option_key: '' }), }); if (authToken) await fetchUserProfile(authToken); } catch (err: any) { console.error("Error saving quiz attempt stats:", err); }}, [authToken, fetchUserProfile]);
   
+  // UPDATED: handleGenerateExplanation now handles the new response structure
   const handleGenerateExplanation = useCallback(async (wordToFetch: string, isNewPrimaryWordSearch: boolean = false, isUserRefreshClick: boolean = false, isSubTopicClick: boolean = false) => {
     if (!wordToFetch.trim()) return;
 
@@ -143,7 +144,7 @@ function App() {
 
     const wordId = sanitizeWordForId(wordToFetch);
     setError(null);
-    setWebContextCache(prev => ({ ...prev, [wordId]: [] })); // Clear context for this word immediately
+    setWebContextCache(prev => ({ ...prev, [wordId]: [] })); 
 
     if (isNewPrimaryWordSearch) {
         setIsInitialView(false);
@@ -159,14 +160,15 @@ function App() {
         setCurrentFocusWord(wordToFetch);
         setIsReviewingStreakWord(false);
     }
+    
     setIsLoading(true);
+
     let streakContextForAPI: string[] = [];
     if (isSubTopicClick && liveStreak) {
-       // SOLUTION: Instead of sending the whole streak, send only the last 5 words.
-        // This keeps the prompt context relevant but prevents it from growing too large
-        // and causing a server timeout. The slice(-5) method gets the last 5 items.
+        // OPTIMIZATION: Send only the last 5 words of context to prevent timeouts
         streakContextForAPI = liveStreak.words.slice(-5);
     }
+
     const isActuallyContextualExplain = streakContextForAPI.length > 0;
     if (!isUserRefreshClick && authToken && generatedContent[wordId]?.explanation && !isActuallyContextualExplain) {
         if(isNewPrimaryWordSearch && (!liveStreak || !liveStreak.words.includes(wordToFetch))) {
@@ -177,6 +179,7 @@ function App() {
         setIsLoading(false);
         return;
     }
+
     const RATE_LIMIT_ERROR_MESSAGE = "Free daily limit reached.";
     try {
         const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -191,7 +194,8 @@ function App() {
                 handleRateLimit(); 
                 throw new Error(RATE_LIMIT_ERROR_MESSAGE);
             }
-            throw new Error((await response.json()).error || 'Failed to generate content');
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Request failed with status ${response.status}`);
         }
         
         sessionStorage.removeItem('explorePendingAction');
@@ -202,28 +206,32 @@ function App() {
             sessionStorage.setItem('guestGenerationCount', String(newCount));
         }
 
+        // UPDATED: The API now returns an object with 'explanation' and 'image_urls'
         const apiData = await response.json();
-        const explanationJustFetched = apiData.explain;
+        const explanationJustFetched = apiData.explanation;
+        const imageUrlsFetched = apiData.image_urls || [];
+        
         const isNewWordBeingAddedToStreak = isNewPrimaryWordSearch || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch)));
         if (isNewWordBeingAddedToStreak && !isNewPrimaryWordSearch) { setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] }); }
-        setGeneratedContent(prev => { const existing = prev[wordId] || {}; const newGC: GeneratedContentItem = {...existing, explanation: explanationJustFetched, is_favorite: apiData.is_favorite, first_explored_at: (prev[wordId]?.first_explored_at || new Date().toISOString()), last_explored_at: new Date().toISOString() }; return {...prev, [wordId]: newGC }; });
+        
+        // UPDATED: Store both explanation and image URLs in the state
+        setGeneratedContent(prev => { 
+            const existing = prev[wordId] || {};
+            const newGC: GeneratedContentItem = {
+                ...existing, 
+                explanation: explanationJustFetched,
+                image_urls: imageUrlsFetched, // Store the new image URLs
+                is_favorite: apiData.is_favorite,
+                first_explored_at: (prev[wordId]?.first_explored_at || new Date().toISOString()),
+                last_explored_at: new Date().toISOString()
+            };
+            return {...prev, [wordId]: newGC }; 
+        });
         
         setIsWebContextLoading(true);
-        fetch(`${API_BASE_URL}/fetch_web_context`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ topic: wordToFetch }),
-        })
+        fetch(`${API_BASE_URL}/fetch_web_context`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: wordToFetch }), })
         .then(res => res.json())
-        .then(data => {
-            if (data.web_context) {
-              // Add the result to the cache instead of a single state
-              setWebContextCache(prevCache => ({
-                ...prevCache,
-                [sanitizeWordForId(wordToFetch)]: data.web_context
-              }));
-            }
-        })
+        .then(data => { if (data.web_context) { setWebContextCache(prevCache => ({ ...prevCache, [sanitizeWordForId(wordToFetch)]: data.web_context })); }})
         .catch(err => console.error("Failed to fetch web context:", err))
         .finally(() => setIsWebContextLoading(false));
 
@@ -246,6 +254,7 @@ function App() {
         if (isNewPrimaryWordSearch) setInputValue('');
     }
   }, [authToken, customApiKey, generatedContent, liveStreak, userProfileData, language, guestGenerations]);
+
   
   useEffect(() => {
     if (isResumingFromRateLimit) {
@@ -357,10 +366,10 @@ function App() {
 
   // --- RENDER FUNCTIONS ---
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
-  const renderExploreModeContent = () => {
+const renderExploreModeContent = () => {
     const wordToUse = getDisplayWord();
     if (isInitialView) {
-      return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16 animate-fadeIn"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>Enter a Concept or a Word you want to learn about</span></div>);
+      return (<div className="text-center text-4xl font-medium text-slate-500 flex flex-col items-center justify-center h-full pt-16 animate-fadeIn"><span className="p-4 bg-sky-500/10 rounded-full mb-4"><Sparkles size={32} className="text-sky-400"/></span><span>Enter a Concept or a Word to learn</span></div>);
     }
     if (isLoading && !generatedContent[sanitizeWordForId(wordToUse!)]) {
       return <div className="text-center p-10 text-slate-400">Generating...</div>;
@@ -371,10 +380,10 @@ function App() {
     const contentItem = generatedContent[wordId];
     if (!contentItem?.explanation) return null;
     const currentIsFavorite = contentItem?.is_favorite || false;
-    const currentWebContext = webContextCache[wordId]; // Get context from cache
+    const currentWebContext = webContextCache[wordId]; 
     const renderClickableText = (text: string | undefined) => {
       if (!text) return null;
-      const parts = text.split(/(<click>.*?<\/click>)/g);
+      const parts = text.split(/(<click>.*?<\/click>|\$[^\$]+\$)/g);
       return parts.map((part, index) => {
         const clickMatch = part.match(/<click>(.*?)<\/click>/);
         if (clickMatch && clickMatch[1]) {
@@ -400,6 +409,27 @@ function App() {
         <div className="prose prose-invert max-w-none text-[--text-secondary] leading-relaxed text-lg">
           {renderClickableText(contentItem.explanation)}
         </div>
+
+        {/* === NEW: Image Display Logic === */}
+        {contentItem.image_urls && contentItem.image_urls.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-base font-semibold text-slate-400 mb-3">Visual Context</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {contentItem.image_urls.map((url, index) => (
+                <a href={url} key={index} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden group">
+                  <img 
+                    src={url} 
+                    alt={`${wordToUse} visual context ${index + 1}`}
+                    className="rounded-lg object-cover w-full h-48 bg-slate-800 hover:ring-2 hover:ring-sky-500 transition-all duration-300 group-hover:scale-105"
+                    onError={(e) => (e.currentTarget.style.display = 'none')} 
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* === End of Image Display Logic === */}
+
         <WebContextDisplay
           webContext={currentWebContext}
           isLoading={isWebContextLoading && (!currentWebContext || currentWebContext.length === 0)}

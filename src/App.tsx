@@ -14,7 +14,7 @@ import WebContextDisplay from './WebContextDisplay.tsx'; // Import the new Web C
 // --- Types and Helpers ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; }
-interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; }
+interface GeneratedContentItem { explanation?: string; imageUrl?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; }
 interface GeneratedContent { [wordId: string]: GeneratedContentItem; }
 interface LiveStreak { score: number; words: string[]; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
@@ -201,9 +201,10 @@ function App() {
 
         const apiData = await response.json();
         const explanationJustFetched = apiData.explain;
+        const imageUrlFetched = apiData.image_url; // <-- Grab the new image URL
         const isNewWordBeingAddedToStreak = isNewPrimaryWordSearch || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch)));
         if (isNewWordBeingAddedToStreak && !isNewPrimaryWordSearch) { setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] }); }
-        setGeneratedContent(prev => { const existing = prev[wordId] || {}; const newGC: GeneratedContentItem = {...existing, explanation: explanationJustFetched, is_favorite: apiData.is_favorite, first_explored_at: (prev[wordId]?.first_explored_at || new Date().toISOString()), last_explored_at: new Date().toISOString() }; return {...prev, [wordId]: newGC }; });
+        setGeneratedContent(prev => { const existing = prev[wordId] || {}; const newGC: GeneratedContentItem = {...existing, explanation: explanationJustFetched, imageUrl: imageUrlFetched, is_favorite: apiData.is_favorite, first_explored_at: (prev[wordId]?.first_explored_at || new Date().toISOString()), last_explored_at: new Date().toISOString() }; return {...prev, [wordId]: newGC }; });
         
         setIsWebContextLoading(true);
         fetch(`${API_BASE_URL}/fetch_web_context`, {
@@ -369,6 +370,8 @@ function App() {
     if (!contentItem?.explanation) return null;
     const currentIsFavorite = contentItem?.is_favorite || false;
     const currentWebContext = webContextCache[wordId]; // Get context from cache
+    const topicImageUrl = contentItem.imageUrl; // Get the image URL from state
+
     const renderClickableText = (text: string | undefined) => {
       if (!text) return null;
       const parts = text.split(/(<click>.*?<\/click>)/g);
@@ -386,8 +389,20 @@ function App() {
       });
     };
     return (
+      
       <div className="bg-transparent p-1 animate-fadeIn">
-        <div className="flex justify-between items-start mb-4">
+        <div className="md:col-span-1">
+            <div className="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-800">
+              {topicImageUrl ? (
+                <img src={topicImageUrl} alt={wordToUse} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
+                  <Sparkles className="w-10 h-10 text-slate-600" />
+                </div>
+              )}
+            </div>
+          </div>
+        <div className="flex justify-between items-center mb-2">
           <h2 className="text-2xl sm:text-3xl font-bold text-[--text-primary] capitalize">{wordToUse}</h2>
           {authToken && <div className="flex items-center space-x-2">
             <button onClick={() => handleToggleFavorite(wordToUse, currentIsFavorite)} className={`p-1.5 rounded-full hover:bg-[--hover-bg-color] transition-colors ${currentIsFavorite?'text-pink-500':'text-[--text-tertiary]'}`} title={currentIsFavorite?"Unfavorite":"Favorite"}><Heart size={20} fill={currentIsFavorite?'currentColor':'none'}/></button>

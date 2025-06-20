@@ -1,5 +1,5 @@
 import React from 'react';
-import LinkPreviewCard from './LinkPreviewCard.tsx';
+import { Globe } from 'lucide-react';
 
 interface WebContextItem {
   type: 'read' | 'watch' | 'service' | 'info';
@@ -18,10 +18,10 @@ const WebContextDisplay: React.FC<WebContextDisplayProps> = ({ webContext, isLoa
     return (
       <div className="mt-8 pt-6 border-t border-slate-700/50">
         <div className="h-4 bg-slate-700 rounded w-1/3 mb-4 animate-pulse"></div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="h-48 bg-slate-800/50 rounded-lg animate-pulse"></div>
-          <div className="h-48 bg-slate-800/50 rounded-lg animate-pulse"></div>
-          <div className="h-48 bg-slate-800/50 rounded-lg animate-pulse"></div>
+        <div className="space-y-3">
+          <div className="h-12 bg-slate-800/50 rounded-lg animate-pulse"></div>
+          <div className="h-12 bg-slate-800/50 rounded-lg animate-pulse"></div>
+          <div className="h-12 bg-slate-800/50 rounded-lg animate-pulse"></div>
         </div>
       </div>
     );
@@ -33,15 +33,24 @@ const WebContextDisplay: React.FC<WebContextDisplayProps> = ({ webContext, isLoa
 
   return (
     <div className="mt-8 pt-6 border-t border-slate-700/50">
-      <h3 className="text-lg font-semibold text-slate-200 mb-4">Web Agent Results</h3>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <h3 className="text-lg font-semibold text-slate-200 mb-4">Web Agent Links</h3>
+      <div className="space-y-3">
         {webContext.map((item, index) => (
-          <LinkPreviewCard
+          <a
             key={index}
-            title={item.title}
-            snippet={item.snippet}
-            url={item.url}
-          />
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block p-3 bg-slate-800/50 rounded-lg group hover:bg-slate-700/50 transition-colors"
+          >
+            <h4 className="font-semibold text-slate-200 group-hover:text-white truncate text-sm">
+              {item.title}
+            </h4>
+            <div className="flex items-center gap-2 mt-1">
+                <Globe size={12} className="text-slate-500 flex-shrink-0" />
+                <p className="text-xs text-slate-400 truncate">{item.snippet}</p>
+            </div>
+          </a>
         ))}
       </div>
     </div>

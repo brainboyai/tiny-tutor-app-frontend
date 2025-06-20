@@ -1,7 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Globe, Youtube } from 'lucide-react';
-
-const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
 
 interface LinkPreviewCardProps {
   title: string;
@@ -9,80 +7,50 @@ interface LinkPreviewCardProps {
   url: string;
 }
 
-interface PreviewData {
-  image?: string;
-}
-
 const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ title, snippet, url }) => {
-  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
+  // Helper function to get the domain name from a URL
   const getDomainName = (url: string) => {
     try {
       return new URL(url).hostname.replace('www.', '');
     } catch (e) {
-      return url;
+      // Return a snippet of the URL if parsing fails
+      return url.split('/')[2] || url;
     }
   };
   
   const domainName = getDomainName(url);
   const isYoutubeLink = domainName.includes('youtube.com');
 
-  useEffect(() => {
-    const fetchMetadata = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch(`${API_BASE_URL}/fetch_link_metadata?url=${encodeURIComponent(url)}`);
-        if (!response.ok) throw new Error('Failed to fetch metadata');
-        const data = await response.json();
-        setPreviewData(data);
-      } catch (error) {
-        console.error("Error fetching link preview for:", url, error);
-        setPreviewData({}); // Set to empty object on error
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchMetadata();
-  }, [url]);
-
-  if (isLoading) {
-    return (
-      <div className="bg-slate-800/50 rounded-lg animate-pulse h-48">
-        <div className="h-full bg-slate-700/50 rounded-md"></div>
-      </div>
-    );
-  }
-
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="block bg-slate-800/50 rounded-lg group hover:ring-2 hover:ring-slate-600 transition-all h-48 flex flex-col">
-      {/* Image container with fixed aspect ratio */}
-      <div className="relative w-full h-24 bg-slate-900 flex-shrink-0 overflow-hidden">
-        {previewData?.image ? (
-          <img src={previewData.image} alt={title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
-            {isYoutubeLink ? <Youtube className="w-10 h-10 text-slate-600" /> : <Globe className="w-8 h-8 text-slate-600" />}
-          </div>
-        )}
-      </div>
-      
+    <a 
+      href={url} 
+      target="_blank" 
+      rel="noopener noreferrer" 
+      className="block bg-slate-800/50 rounded-lg group hover:ring-2 hover:ring-slate-600 transition-all p-4 flex flex-col justify-between min-h-[120px]"
+    >
       {/* Text Content */}
-      <div className="p-3 flex flex-col justify-between flex-grow">
-        <div>
-          <h4 className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 leading-tight text-sm">
+      <div>
+        <div className="flex items-start gap-3 mb-2">
+           {/* Icon Display */}
+          <div className="flex-shrink-0 mt-1">
+            {isYoutubeLink ? <Youtube className="w-5 h-5 text-slate-500" /> : <Globe className="w-5 h-5 text-slate-500" />}
+          </div>
+          {/* Title */}
+          <h4 className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 leading-tight">
             {title}
           </h4>
-          <p className="text-xs text-slate-400 line-clamp-1 mt-1">
-            {snippet}
-          </p>
         </div>
-        <div className="flex items-center gap-2 mt-1">
-          <Globe size={12} className="text-slate-500" />
-          <p className="text-xs text-slate-500 truncate">{domainName}</p>
-        </div>
+
+        {/* Snippet */}
+        <p className="text-xs text-slate-400 line-clamp-2">
+          {snippet}
+        </p>
       </div>
+
+      {/* Domain Name */}
+      <p className="text-xs text-slate-500 truncate mt-3">
+        {domainName}
+      </p>
     </a>
   );
 };

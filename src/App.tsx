@@ -162,7 +162,10 @@ function App() {
     setIsLoading(true);
     let streakContextForAPI: string[] = [];
     if (isSubTopicClick && liveStreak) {
-        streakContextForAPI = [...liveStreak.words];
+       // SOLUTION: Instead of sending the whole streak, send only the last 5 words.
+        // This keeps the prompt context relevant but prevents it from growing too large
+        // and causing a server timeout. The slice(-5) method gets the last 5 items.
+        streakContextForAPI = liveStreak.words.slice(-5);
     }
     const isActuallyContextualExplain = streakContextForAPI.length > 0;
     if (!isUserRefreshClick && authToken && generatedContent[wordId]?.explanation && !isActuallyContextualExplain) {

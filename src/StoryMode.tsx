@@ -37,7 +37,7 @@ interface StoryModeProps {
 }
 
 const STORY_STATE_SESSION_KEY = 'storyModeState';
-const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
+const API_BASE_URL = '/api';
 
 const StoryModeComponent: React.FC<StoryModeProps> = ({ 
   topic, 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, AlertTriangle, X } from 'lucide-react';
 
-const API_BASE_URL = 'https://tiny-tutor-app.onrender.com';
+const API_BASE_URL = '/api';
 
 interface GameModeProps {
   topic: string;

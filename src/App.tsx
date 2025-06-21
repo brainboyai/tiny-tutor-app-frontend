@@ -14,7 +14,7 @@ import WebContextDisplay from './WebContextDisplay.tsx'; // Import the new Web C
 // --- Types and Helpers ---
 interface CurrentUser { username: string; email: string; id: string; }
 interface ParsedQuizQuestion { question: string; options: { [key: string]: string }; correctOptionKey: string; explanation?: string; }
-interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; image_urls?: string[]; }
+interface GeneratedContentItem { explanation?: string; is_favorite?: boolean; first_explored_at?: string; last_explored_at?: string; image_urls?: string[]; suggestions?: string[];}
 interface GeneratedContent { [wordId: string]: GeneratedContentItem; }
 interface LiveStreak { score: number; words: string[]; }
 interface StreakRecord { id: string; words: string[]; score: number; completed_at: string; }
@@ -40,6 +40,12 @@ function App() {
   const [activeGameMode, setActiveGameMode] = useState<'explore_mode' | 'story_mode' | 'game_mode' | null>(null);
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+   
+  // NEW: State for the dedicated Web Agent mode
+  const [webAgentQuery, setWebAgentQuery] = useState<string | null>(null);
+  const [webAgentResults, setWebAgentResults] = useState<WebContextItem[] | null>(null);
+  const [isWebAgentLoading, setIsWebAgentLoading] = useState(false);
+
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -206,11 +212,12 @@ function App() {
             sessionStorage.setItem('guestGenerationCount', String(newCount));
         }
 
-        // UPDATED: The API now returns an object with 'explanation' and 'image_urls'
+        // UPDATED: The API now returns an object with 'explanation' image_urls, and suggestions
         const apiData = await response.json();
         const explanationJustFetched = apiData.explanation;
         const imageUrlsFetched = apiData.image_urls || [];
-        
+        const suggestionsFetched = apiData.suggestions || [];
+
         const isNewWordBeingAddedToStreak = isNewPrimaryWordSearch || (isSubTopicClick && (!liveStreak || !liveStreak.words.includes(wordToFetch)));
         if (isNewWordBeingAddedToStreak && !isNewPrimaryWordSearch) { setLiveStreak(prev => prev ? { score: prev.score + 1, words: [...prev.words, wordToFetch] } : { score: 1, words: [wordToFetch] }); }
         
@@ -221,6 +228,7 @@ function App() {
                 ...existing, 
                 explanation: explanationJustFetched,
                 image_urls: imageUrlsFetched, // Store the new image URLs
+                suggestions: suggestionsFetched,
                 is_favorite: apiData.is_favorite,
                 first_explored_at: (prev[wordId]?.first_explored_at || new Date().toISOString()),
                 last_explored_at: new Date().toISOString()
@@ -269,6 +277,7 @@ function App() {
         setIsResumingFromRateLimit(false);
     }
   }, [isResumingFromRateLimit, activeGameMode, isInitialView, startMode, handleGenerateExplanation]);
+
 
   const handleStreakWordClick = useCallback((clickedWord: string) => {
     setIsQuizVisible(false);
@@ -364,6 +373,38 @@ function App() {
     }
   };
 
+    // NEW: Handler for clicking an agentic suggestion button
+  const handleSuggestionClick = useCallback(async (suggestion: string) => {
+    setActiveGameMode('web_agent'); // Switch to the new mode
+    setWebAgentQuery(suggestion);
+    setIsWebAgentLoading(true);
+    setWebAgentResults(null); // Clear previous results
+
+    try {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (authToken) { headers['Authorization'] = `Bearer ${authToken}`; }
+      if (customApiKey) { headers['X-User-API-Key'] = customApiKey; }
+      
+      const response = await fetch(`${API_BASE_URL}/fetch_web_context`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({ topic: suggestion }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch web context for suggestion.');
+      }
+
+      const data = await response.json();
+      setWebAgentResults(data.web_context || []);
+
+    } catch (err) {
+      if (err instanceof Error) setError(err.message);
+    } finally {
+      setIsWebAgentLoading(false);
+    }
+  }, [authToken, customApiKey]);
+
   // --- RENDER FUNCTIONS ---
   const renderAuthModal = () => { if (!showAuthModal) return null; return (<div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"><div className="bg-[--background-secondary] p-8 rounded-xl shadow-2xl w-full max-w-md relative"><button onClick={() => { setShowAuthModal(false); setAuthError(null); setAuthSuccessMessage(null);}} className="absolute top-4 right-4 text-[--text-tertiary] hover:text-[--text-primary]"><X size={24} /></button><h2 className="text-3xl font-bold text-center text-[--text-primary] mb-6">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>{authError && <p className="bg-red-900/50 text-red-300 p-3 rounded-md mb-4 text-sm">{authError}</p>}{authSuccessMessage && <p className="bg-green-900/50 text-green-300 p-3 rounded-md mb-4 text-sm">{authSuccessMessage}</p>}<form onSubmit={handleAuthAction}>{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-username">Username</label> <input type="text" id="signup-username" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'signup' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="signup-email">Email</label> <input type="email" id="signup-email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}{authMode === 'login' && ( <div className="mb-4"> <label className="block text-[--text-secondary] mb-1" htmlFor="login-identifier">Username or Email</label> <input type="text"  id="login-identifier" value={authUsername}  onChange={(e) => setAuthUsername(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div> )}<div className="mb-6"> <label className="block text-[--text-secondary] mb-1" htmlFor="password">Password</label> <input type="password" id="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full p-3 bg-[--background-input] border border-[--border-color] rounded-lg text-[--text-primary] focus:ring-2 focus:ring-[--accent-primary] outline-none" required /> </div><button type="submit" disabled={isLoading} className="w-full bg-[--accent-primary] hover:bg-[--accent-secondary] text-black font-semibold p-3 rounded-lg transition-colors disabled:opacity-50"> {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')} </button></form><p className="text-center text-[--text-tertiary] mt-6 text-sm"> {authMode === 'login' ? ( <> Need an account? <button onClick={() => {setAuthMode('signup'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Sign Up</button> </> ) : ( <> Already have an account? <button onClick={() => {setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); setAuthUsername(''); setAuthEmail(''); setAuthPassword('');}} className="text-[--accent-primary] hover:underline">Login</button> </> )} </p></div></div>);};
 const renderExploreModeContent = () => {
@@ -430,9 +471,49 @@ const renderExploreModeContent = () => {
         )}
         {/* === End of Image Display Logic === */}
 
+        {/* NEW: Render Agentic Suggestion Buttons */}
+        {contentItem.suggestions && contentItem.suggestions.length > 0 && (
+          <div className="mt-8 pt-6 border-t border-slate-700/50">
+            <h4 className="text-base font-semibold text-slate-400 mb-3">Go Deeper...</h4>
+            <div className="flex flex-wrap gap-3">
+              {contentItem.suggestions.map((suggestion, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="bg-slate-800/70 hover:bg-slate-700 text-slate-300 font-medium py-2 px-4 rounded-full transition-colors text-sm"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // NEW: A dedicated render function for the Web Agent view
+  const renderWebAgentView = () => {
+    return (
+      <div className="animate-fadeIn">
+        <div className="mb-6">
+          <button 
+            onClick={() => setActiveGameMode('explore_mode')} 
+            className="flex items-center gap-2 text-sm text-sky-400 hover:text-sky-300 font-semibold"
+          >
+            <ArrowLeft size={16} />
+            Back to Explore
+          </button>
+        </div>
+        
+        <h2 className="text-3xl font-bold mb-2">
+          Web Agent Results for: <span className="text-sky-400">"{webAgentQuery}"</span>
+        </h2>
+        <p className="text-slate-400 mb-8">Here are some relevant links found on the web.</p>
+        
         <WebContextDisplay
-          webContext={currentWebContext}
-          isLoading={isWebContextLoading && (!currentWebContext || currentWebContext.length === 0)}
+          webContext={webAgentResults}
+          isLoading={isWebAgentLoading}
         />
       </div>
     );
@@ -484,7 +565,36 @@ const renderExploreModeContent = () => {
             onDeleteAccount={handleDeleteAccount}
         />;
     }
-    if (activeGameMode === 'story_mode' && activeTopic) {
+
+    // This block decides which view to render based on the activeGameMode state.
+    switch (activeGameMode) {
+    case 'story_mode':
+    return <StoryModeComponent 
+        topic={activeTopic} 
+        authToken={authToken} 
+        onStoryEnd={resetChat} 
+        language={language} 
+        onRateLimitExceeded={handleRateLimit}
+        isResuming={isResumingFromRateLimit}
+        customApiKey={customApiKey}
+        guestGenerations={storyGuestGenerations}
+        setGuestGenerations={setStoryGuestGenerations}
+        guestGenerationLimit={GUEST_GENERATION_LIMIT}
+        onGuestLimitExceeded={handleGuestLimitExceeded}
+      />;
+  
+    case 'game_mode':
+    return <div className="h-[calc(100vh-80px)] w-full"><GameModeComponent topic={activeTopic} authToken={authToken} onGameEnd={resetChat} /></div>;;
+  
+    case 'web_agent':
+    return renderWebAgentView();
+  
+    case 'explore_mode':
+  default:
+    // This will render the initial screen or the main explore view with explanations.
+    return renderExploreModeContent();
+}
+    /*if (activeGameMode === 'story_mode' && activeTopic) {
       return <StoryModeComponent 
         topic={activeTopic} 
         authToken={authToken} 
@@ -502,8 +612,9 @@ const renderExploreModeContent = () => {
     if (activeGameMode === 'game_mode' && activeTopic) {
         return <div className="h-[calc(100vh-80px)] w-full"><GameModeComponent topic={activeTopic} authToken={authToken} onGameEnd={resetChat} /></div>;
     }
+    
     return ( <div className="space-y-6"> {liveStreak && liveStreak.score > 0 && ( <div className="flex items-center gap-2 flex-wrap p-3 bg-gradient-to-r from-slate-800/50 to-slate-900/20 rounded-xl border border-slate-700/50"> <Flame className="text-orange-500 flex-shrink-0 animate-pulse" /> {liveStreak.words.map((word, index) => ( <React.Fragment key={word + index}> <button className={`py-1 px-3 rounded-full text-sm font-medium transition-all duration-300 shadow-md animate-fadeIn ${getDisplayWord() === word ? 'bg-sky-600 text-white' : 'bg-[--background-secondary] hover:bg-[--hover-bg-color]'}`} onClick={() => handleStreakWordClick(word)}> {word} </button> {index < liveStreak.words.length - 1 && <span className="text-slate-500">→</span>} </React.Fragment> ))} </div> )} {renderExploreModeContent()} </div> );
-  };
+  };*/
   
   // --- Main Return Block ---
   return (

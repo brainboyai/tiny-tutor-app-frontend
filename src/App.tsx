@@ -593,7 +593,8 @@ const renderExploreModeContent = () => {
   default:
     // This will render the initial screen or the main explore view with explanations.
     return renderExploreModeContent();
-}
+  }
+};
     /*if (activeGameMode === 'story_mode' && activeTopic) {
       return <StoryModeComponent 
         topic={activeTopic} 

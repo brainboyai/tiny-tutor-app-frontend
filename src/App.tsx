@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, FormEvent, useRef } from 'react';
 import {
   Heart, LogOut, RefreshCw, Sparkles, SendHorizontal, User, X,
-  Settings, Menu, Plus, Flame, HelpCircle, Mic, BookText, FileText, Gamepad2, Lock, AlertTriangle
+  Settings, Menu, Plus, Flame, HelpCircle, Mic, BookText, FileText, Gamepad2, Lock, AlertTriangle, ArrowLeft
 } from 'lucide-react';
 import './App.css';
 import './index.css';

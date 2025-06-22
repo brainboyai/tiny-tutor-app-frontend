@@ -1,3 +1,4 @@
+/* === Your Existing Styles (Unaltered) === */
 #root {
   max-width: 1280px;
   margin: 0 auto;
@@ -39,4 +40,107 @@
 
 .read-the-docs {
   color: #888;
+}
+
+/* === NEW: Professional Result Card Styles (Added at the end) === */
+
+/* The main container for all the result cards */
+.results-grid {
+    display: grid;
+    /* This creates a responsive grid that shows as many cards as fit */
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+    text-align: left; /* Overrides the centered text from #root */
+}
+
+/* The main card element, used for both Hotel and LinkPreview cards */
+.result-card {
+    background-color: #2a2a30;
+    border-radius: 12px;
+    overflow: hidden;
+    text-decoration: none;
+    color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    border: 1px solid #3a3a40; /* Adds a subtle border */
+}
+
+/* A subtle hover effect to show the card is interactive */
+.result-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* The container for the hotel image */
+.card-image-container {
+    height: 180px;
+    background-color: #333;
+}
+
+/* The hotel image itself */
+.card-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Ensures the image covers the area without distortion */
+}
+
+/* A placeholder for when an image is missing */
+.card-image-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #333;
+}
+
+/* The container for the text content */
+.card-content {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+/* The main title of the card */
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    line-height: 1.3;
+}
+
+/* The snippet/attribution text */
+.card-snippet {
+    font-size: 0.9rem;
+    color: #a0a0b0; /* A lighter color for secondary text */
+    margin: 0;
+    margin-top: auto; /* Pushes the snippet to the bottom of the card */
+    padding-top: 10px;
+}
+
+/* Specific styles for the Default/LinkPreviewCard to make it look good too */
+.default-card .card-type {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #a0a0b0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.default-card .default-snippet {
+    color: #c0c0c0;
+    margin-top: 12px;
+    padding-top: 0;
+}
+
+.default-card .card-url {
+    font-size: 0.85rem;
+    color: #64b5f6; /* A nice blue color for the URL */
+    margin-top: auto;
+    padding-top: 12px;
+    word-break: break-all;
 }
